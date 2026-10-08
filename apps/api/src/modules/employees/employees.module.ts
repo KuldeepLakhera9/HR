@@ -1,5 +1,9 @@
-import { Controller, Get, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Injectable, Module, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 
 @Injectable()
 export class EmployeesService {
@@ -50,11 +54,14 @@ export class EmployeesService {
 }
 
 @ApiTags('Employees')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('employees')
 export class EmployeesController {
   constructor(private readonly employeesService: EmployeesService) {}
 
   @Get()
+  @RequirePermissions('EMPLOYEE_VIEW')
   @ApiOperation({ summary: 'List employees directory (Phase 1 Foundation)' })
   async findAll() {
     const data = await this.employeesService.findAll();

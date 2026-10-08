@@ -17,7 +17,12 @@ import { LeaveModule } from './modules/leave/leave.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { DocumentsModule } from './modules/documents/documents.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MailModule } from './modules/mail/mail.module';
 import { AuditModule } from './modules/audit/audit.module';
+
+import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
+import { RolesGuard } from './common/guards/roles.guard';
+import { PermissionsGuard } from './common/guards/permissions.guard';
 
 @Module({
   imports: [
@@ -46,12 +51,25 @@ import { AuditModule } from './modules/audit/audit.module';
     ReportsModule,
     DocumentsModule,
     NotificationsModule,
+    MailModule,
     AuditModule,
   ],
   providers: [
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: JwtAuthGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: RolesGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: PermissionsGuard,
     },
   ],
 })

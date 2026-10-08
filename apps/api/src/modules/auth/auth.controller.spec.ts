@@ -14,6 +14,8 @@ describe('AuthController', () => {
     logout: jest.Mock;
     getMe: jest.Mock;
     changePassword: jest.Mock;
+    forgotPassword: jest.Mock;
+    resetPassword: jest.Mock;
   };
 
   const mockSafeUser = {
@@ -40,6 +42,8 @@ describe('AuthController', () => {
       logout: jest.fn(),
       getMe: jest.fn(),
       changePassword: jest.fn(),
+      forgotPassword: jest.fn(),
+      resetPassword: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -150,9 +154,19 @@ describe('AuthController', () => {
         clearCookie: jest.fn(),
       } as unknown as Response;
 
-      const result = await controller.logout(mockAuthenticatedUser, mockRes);
+      const result = await controller.logout(
+        mockAuthenticatedUser,
+        '127.0.0.1',
+        'Mozilla/5.0',
+        mockRes,
+      );
 
-      expect(authService.logout).toHaveBeenCalledWith('ses_123');
+      expect(authService.logout).toHaveBeenCalledWith(
+        'ses_123',
+        '127.0.0.1',
+        'Mozilla/5.0',
+        'usr_123',
+      );
       expect(mockRes.clearCookie).toHaveBeenCalledWith(
         'hrms_refresh_token',
         expect.objectContaining({
@@ -179,16 +193,85 @@ describe('AuthController', () => {
     it('should invoke changePassword service method', async () => {
       authService.changePassword.mockResolvedValue(undefined);
 
-      const result = await controller.changePassword(mockAuthenticatedUser, {
-        currentPassword: 'Password@123',
-        newPassword: 'NewPassword@2026',
+      const result = await controller.changePassword(
+        mockAuthenticatedUser,
+        {
+          currentPassword: 'Password@123',
+          newPassword: 'NewPassword@2026',
+        },
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+
+      expect(authService.changePassword).toHaveBeenCalledWith(
+        'usr_123',
+        'ses_123',
+        {
+          currentPassword: 'Password@123',
+          newPassword: 'NewPassword@2026',
+        },
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+      expect(result.message).toContain('Password changed successfully');
+    });
+  });
+
+  describe('POST /forgot-password', () => {
+    it('should invoke forgotPassword and return generic non-enumerating message', async () => {
+      authService.forgotPassword = jest.fn().mockResolvedValue({
+        message:
+          'If an account with that email exists, password reset instructions have been sent.',
       });
 
-      expect(authService.changePassword).toHaveBeenCalledWith('usr_123', 'ses_123', {
-        currentPassword: 'Password@123',
-        newPassword: 'NewPassword@2026',
+      const result = await controller.forgotPassword(
+        {
+          email: 'admin@peopleos.local',
+        },
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+
+      expect(authService.forgotPassword).toHaveBeenCalledWith(
+        {
+          email: 'admin@peopleos.local',
+        },
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+      expect(result.message).toBe(
+        'If an account with that email exists, password reset instructions have been sent.',
+      );
+      expect(result.data).toBeNull();
+    });
+  });
+
+  describe('POST /reset-password', () => {
+    it('should invoke resetPassword and return success confirmation', async () => {
+      authService.resetPassword = jest.fn().mockResolvedValue({
+        message:
+          'Password has been successfully reset. You may now sign in with your new credentials.',
       });
-      expect(result.message).toContain('Password changed successfully');
+
+      const result = await controller.resetPassword(
+        {
+          token: 'valid_secure_token',
+          newPassword: 'NewSecurePassword@2026',
+        },
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+
+      expect(authService.resetPassword).toHaveBeenCalledWith(
+        {
+          token: 'valid_secure_token',
+          newPassword: 'NewSecurePassword@2026',
+        },
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+      expect(result.message).toContain('Password has been successfully reset');
+      expect(result.data).toBeNull();
     });
   });
 });

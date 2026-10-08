@@ -1,5 +1,9 @@
-import { Controller, Get, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Injectable, Module, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 
 @Injectable()
 export class LeaveService {
@@ -13,11 +17,14 @@ export class LeaveService {
 }
 
 @ApiTags('Leave')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('leave')
 export class LeaveController {
   constructor(private readonly leaveService: LeaveService) {}
 
   @Get('balances')
+  @RequirePermissions('LEAVE_VIEW')
   @ApiOperation({ summary: 'Get employee leave balances and entitlements' })
   async getLeaveBalances() {
     const data = await this.leaveService.getLeaveBalances();

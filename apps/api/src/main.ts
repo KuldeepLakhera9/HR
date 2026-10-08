@@ -12,7 +12,11 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // 1. Cookie Parser
-  app.use(cookieParser());
+  const parseCookies =
+    typeof cookieParser === 'function'
+      ? cookieParser
+      : (cookieParser as unknown as { default: typeof cookieParser }).default || cookieParser;
+  app.use(parseCookies());
 
   // 2. Global Prefix - /api/v1
   const apiPrefix = process.env.API_PREFIX || 'api/v1';

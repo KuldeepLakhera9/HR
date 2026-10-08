@@ -1,5 +1,6 @@
-import { Controller, Get, Patch, Param, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Patch, Param, Injectable, Module, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @Injectable()
 export class NotificationsService {
@@ -31,6 +32,8 @@ export class NotificationsService {
 }
 
 @ApiTags('Notifications')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('notifications')
 export class NotificationsController {
   constructor(private readonly notificationsService: NotificationsService) {}

@@ -9,12 +9,16 @@ import {
   UnauthorizedException,
   Ip,
   Headers,
+  HttpCode,
+  HttpStatus,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
 import { Request, Response } from 'express';
 import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { Public } from './decorators/public.decorator';
 import { CurrentUser } from './decorators/current-user.decorator';
@@ -103,8 +107,13 @@ export class AuthController {
   @Post('logout')
   @ApiOperation({ summary: 'Revoke active user session and clear refresh cookie' })
   @ApiResponse({ status: 200, description: 'Successfully logged out' })
-  async logout(@CurrentUser() user: AuthenticatedUser, @Res({ passthrough: true }) res: Response) {
-    await this.authService.logout(user.sessionId);
+  async logout(
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    await this.authService.logout(user.sessionId, ipAddress, userAgent, user.id);
 
     const isProduction = process.env.NODE_ENV === 'production';
     res.clearCookie(REFRESH_COOKIE_NAME, {
@@ -140,11 +149,56 @@ export class AuthController {
   @ApiOperation({ summary: 'Change user account password and revoke other sessions' })
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({ status: 400, description: 'Incorrect current password or weak new password' })
-  async changePassword(@CurrentUser() user: AuthenticatedUser, @Body() body: ChangePasswordDto) {
-    await this.authService.changePassword(user.id, user.sessionId, body);
+  async changePassword(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: ChangePasswordDto,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    await this.authService.changePassword(user.id, user.sessionId, body, ipAddress, userAgent);
 
     return {
       message: 'Password changed successfully. Other active sessions terminated.',
+      data: null,
+    };
+  }
+
+  @Public()
+  @Post('forgot-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Request password reset email instructions' })
+  @ApiResponse({ status: 200, description: 'Generic response preventing email enumeration' })
+  async forgotPassword(
+    @Body() body: ForgotPasswordDto,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    const result = await this.authService.forgotPassword(body, ipAddress, userAgent);
+
+    return {
+      message: result.message,
+      data: null,
+    };
+  }
+
+  @Public()
+  @Post('reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset account password using valid reset token' })
+  @ApiResponse({
+    status: 200,
+    description: 'Password reset successfully and active sessions revoked',
+  })
+  @ApiResponse({ status: 400, description: 'Invalid, expired, or already-used reset token' })
+  async resetPassword(
+    @Body() body: ResetPasswordDto,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    const result = await this.authService.resetPassword(body, ipAddress, userAgent);
+
+    return {
+      message: result.message,
       data: null,
     };
   }

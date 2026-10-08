@@ -4,8 +4,12 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PasswordService } from './password.service';
+import { MailService } from '../mail/mail.service';
+import { AuditService, AuthAuditEvent } from '../audit/audit.service';
 import { LoginDto } from './dto/login.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtPayload, LoginResult, RefreshResult, SafeUser } from './interfaces/auth.interface';
 import { RoleType } from '@hrms/types';
 import { UserStatus } from '@prisma/client';
@@ -26,6 +30,8 @@ export class AuthService {
     private readonly passwordService: PasswordService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly mailService: MailService,
+    private readonly auditService: AuditService,
   ) {
     // 7 days default refresh token TTL
     this.refreshTokenTtlMs = 7 * 24 * 60 * 60 * 1000;
@@ -92,12 +98,37 @@ export class AuthService {
     // Timing-attack mitigation: if user does not exist, run dummy verification
     if (!user) {
       await this.passwordService.verifyPassword('dummyPassword123', DUMMY_ARGON2_HASH);
+      await this.auditService.record({
+        action: AuthAuditEvent.LOGIN_FAILED,
+        entity: 'Authentication',
+        userId: null,
+        ipAddress,
+        userAgent,
+        metadata: {
+          email: normalizedEmail,
+          reason: 'User not found or invalid credentials',
+        },
+      });
       throw new UnauthorizedException('Invalid email or password');
     }
 
     // 3. Check temporary lock
     if (user.lockedUntil && user.lockedUntil > new Date()) {
       const remainingMinutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / (60 * 1000));
+      await this.auditService.record({
+        action: AuthAuditEvent.LOGIN_FAILED,
+        entity: 'Authentication',
+        entityId: user.id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          email: user.email,
+          reason: 'Account is temporarily locked',
+          remainingMinutes,
+        },
+      });
       throw new UnauthorizedException(
         `Account is temporarily locked due to multiple failed attempts. Please try again in ${remainingMinutes} minute(s).`,
       );
@@ -105,6 +136,20 @@ export class AuthService {
 
     // 4. Check account status
     if (user.status !== UserStatus.ACTIVE || !user.isActive) {
+      await this.auditService.record({
+        action: AuthAuditEvent.LOGIN_FAILED,
+        entity: 'Authentication',
+        entityId: user.id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          email: user.email,
+          status: user.status,
+          reason: 'Account is inactive or suspended',
+        },
+      });
       throw new UnauthorizedException(
         'Account is inactive or suspended. Please contact HR administrator.',
       );
@@ -131,10 +176,55 @@ export class AuthService {
       });
 
       if (isLocked) {
+        await this.auditService.record({
+          action: AuthAuditEvent.ACCOUNT_LOCKED,
+          entity: 'User',
+          entityId: user.id,
+          userId: user.id,
+          organizationId: user.organizationId,
+          ipAddress,
+          userAgent,
+          metadata: {
+            email: user.email,
+            failedAttempts: newAttempts,
+            lockedUntil: lockedUntil?.toISOString(),
+            durationMinutes: 15,
+          },
+        });
+
+        await this.auditService.record({
+          action: AuthAuditEvent.LOGIN_FAILED,
+          entity: 'Authentication',
+          entityId: user.id,
+          userId: user.id,
+          organizationId: user.organizationId,
+          ipAddress,
+          userAgent,
+          metadata: {
+            email: user.email,
+            reason: 'Account locked due to consecutive failed attempts',
+          },
+        });
+
         throw new UnauthorizedException(
           'Account has been temporarily locked for 15 minutes due to 5 consecutive failed login attempts.',
         );
       }
+
+      await this.auditService.record({
+        action: AuthAuditEvent.LOGIN_FAILED,
+        entity: 'Authentication',
+        entityId: user.id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          email: user.email,
+          reason: 'Incorrect password',
+          failedAttempts: newAttempts,
+        },
+      });
 
       throw new UnauthorizedException('Invalid email or password');
     }
@@ -163,6 +253,22 @@ export class AuthService {
     }
     const permissions = Array.from(permissionsSet);
 
+    // Audit Event: LOGIN_SUCCESS
+    await this.auditService.record({
+      action: AuthAuditEvent.LOGIN_SUCCESS,
+      entity: 'Authentication',
+      entityId: user.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        email: user.email,
+        employeeCode: user.employeeCode,
+        roles,
+      },
+    });
+
     // 11. Create a session with hashed refresh token
     const rawRefreshToken = this.generateRawRefreshToken();
     const refreshTokenHash = this.hashToken(rawRefreshToken);
@@ -177,6 +283,24 @@ export class AuthService {
         ipAddress: ipAddress ?? null,
         userAgent: userAgent ?? null,
         deviceName,
+      },
+    });
+
+    // Audit Event: SESSION_CREATED
+    await this.auditService.record({
+      action: AuthAuditEvent.SESSION_CREATED,
+      entity: 'Session',
+      entityId: session.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        sessionId: session.id,
+        deviceName,
+        expiresAt: session.expiresAt?.toISOString
+          ? session.expiresAt.toISOString()
+          : expiresAt.toISOString(),
       },
     });
 
@@ -273,6 +397,20 @@ export class AuthService {
         },
       });
 
+      await this.auditService.record({
+        action: AuthAuditEvent.SESSION_REVOKED,
+        entity: 'Session',
+        entityId: session.id,
+        userId: session.userId,
+        organizationId: session.user?.organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          sessionId: session.id,
+          reason: 'Token reuse compromise alert - all active sessions terminated',
+        },
+      });
+
       throw new UnauthorizedException(
         'Security alert: Session token reuse detected. All sessions terminated. Please re-authenticate.',
       );
@@ -284,6 +422,21 @@ export class AuthService {
         where: { id: session.id },
         data: { revokedAt: new Date() },
       });
+
+      await this.auditService.record({
+        action: AuthAuditEvent.SESSION_REVOKED,
+        entity: 'Session',
+        entityId: session.id,
+        userId: session.userId,
+        organizationId: session.user?.organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          sessionId: session.id,
+          reason: 'Session expired',
+        },
+      });
+
       throw new UnauthorizedException('Session expired. Please log in again.');
     }
 
@@ -306,6 +459,21 @@ export class AuthService {
         expiresAt: newExpiresAt,
         ipAddress: ipAddress ?? session.ipAddress,
         userAgent: userAgent ?? session.userAgent,
+      },
+    });
+
+    // Audit Event: SESSION_CREATED (Rotated Token)
+    await this.auditService.record({
+      action: AuthAuditEvent.SESSION_CREATED,
+      entity: 'Session',
+      entityId: session.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        sessionId: session.id,
+        action: 'Rotated refresh token',
       },
     });
 
@@ -358,8 +526,24 @@ export class AuthService {
   /**
    * Revoke current active session
    */
-  async logout(sessionId: string): Promise<void> {
+  async logout(
+    sessionId: string,
+    ipAddress?: string,
+    userAgent?: string,
+    userId?: string,
+  ): Promise<void> {
     if (!sessionId) return;
+
+    const session = await this.prisma.session.findUnique({
+      where: { id: sessionId },
+      select: {
+        userId: true,
+        user: { select: { organizationId: true } },
+      },
+    });
+
+    const effectiveUserId = userId || session?.userId;
+    const organizationId = session?.user?.organizationId;
 
     await this.prisma.session.updateMany({
       where: {
@@ -370,6 +554,37 @@ export class AuthService {
         revokedAt: new Date(),
       },
     });
+
+    if (effectiveUserId) {
+      // Audit Event: LOGOUT
+      await this.auditService.record({
+        action: AuthAuditEvent.LOGOUT,
+        entity: 'Authentication',
+        entityId: sessionId,
+        userId: effectiveUserId,
+        organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          sessionId,
+        },
+      });
+
+      // Audit Event: SESSION_REVOKED
+      await this.auditService.record({
+        action: AuthAuditEvent.SESSION_REVOKED,
+        entity: 'Session',
+        entityId: sessionId,
+        userId: effectiveUserId,
+        organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          sessionId,
+          reason: 'User logged out',
+        },
+      });
+    }
   }
 
   /**
@@ -435,6 +650,8 @@ export class AuthService {
     userId: string,
     currentSessionId: string,
     dto: ChangePasswordDto,
+    ipAddress?: string,
+    userAgent?: string,
   ): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -476,5 +693,216 @@ export class AuthService {
         revokedAt: new Date(),
       },
     });
+
+    // Audit Event: PASSWORD_CHANGED
+    await this.auditService.record({
+      action: AuthAuditEvent.PASSWORD_CHANGED,
+      entity: 'User',
+      entityId: userId,
+      userId,
+      organizationId: user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        changedAt: new Date().toISOString(),
+      },
+    });
+
+    // Audit Event: SESSION_REVOKED (Other active sessions terminated)
+    await this.auditService.record({
+      action: AuthAuditEvent.SESSION_REVOKED,
+      entity: 'Session',
+      entityId: null,
+      userId,
+      organizationId: user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        reason: 'Password changed - other active sessions terminated',
+        retainedSessionId: currentSessionId,
+      },
+    });
+  }
+
+  /**
+   * Request password reset token.
+   * Responds with a generic message to prevent email enumeration attacks.
+   */
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ message: string }> {
+    const genericResponse = {
+      message: 'If an account with that email exists, password reset instructions have been sent.',
+    };
+
+    const normalizedEmail = dto.email.trim().toLowerCase();
+
+    const user = await this.prisma.user.findFirst({
+      where: {
+        email: normalizedEmail,
+        deletedAt: null,
+      },
+    });
+
+    // If user does not exist, return generic message without dispatching email
+    if (!user) {
+      return genericResponse;
+    }
+
+    // Generate cryptographically secure reset token
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = this.hashToken(rawToken);
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour expiration
+
+    // Invalidate/remove previous unused reset tokens for this user
+    await this.prisma.passwordResetToken.deleteMany({
+      where: {
+        userId: user.id,
+        usedAt: null,
+      },
+    });
+
+    // Store only the SHA-256 token hash in persistent database
+    await this.prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash,
+        expiresAt,
+      },
+    });
+
+    // Dispatch email (dev console or corporate SMTP)
+    try {
+      await this.mailService.sendPasswordResetEmail(user.email, rawToken, user.firstName);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send password reset email to ${user.email}: ${(error as Error).message}`,
+        (error as Error).stack,
+      );
+    }
+
+    // Audit Event: PASSWORD_RESET_REQUESTED
+    await this.auditService.record({
+      action: AuthAuditEvent.PASSWORD_RESET_REQUESTED,
+      entity: 'Authentication',
+      entityId: user.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        email: user.email,
+        expiresInMinutes: 60,
+      },
+    });
+
+    return genericResponse;
+  }
+
+  /**
+   * Reset user password using verified reset token.
+   * Enforces single-use, expiration, Argon2id hashing, and revokes all active sessions.
+   */
+  async resetPassword(
+    dto: ResetPasswordDto,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ message: string }> {
+    // 1. Validate password strength requirements
+    this.passwordService.validatePasswordStrength(dto.newPassword);
+
+    // 2. Hash raw token using SHA-256 for database lookup
+    const tokenHash = this.hashToken(dto.token.trim());
+
+    // 3. Find token in database
+    const resetRecord = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash },
+      include: { user: true },
+    });
+
+    if (!resetRecord) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    // 4. Verify one-time use
+    if (resetRecord.usedAt !== null) {
+      throw new BadRequestException('Password reset token has already been used');
+    }
+
+    // 5. Verify expiration
+    if (resetRecord.expiresAt < new Date()) {
+      throw new BadRequestException('Password reset token has expired');
+    }
+
+    // 6. Verify associated user account
+    if (!resetRecord.user || resetRecord.user.deletedAt !== null) {
+      throw new BadRequestException('Invalid or expired password reset token');
+    }
+
+    // 7. Hash new password with Argon2id
+    const newPasswordHash = await this.passwordService.hashPassword(dto.newPassword);
+
+    // 8. Atomically invalidate token, update password, and revoke all active sessions
+    const now = new Date();
+    await this.prisma.$transaction([
+      this.prisma.passwordResetToken.update({
+        where: { id: resetRecord.id },
+        data: {
+          usedAt: now,
+        },
+      }),
+      this.prisma.user.update({
+        where: { id: resetRecord.userId },
+        data: {
+          passwordHash: newPasswordHash,
+          failedLoginAttempts: 0,
+          lockedUntil: null,
+        },
+      }),
+      this.prisma.session.updateMany({
+        where: {
+          userId: resetRecord.userId,
+          revokedAt: null,
+        },
+        data: {
+          revokedAt: now,
+        },
+      }),
+    ]);
+
+    // Audit Event: PASSWORD_RESET_COMPLETED
+    await this.auditService.record({
+      action: AuthAuditEvent.PASSWORD_RESET_COMPLETED,
+      entity: 'User',
+      entityId: resetRecord.userId,
+      userId: resetRecord.userId,
+      organizationId: resetRecord.user?.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        resetAt: now.toISOString(),
+      },
+    });
+
+    // Audit Event: SESSION_REVOKED (All sessions terminated after password reset)
+    await this.auditService.record({
+      action: AuthAuditEvent.SESSION_REVOKED,
+      entity: 'Session',
+      entityId: null,
+      userId: resetRecord.userId,
+      organizationId: resetRecord.user?.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        reason: 'Password reset completed - all active sessions terminated',
+      },
+    });
+
+    return {
+      message:
+        'Password has been successfully reset. You may now sign in with your new credentials.',
+    };
   }
 }

@@ -1,5 +1,9 @@
-import { Controller, Get, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Injectable, Module, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 
 @Injectable()
 export class DocumentsService {
@@ -31,11 +35,14 @@ export class DocumentsService {
 }
 
 @ApiTags('Documents')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('documents')
 export class DocumentsController {
   constructor(private readonly documentsService: DocumentsService) {}
 
   @Get()
+  @RequirePermissions('DOCUMENT_VIEW')
   @ApiOperation({ summary: 'List organization and policy documents' })
   async getDocuments() {
     const data = await this.documentsService.getDocuments();

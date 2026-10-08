@@ -215,4 +215,28 @@ export const authApi = {
     });
     return response.data;
   },
+
+  /**
+   * Request password reset instructions
+   */
+  async forgotPassword(email: string): Promise<{ message: string }> {
+    const response = await fetchWithAuth<null>('/auth/forgot-password', {
+      method: 'POST',
+      body: JSON.stringify({ email }),
+      skipAuth: true,
+    });
+    return { message: response.message };
+  },
+
+  /**
+   * Reset user password with cryptographically secure token
+   */
+  async resetPassword(token: string, newPassword: string): Promise<{ message: string }> {
+    const response = await fetchWithAuth<null>('/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, newPassword }),
+      skipAuth: true,
+    });
+    return { message: response.message };
+  },
 };

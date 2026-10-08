@@ -1,6 +1,20 @@
-import { Controller, Get, Param, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import {
+  Controller,
+  Get,
+  Param,
+  Injectable,
+  Module,
+  UseGuards,
+  ForbiddenException,
+} from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 
 @Injectable()
 export class UsersService {
@@ -73,11 +87,14 @@ export class UsersService {
 }
 
 @ApiTags('Users')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   @Get()
+  @RequirePermissions('USER_VIEW')
   @ApiOperation({ summary: 'List organization users with pagination' })
   async findAll() {
     const data = await this.usersService.findAll();
@@ -90,7 +107,14 @@ export class UsersController {
 
   @Get(':id')
   @ApiOperation({ summary: 'Retrieve specific user details' })
-  async findOne(@Param('id') id: string) {
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    // If requesting another user's profile, require USER_VIEW permission
+    if (user?.id !== id && !user?.permissions?.includes('USER_VIEW')) {
+      throw new ForbiddenException(
+        "Access denied: You do not possess the required privilege to view another user's profile.",
+      );
+    }
+
     const data = await this.usersService.findOne(id);
     return {
       message: 'User details retrieved',

@@ -1,5 +1,9 @@
-import { Controller, Get, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Injectable, Module, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 
 @Injectable()
 export class VisitsService {
@@ -26,11 +30,14 @@ export class VisitsService {
 }
 
 @ApiTags('Official Visits')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('visits')
 export class VisitsController {
   constructor(private readonly visitsService: VisitsService) {}
 
   @Get()
+  @RequirePermissions('VISIT_VIEW')
   @ApiOperation({ summary: 'List official visits and outdoor duty requests' })
   async getOfficialVisits() {
     const data = await this.visitsService.getOfficialVisits();

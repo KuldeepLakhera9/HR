@@ -34,10 +34,16 @@ export class AllExceptionsFilter implements ExceptionFilter {
         errors = resObj.error || resObj.errors || null;
       }
     } else if (exception instanceof Error) {
-      message = exception.message;
+      const isProduction = process.env.NODE_ENV === 'production';
+      message = isProduction ? 'Internal server error' : exception.message;
       this.logger.error(`Unhandled error: ${exception.message}`, exception.stack);
     } else {
       this.logger.error('Unhandled unknown exception occurred', exception);
+    }
+
+    const isProduction = process.env.NODE_ENV === 'production';
+    if (isProduction && status === HttpStatus.INTERNAL_SERVER_ERROR) {
+      errors = undefined;
     }
 
     const errorResponse: ApiErrorResponse = {

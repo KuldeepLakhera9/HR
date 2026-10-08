@@ -1,6 +1,10 @@
-import { Controller, Get, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Injectable, Module, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 
 @Injectable()
 export class OrganizationService {
@@ -34,11 +38,14 @@ export class OrganizationService {
 }
 
 @ApiTags('Organization')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('organization')
 export class OrganizationController {
   constructor(private readonly organizationService: OrganizationService) {}
 
   @Get('overview')
+  @RequirePermissions('ORGANIZATION_VIEW')
   @ApiOperation({ summary: 'Get organization hierarchy and structure overview' })
   async getOverview() {
     const data = await this.organizationService.getOverview();
