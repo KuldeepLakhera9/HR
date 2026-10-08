@@ -87,6 +87,26 @@ export const DESIGN_TOKENS = {
     cardHover: '0 4px 6px -1px rgba(0, 0, 0, 0.07), 0 2px 4px -1px rgba(0, 0, 0, 0.04)',
     elevated: '0 10px 15px -3px rgba(0, 0, 0, 0.08), 0 4px 6px -2px rgba(0, 0, 0, 0.04)',
   },
+  typography: {
+    fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+    scale: {
+      display: { fontSize: '1.875rem', lineHeight: '2.25rem', fontWeight: '700' },
+      pageTitle: { fontSize: '1.5rem', lineHeight: '2rem', fontWeight: '700' },
+      sectionTitle: { fontSize: '1.125rem', lineHeight: '1.75rem', fontWeight: '600' },
+      body: { fontSize: '0.875rem', lineHeight: '1.25rem', fontWeight: '400' },
+      label: { fontSize: '0.75rem', lineHeight: '1rem', fontWeight: '600' },
+      caption: { fontSize: '0.6875rem', lineHeight: '0.875rem', fontWeight: '500' },
+      kpiValue: { fontSize: '1.75rem', lineHeight: '2rem', fontWeight: '700' },
+    },
+  },
+  spacing: {
+    xs: '0.25rem', // 4px
+    sm: '0.5rem', // 8px
+    md: '1rem', // 16px
+    lg: '1.5rem', // 24px
+    xl: '2rem', // 32px
+    '2xl': '3rem', // 48px
+  },
 } as const;
 
 /**
@@ -162,6 +182,13 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       label: 'System Settings',
       href: '/settings',
       icon: 'Settings',
+      allowedRoles: ['ADMIN'],
+    },
+    {
+      id: 'admin-design-system',
+      label: 'Design System',
+      href: '/design-system',
+      icon: 'Palette',
       allowedRoles: ['ADMIN'],
     },
   ],

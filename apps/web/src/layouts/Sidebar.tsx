@@ -27,6 +27,7 @@ import {
   CheckSquare,
   Home,
   UserCircle,
+  Palette,
   LucideIcon,
 } from 'lucide-react';
 
@@ -51,6 +52,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   CheckSquare,
   Home,
   UserCircle,
+  Palette,
 };
 
 export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({
