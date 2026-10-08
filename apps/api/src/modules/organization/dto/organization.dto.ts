@@ -7,7 +7,9 @@ import {
   IsNumber,
   Min,
   Max,
+  IsIn,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class UpdateOrganizationDto {
@@ -360,4 +362,127 @@ export class UpdateDesignationDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+}
+
+export class DeactivateEntityDto {
+  @ApiPropertyOptional({ example: 'Consolidated into regional center' })
+  @IsOptional()
+  @IsString()
+  reason?: string;
+}
+
+export class BranchFilterDto {
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 20, default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+
+  @ApiPropertyOptional({ example: 'Bengaluru' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: ['all', 'active', 'inactive'], default: 'all' })
+  @IsOptional()
+  @IsIn(['all', 'active', 'inactive'])
+  status?: 'all' | 'active' | 'inactive' = 'all';
+
+  @ApiPropertyOptional({ example: 'name', default: 'name' })
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'name';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'asc';
+}
+
+export class DepartmentFilterDto {
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 20, default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+
+  @ApiPropertyOptional({ example: 'Engineering' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ enum: ['all', 'active', 'inactive'], default: 'all' })
+  @IsOptional()
+  @IsIn(['all', 'active', 'inactive'])
+  status?: 'all' | 'active' | 'inactive' = 'all';
+
+  @ApiPropertyOptional({ example: 'name', default: 'name' })
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'name';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'asc';
+}
+
+export class DesignationFilterDto {
+  @ApiPropertyOptional({ example: 1, default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  page?: number = 1;
+
+  @ApiPropertyOptional({ example: 20, default: 50 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  @Min(1)
+  @Max(100)
+  limit?: number = 50;
+
+  @ApiPropertyOptional({ example: 'Engineer' })
+  @IsOptional()
+  @IsString()
+  search?: string;
+
+  @ApiPropertyOptional({ example: 'uuid-department' })
+  @IsOptional()
+  @IsString()
+  departmentId?: string;
+
+  @ApiPropertyOptional({ enum: ['all', 'active', 'inactive'], default: 'all' })
+  @IsOptional()
+  @IsIn(['all', 'active', 'inactive'])
+  status?: 'all' | 'active' | 'inactive' = 'all';
+
+  @ApiPropertyOptional({ example: 'level', default: 'level' })
+  @IsOptional()
+  @IsString()
+  sortBy?: string = 'level';
+
+  @ApiPropertyOptional({ enum: ['asc', 'desc'], default: 'asc' })
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc' = 'asc';
 }

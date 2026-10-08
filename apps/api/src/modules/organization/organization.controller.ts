@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Put,
+  Patch,
   Post,
   Delete,
   Body,
@@ -10,7 +11,7 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
@@ -20,10 +21,14 @@ import {
   UpdateOrganizationDto,
   CreateBranchDto,
   UpdateBranchDto,
+  BranchFilterDto,
   CreateDepartmentDto,
   UpdateDepartmentDto,
+  DepartmentFilterDto,
   CreateDesignationDto,
   UpdateDesignationDto,
+  DesignationFilterDto,
+  DeactivateEntityDto,
 } from './dto/organization.dto';
 import { AuthenticatedRequest } from '../auth/interfaces/auth.interface';
 
@@ -64,8 +69,24 @@ export class OrganizationsController {
 
   @Put('current')
   @RequirePermissions('ORGANIZATION_UPDATE')
-  @ApiOperation({ summary: 'Update organization details' })
+  @ApiOperation({ summary: 'Update organization details (PUT)' })
   async updateCurrent(@Req() req: AuthenticatedRequest, @Body() dto: UpdateOrganizationDto) {
+    const data = await this.organizationService.updateOrganization(
+      req.user.organizationId,
+      dto,
+      req.user.id,
+    );
+    return {
+      success: true,
+      message: 'Organization details updated successfully',
+      data,
+    };
+  }
+
+  @Patch('current')
+  @RequirePermissions('ORGANIZATION_UPDATE')
+  @ApiOperation({ summary: 'Partially update organization details (PATCH)' })
+  async patchCurrent(@Req() req: AuthenticatedRequest, @Body() dto: UpdateOrganizationDto) {
     const data = await this.organizationService.updateOrganization(
       req.user.organizationId,
       dto,
@@ -113,24 +134,17 @@ export class BranchesController {
 
   @Get()
   @RequirePermissions('BRANCH_VIEW')
-  @ApiOperation({ summary: 'List all branches with optional status and search filter' })
-  @ApiQuery({ name: 'search', required: false })
-  @ApiQuery({ name: 'status', enum: ['all', 'active', 'inactive'], required: false })
-  async findAll(
-    @Req() req: AuthenticatedRequest,
-    @Query('search') search?: string,
-    @Query('status') status?: 'all' | 'active' | 'inactive',
-  ) {
-    const data = await this.organizationService.findAllBranches({
+  @ApiOperation({ summary: 'List all branches with pagination, search, status, and sorting' })
+  async findAll(@Req() req: AuthenticatedRequest, @Query() query: BranchFilterDto) {
+    const result = await this.organizationService.findAllBranches({
       organizationId: req.user.organizationId,
-      search,
-      status,
+      ...query,
     });
     return {
       success: true,
       message: 'Branches retrieved successfully',
-      data,
-      meta: { total: data.length },
+      data: result.items,
+      meta: result.meta,
     };
   }
 
@@ -164,7 +178,7 @@ export class BranchesController {
 
   @Put(':id')
   @RequirePermissions('BRANCH_UPDATE')
-  @ApiOperation({ summary: 'Update branch details' })
+  @ApiOperation({ summary: 'Update branch details (PUT)' })
   async update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -178,9 +192,41 @@ export class BranchesController {
     };
   }
 
+  @Patch(':id')
+  @RequirePermissions('BRANCH_UPDATE')
+  @ApiOperation({ summary: 'Partially update branch details (PATCH)' })
+  async patch(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateBranchDto,
+  ) {
+    const data = await this.organizationService.updateBranch(id, dto, req.user.id);
+    return {
+      success: true,
+      message: 'Branch updated successfully',
+      data,
+    };
+  }
+
+  @Patch(':id/deactivate')
+  @RequirePermissions('BRANCH_DELETE')
+  @ApiOperation({ summary: 'Soft-deactivate branch (PATCH)' })
+  async patchDeactivate(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() _dto?: DeactivateEntityDto,
+  ) {
+    const data = await this.organizationService.deactivateBranch(id, req.user.id);
+    return {
+      success: true,
+      message: 'Branch deactivated successfully',
+      data,
+    };
+  }
+
   @Delete(':id')
   @RequirePermissions('BRANCH_DELETE')
-  @ApiOperation({ summary: 'Deactivate branch' })
+  @ApiOperation({ summary: 'Deactivate branch (DELETE)' })
   async deactivate(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const data = await this.organizationService.deactivateBranch(id, req.user.id);
     return {
@@ -204,24 +250,17 @@ export class DepartmentsController {
 
   @Get()
   @RequirePermissions('DEPARTMENT_VIEW')
-  @ApiOperation({ summary: 'List all departments' })
-  @ApiQuery({ name: 'search', required: false })
-  @ApiQuery({ name: 'status', enum: ['all', 'active', 'inactive'], required: false })
-  async findAll(
-    @Req() req: AuthenticatedRequest,
-    @Query('search') search?: string,
-    @Query('status') status?: 'all' | 'active' | 'inactive',
-  ) {
-    const data = await this.organizationService.findAllDepartments({
+  @ApiOperation({ summary: 'List all departments with pagination, search, status, and sorting' })
+  async findAll(@Req() req: AuthenticatedRequest, @Query() query: DepartmentFilterDto) {
+    const result = await this.organizationService.findAllDepartments({
       organizationId: req.user.organizationId,
-      search,
-      status,
+      ...query,
     });
     return {
       success: true,
       message: 'Departments retrieved successfully',
-      data,
-      meta: { total: data.length },
+      data: result.items,
+      meta: result.meta,
     };
   }
 
@@ -255,7 +294,7 @@ export class DepartmentsController {
 
   @Put(':id')
   @RequirePermissions('DEPARTMENT_UPDATE')
-  @ApiOperation({ summary: 'Update department details' })
+  @ApiOperation({ summary: 'Update department details (PUT)' })
   async update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -269,9 +308,41 @@ export class DepartmentsController {
     };
   }
 
+  @Patch(':id')
+  @RequirePermissions('DEPARTMENT_UPDATE')
+  @ApiOperation({ summary: 'Partially update department details (PATCH)' })
+  async patch(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateDepartmentDto,
+  ) {
+    const data = await this.organizationService.updateDepartment(id, dto, req.user.id);
+    return {
+      success: true,
+      message: 'Department updated successfully',
+      data,
+    };
+  }
+
+  @Patch(':id/deactivate')
+  @RequirePermissions('DEPARTMENT_DELETE')
+  @ApiOperation({ summary: 'Soft-deactivate department (PATCH)' })
+  async patchDeactivate(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() _dto?: DeactivateEntityDto,
+  ) {
+    const data = await this.organizationService.deactivateDepartment(id, req.user.id);
+    return {
+      success: true,
+      message: 'Department deactivated successfully',
+      data,
+    };
+  }
+
   @Delete(':id')
   @RequirePermissions('DEPARTMENT_DELETE')
-  @ApiOperation({ summary: 'Deactivate department' })
+  @ApiOperation({ summary: 'Deactivate department (DELETE)' })
   async deactivate(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const data = await this.organizationService.deactivateDepartment(id, req.user.id);
     return {
@@ -295,27 +366,17 @@ export class DesignationsController {
 
   @Get()
   @RequirePermissions('DESIGNATION_VIEW')
-  @ApiOperation({ summary: 'List all designations' })
-  @ApiQuery({ name: 'search', required: false })
-  @ApiQuery({ name: 'departmentId', required: false })
-  @ApiQuery({ name: 'status', enum: ['all', 'active', 'inactive'], required: false })
-  async findAll(
-    @Req() req: AuthenticatedRequest,
-    @Query('search') search?: string,
-    @Query('departmentId') departmentId?: string,
-    @Query('status') status?: 'all' | 'active' | 'inactive',
-  ) {
-    const data = await this.organizationService.findAllDesignations({
+  @ApiOperation({ summary: 'List all designations with pagination, search, status, and sorting' })
+  async findAll(@Req() req: AuthenticatedRequest, @Query() query: DesignationFilterDto) {
+    const result = await this.organizationService.findAllDesignations({
       organizationId: req.user.organizationId,
-      departmentId,
-      search,
-      status,
+      ...query,
     });
     return {
       success: true,
       message: 'Designations retrieved successfully',
-      data,
-      meta: { total: data.length },
+      data: result.items,
+      meta: result.meta,
     };
   }
 
@@ -349,7 +410,7 @@ export class DesignationsController {
 
   @Put(':id')
   @RequirePermissions('DESIGNATION_UPDATE')
-  @ApiOperation({ summary: 'Update designation details' })
+  @ApiOperation({ summary: 'Update designation details (PUT)' })
   async update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -363,9 +424,41 @@ export class DesignationsController {
     };
   }
 
+  @Patch(':id')
+  @RequirePermissions('DESIGNATION_UPDATE')
+  @ApiOperation({ summary: 'Partially update designation details (PATCH)' })
+  async patch(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateDesignationDto,
+  ) {
+    const data = await this.organizationService.updateDesignation(id, dto, req.user.id);
+    return {
+      success: true,
+      message: 'Designation updated successfully',
+      data,
+    };
+  }
+
+  @Patch(':id/deactivate')
+  @RequirePermissions('DESIGNATION_DELETE')
+  @ApiOperation({ summary: 'Soft-deactivate designation (PATCH)' })
+  async patchDeactivate(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() _dto?: DeactivateEntityDto,
+  ) {
+    const data = await this.organizationService.deactivateDesignation(id, req.user.id);
+    return {
+      success: true,
+      message: 'Designation deactivated successfully',
+      data,
+    };
+  }
+
   @Delete(':id')
   @RequirePermissions('DESIGNATION_DELETE')
-  @ApiOperation({ summary: 'Deactivate designation' })
+  @ApiOperation({ summary: 'Deactivate designation (DELETE)' })
   async deactivate(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     const data = await this.organizationService.deactivateDesignation(id, req.user.id);
     return {

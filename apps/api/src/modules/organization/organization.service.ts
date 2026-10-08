@@ -131,6 +131,10 @@ export class OrganizationService {
     organizationId?: string;
     search?: string;
     status?: 'all' | 'active' | 'inactive';
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
   }) {
     const where: any = {};
     if (params.organizationId) {
@@ -149,18 +153,41 @@ export class OrganizationService {
       ];
     }
 
-    const branches = await this.prisma.branch.findMany({
-      where,
-      include: {
-        _count: { select: { employments: true } },
-      },
-      orderBy: { name: 'asc' },
-    });
+    const page = params.page ? Math.max(1, Number(params.page)) : undefined;
+    const limit = params.limit ? Math.max(1, Number(params.limit)) : undefined;
+    const skip = page && limit ? (page - 1) * limit : undefined;
 
-    return branches.map((b) => ({
+    const allowedSortFields = ['name', 'code', 'city', 'createdAt', 'isActive'];
+    const sortBy = allowedSortFields.includes(params.sortBy || '') ? params.sortBy! : 'name';
+    const sortOrder = params.sortOrder === 'desc' ? 'desc' : 'asc';
+
+    const [total, branches] = await Promise.all([
+      this.prisma.branch.count({ where }),
+      this.prisma.branch.findMany({
+        where,
+        include: {
+          _count: { select: { employments: true } },
+        },
+        orderBy: { [sortBy]: sortOrder },
+        ...(skip !== undefined && { skip }),
+        ...(limit !== undefined && { take: limit }),
+      }),
+    ]);
+
+    const items = branches.map((b: any) => ({
       ...b,
-      employeeCount: b._count.employments,
+      employeeCount: b._count?.employments ?? 0,
     }));
+
+    return {
+      items,
+      meta: {
+        total,
+        page: page || 1,
+        limit: limit || total,
+        totalPages: limit ? Math.ceil(total / limit) || 1 : 1,
+      },
+    };
   }
 
   async findBranchById(id: string) {
@@ -302,6 +329,10 @@ export class OrganizationService {
     organizationId?: string;
     search?: string;
     status?: 'all' | 'active' | 'inactive';
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
   }) {
     const where: any = {};
     if (params.organizationId) {
@@ -319,32 +350,55 @@ export class OrganizationService {
       ];
     }
 
-    const departments = await this.prisma.department.findMany({
-      where,
-      include: {
-        departmentHead: {
-          select: {
-            id: true,
-            displayName: true,
-            employeeCode: true,
-          },
-        },
-        parentDepartment: {
-          select: {
-            id: true,
-            name: true,
-            code: true,
-          },
-        },
-        _count: { select: { employments: true } },
-      },
-      orderBy: { name: 'asc' },
-    });
+    const page = params.page ? Math.max(1, Number(params.page)) : undefined;
+    const limit = params.limit ? Math.max(1, Number(params.limit)) : undefined;
+    const skip = page && limit ? (page - 1) * limit : undefined;
 
-    return departments.map((d) => ({
+    const allowedSortFields = ['name', 'code', 'createdAt', 'isActive'];
+    const sortBy = allowedSortFields.includes(params.sortBy || '') ? params.sortBy! : 'name';
+    const sortOrder = params.sortOrder === 'desc' ? 'desc' : 'asc';
+
+    const [total, departments] = await Promise.all([
+      this.prisma.department.count({ where }),
+      this.prisma.department.findMany({
+        where,
+        include: {
+          departmentHead: {
+            select: {
+              id: true,
+              displayName: true,
+              employeeCode: true,
+            },
+          },
+          parentDepartment: {
+            select: {
+              id: true,
+              name: true,
+              code: true,
+            },
+          },
+          _count: { select: { employments: true } },
+        },
+        orderBy: { [sortBy]: sortOrder },
+        ...(skip !== undefined && { skip }),
+        ...(limit !== undefined && { take: limit }),
+      }),
+    ]);
+
+    const items = departments.map((d: any) => ({
       ...d,
-      employeeCount: d._count.employments,
+      employeeCount: d._count?.employments ?? 0,
     }));
+
+    return {
+      items,
+      meta: {
+        total,
+        page: page || 1,
+        limit: limit || total,
+        totalPages: limit ? Math.ceil(total / limit) || 1 : 1,
+      },
+    };
   }
 
   async findDepartmentById(id: string) {
@@ -485,6 +539,10 @@ export class OrganizationService {
     departmentId?: string;
     search?: string;
     status?: 'all' | 'active' | 'inactive';
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
   }) {
     const where: any = {};
     if (params.organizationId) {
@@ -505,21 +563,44 @@ export class OrganizationService {
       ];
     }
 
-    const designations = await this.prisma.designation.findMany({
-      where,
-      include: {
-        department: {
-          select: { id: true, name: true, code: true },
-        },
-        _count: { select: { employments: true } },
-      },
-      orderBy: [{ level: 'desc' }, { title: 'asc' }],
-    });
+    const page = params.page ? Math.max(1, Number(params.page)) : undefined;
+    const limit = params.limit ? Math.max(1, Number(params.limit)) : undefined;
+    const skip = page && limit ? (page - 1) * limit : undefined;
 
-    return designations.map((d) => ({
+    const allowedSortFields = ['level', 'title', 'code', 'createdAt', 'isActive'];
+    const sortBy = allowedSortFields.includes(params.sortBy || '') ? params.sortBy! : 'level';
+    const sortOrder = params.sortOrder === 'desc' ? 'desc' : 'asc';
+
+    const [total, designations] = await Promise.all([
+      this.prisma.designation.count({ where }),
+      this.prisma.designation.findMany({
+        where,
+        include: {
+          department: {
+            select: { id: true, name: true, code: true },
+          },
+          _count: { select: { employments: true } },
+        },
+        orderBy: { [sortBy]: sortOrder },
+        ...(skip !== undefined && { skip }),
+        ...(limit !== undefined && { take: limit }),
+      }),
+    ]);
+
+    const items = designations.map((d: any) => ({
       ...d,
-      employeeCount: d._count.employments,
+      employeeCount: d._count?.employments ?? 0,
     }));
+
+    return {
+      items,
+      meta: {
+        total,
+        page: page || 1,
+        limit: limit || total,
+        totalPages: limit ? Math.ceil(total / limit) || 1 : 1,
+      },
+    };
   }
 
   async findDesignationById(id: string) {

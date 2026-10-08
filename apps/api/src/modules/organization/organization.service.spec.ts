@@ -229,5 +229,115 @@ describe('OrganizationService', () => {
         service.createDesignation({ code: 'CTO', title: 'Chief Technology Officer' }, mockOrgId),
       ).rejects.toThrow(ConflictException);
     });
+
+    it('should soft-deactivate designation and record audit event', async () => {
+      prisma.designation.findUnique.mockResolvedValue({
+        id: 'desig-1',
+        organizationId: mockOrgId,
+        title: 'Staff Engineer',
+        _count: { employments: 3 },
+      });
+      prisma.designation.update.mockResolvedValue({ id: 'desig-1', isActive: false });
+
+      const result = await service.deactivateDesignation('desig-1', 'usr-admin');
+      expect(result.isActive).toBe(false);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'DESIGNATION_DEACTIVATED',
+          metadata: expect.objectContaining({ employeeCount: 3 }),
+        }),
+      );
+    });
+  });
+
+  describe('Pagination, Filtering, and Search Queries', () => {
+    it('should paginate and filter branches with search', async () => {
+      prisma.branch.count.mockResolvedValue(1);
+      prisma.branch.findMany.mockResolvedValue([
+        {
+          id: 'br-blr',
+          name: 'Bengaluru HQ',
+          code: 'BLR-HQ',
+          city: 'Bengaluru',
+          isActive: true,
+          _count: { employments: 10 },
+        },
+      ]);
+
+      const result = await service.findAllBranches({
+        organizationId: mockOrgId,
+        search: 'Bengaluru',
+        status: 'active',
+        page: 1,
+        limit: 10,
+        sortBy: 'name',
+        sortOrder: 'asc',
+      });
+
+      expect(result.items.length).toBe(1);
+      expect(result.items[0].employeeCount).toBe(10);
+      expect(result.meta).toEqual({
+        total: 1,
+        page: 1,
+        limit: 10,
+        totalPages: 1,
+      });
+    });
+
+    it('should paginate and filter departments', async () => {
+      prisma.department.count.mockResolvedValue(2);
+      prisma.department.findMany.mockResolvedValue([
+        {
+          id: 'dept-eng',
+          name: 'Engineering',
+          code: 'ENG',
+          isActive: true,
+          _count: { employments: 15 },
+        },
+        {
+          id: 'dept-hr',
+          name: 'People Operations',
+          code: 'HR',
+          isActive: true,
+          _count: { employments: 3 },
+        },
+      ]);
+
+      const result = await service.findAllDepartments({
+        organizationId: mockOrgId,
+        page: 1,
+        limit: 50,
+      });
+
+      expect(result.items.length).toBe(2);
+      expect(result.items[0].employeeCount).toBe(15);
+      expect(result.meta.total).toBe(2);
+    });
+
+    it('should paginate and filter designations with departmentId', async () => {
+      prisma.designation.count.mockResolvedValue(1);
+      prisma.designation.findMany.mockResolvedValue([
+        {
+          id: 'desig-lead',
+          title: 'Engineering Lead',
+          code: 'EM',
+          level: 4,
+          departmentId: 'dept-eng',
+          isActive: true,
+          _count: { employments: 4 },
+        },
+      ]);
+
+      const result = await service.findAllDesignations({
+        organizationId: mockOrgId,
+        departmentId: 'dept-eng',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(result.items.length).toBe(1);
+      expect(result.items[0].title).toBe('Engineering Lead');
+      expect(result.meta.totalPages).toBe(1);
+    });
   });
 });
