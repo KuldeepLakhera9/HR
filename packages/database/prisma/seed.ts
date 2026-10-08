@@ -201,33 +201,168 @@ async function main() {
     }
   }
 
-  // 7. Seed Granular Permissions & Role Permissions
+  // 7. Seed Granular Permissions (RESOURCE_ACTION Naming Convention)
   const permissionsToSeed = [
-    { code: 'org:read', name: 'View Organization', module: 'organization' },
-    { code: 'org:write', name: 'Manage Organization', module: 'organization' },
-    { code: 'employees:read', name: 'View Employees', module: 'employees' },
-    { code: 'employees:write', name: 'Create/Edit Employees', module: 'employees' },
-    { code: 'attendance:punch', name: 'Punch Attendance', module: 'attendance' },
-    { code: 'attendance:read:team', name: 'View Team Attendance', module: 'attendance' },
-    { code: 'attendance:manage', name: 'Manage Attendance', module: 'attendance' },
-    { code: 'leave:apply', name: 'Apply For Leave', module: 'leave' },
-    { code: 'leave:approve', name: 'Approve Leaves', module: 'leave' },
-    { code: 'visits:apply', name: 'Apply Official Visit', module: 'visits' },
-    { code: 'visits:approve', name: 'Approve Official Visits', module: 'visits' },
-    { code: 'reports:view', name: 'View Analytics & MIS', module: 'reports' },
-    { code: 'roles:manage', name: 'Manage Roles & Access', module: 'roles' },
-    { code: 'audit:read', name: 'View Audit Trail', module: 'audit' },
+    // User Management
+    { code: 'USER_VIEW', name: 'View System Users', module: 'USER' },
+    { code: 'USER_CREATE', name: 'Create System Users', module: 'USER' },
+    { code: 'USER_UPDATE', name: 'Update System Users', module: 'USER' },
+    { code: 'USER_DELETE', name: 'Delete System Users', module: 'USER' },
+
+    // Role & Permission Management
+    { code: 'ROLE_VIEW', name: 'View Roles & Permissions', module: 'ROLE' },
+    { code: 'ROLE_UPDATE', name: 'Modify Roles & Permissions', module: 'ROLE' },
+
+    // Employee Master
+    { code: 'EMPLOYEE_VIEW', name: 'View Employee Directory', module: 'EMPLOYEE' },
+    { code: 'EMPLOYEE_CREATE', name: 'Create Employee Records', module: 'EMPLOYEE' },
+    { code: 'EMPLOYEE_UPDATE', name: 'Update Employee Records', module: 'EMPLOYEE' },
+    { code: 'EMPLOYEE_DELETE', name: 'Deactivate Employee Records', module: 'EMPLOYEE' },
+
+    // Attendance Management
+    { code: 'ATTENDANCE_VIEW', name: 'View Attendance Records', module: 'ATTENDANCE' },
+    { code: 'ATTENDANCE_MARK', name: 'Mark Attendance Punch', module: 'ATTENDANCE' },
+    { code: 'ATTENDANCE_UPDATE', name: 'Modify Attendance Logs', module: 'ATTENDANCE' },
+    { code: 'ATTENDANCE_APPROVE', name: 'Approve Attendance Adjustments', module: 'ATTENDANCE' },
+
+    // Leave Management
+    { code: 'LEAVE_VIEW', name: 'View Leave Requests & Balances', module: 'LEAVE' },
+    { code: 'LEAVE_APPLY', name: 'Apply For Leave', module: 'LEAVE' },
+    { code: 'LEAVE_APPROVE', name: 'Approve Leave Requests', module: 'LEAVE' },
+    { code: 'LEAVE_REJECT', name: 'Reject Leave Requests', module: 'LEAVE' },
+
+    // Official Visits
+    { code: 'VISIT_VIEW', name: 'View Official Visits', module: 'VISIT' },
+    { code: 'VISIT_APPLY', name: 'Apply For Official Visit', module: 'VISIT' },
+    { code: 'VISIT_APPROVE', name: 'Approve Official Visits', module: 'VISIT' },
+
+    // Documents
+    { code: 'DOCUMENT_VIEW', name: 'View Documents', module: 'DOCUMENT' },
+    { code: 'DOCUMENT_UPLOAD', name: 'Upload Documents', module: 'DOCUMENT' },
+    { code: 'DOCUMENT_DELETE', name: 'Delete Documents', module: 'DOCUMENT' },
+
+    // Reports & Analytics
+    { code: 'REPORT_VIEW', name: 'View Analytics & MIS Reports', module: 'REPORT' },
+    { code: 'REPORT_EXPORT', name: 'Export MIS Reports', module: 'REPORT' },
+
+    // Audit Log
+    { code: 'AUDIT_VIEW', name: 'View Audit Trail', module: 'AUDIT' },
+
+    // Organization Structure
+    { code: 'ORGANIZATION_VIEW', name: 'View Organization Structure', module: 'ORGANIZATION' },
+    { code: 'ORGANIZATION_UPDATE', name: 'Update Organization Structure', module: 'ORGANIZATION' },
+
+    // System Settings
+    { code: 'SETTING_VIEW', name: 'View System Settings', module: 'SETTING' },
+    { code: 'SETTING_UPDATE', name: 'Update System Settings', module: 'SETTING' },
   ];
 
+  const permissionRecords: Record<string, string> = {};
   for (const perm of permissionsToSeed) {
-    await prisma.permission.upsert({
+    const record = await prisma.permission.upsert({
       where: { code: perm.code },
-      update: {},
+      update: { name: perm.name, module: perm.module },
       create: perm,
     });
+    permissionRecords[perm.code] = record.id;
   }
 
-  // 8. System Settings
+  // 8. Map Permissions to the Exactly Four Application Roles
+  const allPermissionCodes = permissionsToSeed.map((p) => p.code);
+
+  const rolePermissionsMap: Record<RoleCode, string[]> = {
+    // ADMIN receives all current permissions
+    [RoleCode.ADMIN]: allPermissionCodes,
+
+    // HR receives HR-related permissions
+    [RoleCode.HR]: [
+      'USER_VIEW',
+      'ROLE_VIEW',
+      'EMPLOYEE_VIEW',
+      'EMPLOYEE_CREATE',
+      'EMPLOYEE_UPDATE',
+      'EMPLOYEE_DELETE',
+      'ATTENDANCE_VIEW',
+      'ATTENDANCE_MARK',
+      'ATTENDANCE_UPDATE',
+      'ATTENDANCE_APPROVE',
+      'LEAVE_VIEW',
+      'LEAVE_APPLY',
+      'LEAVE_APPROVE',
+      'LEAVE_REJECT',
+      'VISIT_VIEW',
+      'VISIT_APPLY',
+      'VISIT_APPROVE',
+      'DOCUMENT_VIEW',
+      'DOCUMENT_UPLOAD',
+      'DOCUMENT_DELETE',
+      'REPORT_VIEW',
+      'REPORT_EXPORT',
+      'AUDIT_VIEW',
+      'ORGANIZATION_VIEW',
+      'SETTING_VIEW',
+    ],
+
+    // MANAGER receives team-management permissions
+    [RoleCode.MANAGER]: [
+      'EMPLOYEE_VIEW',
+      'ATTENDANCE_VIEW',
+      'ATTENDANCE_MARK',
+      'ATTENDANCE_APPROVE',
+      'LEAVE_VIEW',
+      'LEAVE_APPLY',
+      'LEAVE_APPROVE',
+      'LEAVE_REJECT',
+      'VISIT_VIEW',
+      'VISIT_APPLY',
+      'VISIT_APPROVE',
+      'DOCUMENT_VIEW',
+      'REPORT_VIEW',
+    ],
+
+    // EMPLOYEE receives self-service permissions
+    [RoleCode.EMPLOYEE]: [
+      'ATTENDANCE_VIEW',
+      'ATTENDANCE_MARK',
+      'LEAVE_VIEW',
+      'LEAVE_APPLY',
+      'VISIT_VIEW',
+      'VISIT_APPLY',
+      'DOCUMENT_VIEW',
+    ],
+  };
+
+  for (const [roleCode, permCodes] of Object.entries(rolePermissionsMap) as [
+    RoleCode,
+    string[],
+  ][]) {
+    const role = await prisma.role.findFirst({
+      where: { organizationId: org.id, code: roleCode },
+    });
+
+    if (role) {
+      for (const permCode of permCodes) {
+        const permissionId = permissionRecords[permCode];
+        if (permissionId) {
+          await prisma.rolePermission.upsert({
+            where: {
+              roleId_permissionId: {
+                roleId: role.id,
+                permissionId,
+              },
+            },
+            update: {},
+            create: {
+              roleId: role.id,
+              permissionId,
+            },
+          });
+        }
+      }
+    }
+  }
+
+  // 9. System Settings
   await prisma.systemSetting.upsert({
     where: {
       organizationId_key: {

@@ -2,6 +2,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
+import cookieParser from 'cookie-parser';
 import { AllExceptionsFilter } from './common/filters/http-exception.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
@@ -10,11 +11,14 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
-  // 1. Global Prefix - /api/v1
+  // 1. Cookie Parser
+  app.use(cookieParser());
+
+  // 2. Global Prefix - /api/v1
   const apiPrefix = process.env.API_PREFIX || 'api/v1';
   app.setGlobalPrefix(apiPrefix);
 
-  // 2. Global Validation
+  // 3. Global Validation
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -24,13 +28,17 @@ async function bootstrap() {
     }),
   );
 
-  // 3. Global Filters & Interceptors
+  // 4. Global Filters & Interceptors
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
 
-  // 4. CORS
+  // 5. CORS
+  const allowedOrigins = process.env.CORS_ORIGIN
+    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
+    : ['http://localhost:3000', 'http://127.0.0.1:3000'];
+
   app.enableCors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: allowedOrigins,
     credentials: true,
   });
 

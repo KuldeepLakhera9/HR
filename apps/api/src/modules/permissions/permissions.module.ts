@@ -1,35 +1,44 @@
-import { Controller, Get, Injectable, Module } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Param, Injectable, Module, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { PermissionsGuard } from '../../common/guards/permissions.guard';
+import { RequirePermissions } from '../../common/decorators/permissions.decorator';
 
 @Injectable()
 export class PermissionsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  /**
+   * Retrieve all defined system permissions in RESOURCE_ACTION format
+   */
   async findAll() {
-    return [
-      { id: 'p1', code: 'org:manage', name: 'Manage Organization', module: 'organization' },
-      { id: 'p2', code: 'employees:read', name: 'View Employees', module: 'employees' },
-      { id: 'p3', code: 'employees:write', name: 'Create/Edit Employees', module: 'employees' },
-      { id: 'p4', code: 'attendance:mark', name: 'Mark Own Attendance', module: 'attendance' },
-      {
-        id: 'p5',
-        code: 'attendance:manage',
-        name: 'Manage Organization Attendance',
-        module: 'attendance',
-      },
-      { id: 'p6', code: 'leave:apply', name: 'Apply For Leave', module: 'leave' },
-      { id: 'p7', code: 'leave:approve', name: 'Approve Leave Requests', module: 'leave' },
-      { id: 'p8', code: 'visits:apply', name: 'Apply Official Visit', module: 'visits' },
-      { id: 'p9', code: 'visits:approve', name: 'Approve Official Visits', module: 'visits' },
-      { id: 'p10', code: 'reports:view', name: 'View Analytics & MIS', module: 'reports' },
-    ];
+    return this.prisma.permission.findMany({
+      orderBy: [{ module: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  /**
+   * Retrieve permissions by functional module
+   */
+  async findByModule(module: string) {
+    return this.prisma.permission.findMany({
+      where: { module: module.toUpperCase() },
+      orderBy: { code: 'asc' },
+    });
   }
 }
 
 @ApiTags('Permissions')
+@ApiBearerAuth()
+@UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('permissions')
 export class PermissionsController {
   constructor(private readonly permissionsService: PermissionsService) {}
 
   @Get()
+  @RequirePermissions('ROLE_VIEW')
   @ApiOperation({ summary: 'List granular permission catalog' })
   async findAll() {
     const data = await this.permissionsService.findAll();
@@ -38,11 +47,22 @@ export class PermissionsController {
       data,
     };
   }
+
+  @Get('module/:module')
+  @RequirePermissions('ROLE_VIEW')
+  @ApiOperation({ summary: 'List permissions for a specific module' })
+  async findByModule(@Param('module') module: string) {
+    const data = await this.permissionsService.findByModule(module);
+    return {
+      message: `Permissions for module '${module}' retrieved`,
+      data,
+    };
+  }
 }
 
 @Module({
   controllers: [PermissionsController],
-  providers: [PermissionsService],
+  providers: [PermissionsService, RolesGuard, PermissionsGuard],
   exports: [PermissionsService],
 })
 export class PermissionsModule {}
