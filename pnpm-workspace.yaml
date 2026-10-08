@@ -9,3 +9,5 @@ allowBuilds:
   prisma: true
   '@scarf/scarf': true
   unrs-resolver: true
+  argon2: true
+  '@parcel/watcher': true

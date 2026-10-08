@@ -23,6 +23,8 @@ export type AttendanceStatus =
   'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'ON_LEAVE' | 'HOLIDAY' | 'WEEK_OFF';
 
 // 3. User & Auth Profile
+export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'LOCKED';
+
 export interface UserProfile {
   id: string;
   email: string;
@@ -36,7 +38,31 @@ export interface UserProfile {
   departmentName?: string | null;
   designationId?: string | null;
   designationTitle?: string | null;
+  status?: UserStatus;
   isActive: boolean;
+  lastLoginAt?: string | null;
+  failedLoginAttempts?: number;
+  lockedUntil?: string | null;
+}
+
+export interface SessionInfo {
+  id: string;
+  userId: string;
+  expiresAt: string;
+  revokedAt?: string | null;
+  lastUsedAt: string;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  deviceName?: string | null;
+  createdAt: string;
+}
+
+export interface PasswordResetTokenInfo {
+  id: string;
+  userId: string;
+  expiresAt: string;
+  usedAt?: string | null;
+  createdAt: string;
 }
 
 // 4. API Standard Envelope (Requirement 5)

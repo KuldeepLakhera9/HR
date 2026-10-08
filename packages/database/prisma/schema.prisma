@@ -131,6 +131,13 @@ enum RoleCode {
   EMPLOYEE
 }
 
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  LOCKED
+}
+
 model User {
   id                String         @id @default(uuid())
   organizationId    String
@@ -150,16 +157,22 @@ model User {
   phone             String?
   avatarUrl         String?
 
-  isActive          Boolean        @default(true)
-  isEmailVerified   Boolean        @default(false)
-  lastLoginAt       DateTime?
+  status              UserStatus     @default(ACTIVE)
+  isActive            Boolean        @default(true)
+  isEmailVerified     Boolean        @default(false)
+  lastLoginAt         DateTime?
+  failedLoginAttempts Int            @default(0)
+  lockedUntil         DateTime?
+  lastLoginIp         String?
   
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
   deletedAt         DateTime?
 
-  userRoles         UserRole[]
-  auditLogs         AuditLog[]
+  userRoles           UserRole[]
+  auditLogs           AuditLog[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -168,7 +181,49 @@ model User {
   @@index([employeeCode])
   @@index([departmentId])
   @@index([branchId])
+  @@index([status])
+  @@index([isActive])
   @@map("users")
+}
+
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  refreshTokenHash String    @unique
+  expiresAt        DateTime
+  revokedAt        DateTime?
+  lastUsedAt       DateTime  @default(now())
+  ipAddress        String?
+  userAgent        String?
+  deviceName       String?
+
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([refreshTokenHash])
+  @@index([expiresAt])
+  @@index([revokedAt])
+  @@map("sessions")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 model Role {

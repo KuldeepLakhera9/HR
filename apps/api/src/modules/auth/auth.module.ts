@@ -63,9 +63,11 @@ export class AuthController {
   }
 }
 
+import { PasswordService } from './password.service';
+
 @Module({
   controllers: [AuthController],
-  providers: [AuthService],
-  exports: [AuthService],
+  providers: [AuthService, PasswordService],
+  exports: [AuthService, PasswordService],
 })
 export class AuthModule {}

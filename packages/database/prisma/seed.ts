@@ -1,4 +1,4 @@
-import { PrismaClient, RoleCode } from '@prisma/client';
+import { PrismaClient, RoleCode, UserStatus } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -158,7 +158,10 @@ async function main() {
           email: u.email,
         },
       },
-      update: {},
+      update: {
+        passwordHash:
+          '$argon2id$v=19$m=65536,p=4,t=3$RtLrf7yRIv58OUiRnn+C9Q$boeWAvt1AnaJGPdlZC7HXYBli7iUUUpX+uR22uWVeFI',
+      },
       create: {
         organizationId: org.id,
         branchId: hqBranch.id,
@@ -166,10 +169,13 @@ async function main() {
         designationId: u.desigId,
         employeeCode: u.code,
         email: u.email,
-        passwordHash: '$2b$10$eO0gWpS3Z0Q9o7Q1Z4gZ.uO6Lh6s7J1J2k3l4m5n6o7p8q9r0s1t2', // dev mock hash
+        passwordHash:
+          '$argon2id$v=19$m=65536,p=4,t=3$RtLrf7yRIv58OUiRnn+C9Q$boeWAvt1AnaJGPdlZC7HXYBli7iUUUpX+uR22uWVeFI',
         firstName: u.firstName,
         lastName: u.lastName,
+        status: UserStatus.ACTIVE,
         isActive: true,
+        failedLoginAttempts: 0,
       },
     });
 
@@ -195,7 +201,33 @@ async function main() {
     }
   }
 
-  // 7. System Settings
+  // 7. Seed Granular Permissions & Role Permissions
+  const permissionsToSeed = [
+    { code: 'org:read', name: 'View Organization', module: 'organization' },
+    { code: 'org:write', name: 'Manage Organization', module: 'organization' },
+    { code: 'employees:read', name: 'View Employees', module: 'employees' },
+    { code: 'employees:write', name: 'Create/Edit Employees', module: 'employees' },
+    { code: 'attendance:punch', name: 'Punch Attendance', module: 'attendance' },
+    { code: 'attendance:read:team', name: 'View Team Attendance', module: 'attendance' },
+    { code: 'attendance:manage', name: 'Manage Attendance', module: 'attendance' },
+    { code: 'leave:apply', name: 'Apply For Leave', module: 'leave' },
+    { code: 'leave:approve', name: 'Approve Leaves', module: 'leave' },
+    { code: 'visits:apply', name: 'Apply Official Visit', module: 'visits' },
+    { code: 'visits:approve', name: 'Approve Official Visits', module: 'visits' },
+    { code: 'reports:view', name: 'View Analytics & MIS', module: 'reports' },
+    { code: 'roles:manage', name: 'Manage Roles & Access', module: 'roles' },
+    { code: 'audit:read', name: 'View Audit Trail', module: 'audit' },
+  ];
+
+  for (const perm of permissionsToSeed) {
+    await prisma.permission.upsert({
+      where: { code: perm.code },
+      update: {},
+      create: perm,
+    });
+  }
+
+  // 8. System Settings
   await prisma.systemSetting.upsert({
     where: {
       organizationId_key: {
