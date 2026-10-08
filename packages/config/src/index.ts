@@ -127,7 +127,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/organization',
       icon: 'Building2',
       allowedRoles: ['ADMIN'],
-      requiredPermission: 'SETTING_VIEW',
+      requiredPermission: 'ORGANIZATION_VIEW',
     },
     {
       id: 'admin-employees',
@@ -136,6 +136,14 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'Users',
       allowedRoles: ['ADMIN'],
       requiredPermission: 'EMPLOYEE_VIEW',
+    },
+    {
+      id: 'admin-org-chart',
+      label: 'Org Chart',
+      href: '/org-chart',
+      icon: 'GitFork',
+      allowedRoles: ['ADMIN'],
+      requiredPermission: 'ORG_CHART_VIEW',
     },
     {
       id: 'admin-attendance',
@@ -219,6 +227,22 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       requiredPermission: 'EMPLOYEE_VIEW',
     },
     {
+      id: 'hr-org-chart',
+      label: 'Org Chart',
+      href: '/org-chart',
+      icon: 'GitFork',
+      allowedRoles: ['HR'],
+      requiredPermission: 'ORG_CHART_VIEW',
+    },
+    {
+      id: 'hr-org',
+      label: 'Organization',
+      href: '/organization',
+      icon: 'Building2',
+      allowedRoles: ['HR'],
+      requiredPermission: 'ORGANIZATION_VIEW',
+    },
+    {
       id: 'hr-attendance',
       label: 'Attendance Hub',
       href: '/attendance',
@@ -280,10 +304,18 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
     {
       id: 'mgr-team',
       label: 'My Team',
-      href: '/team',
+      href: '/employees',
       icon: 'Users',
       allowedRoles: ['MANAGER'],
       requiredPermission: 'EMPLOYEE_VIEW',
+    },
+    {
+      id: 'mgr-org-chart',
+      label: 'Org Chart',
+      href: '/org-chart',
+      icon: 'GitFork',
+      allowedRoles: ['MANAGER'],
+      requiredPermission: 'ORG_CHART_VIEW',
     },
     {
       id: 'mgr-attendance',

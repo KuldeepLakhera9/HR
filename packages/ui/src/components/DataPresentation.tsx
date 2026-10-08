@@ -74,9 +74,10 @@ export const TableCell = React.forwardRef<
 TableCell.displayName = 'TableCell';
 
 export interface Column<T> {
-  key: string;
+  key?: string;
   header: string;
   render?: (row: T) => React.ReactNode;
+  accessor?: (row: T) => React.ReactNode;
 }
 
 export interface DataTableProps<T> {
@@ -84,6 +85,7 @@ export interface DataTableProps<T> {
   data: T[];
   emptyMessage?: string;
   isLoading?: boolean;
+  onRowClick?: (row: T) => void;
 }
 
 export function DataTable<T extends { id?: string | number }>({
@@ -91,14 +93,15 @@ export function DataTable<T extends { id?: string | number }>({
   data,
   emptyMessage = 'No records found.',
   isLoading = false,
+  onRowClick,
 }: DataTableProps<T>) {
   return (
     <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-xs">
       <Table aria-busy={isLoading}>
         <TableHeader>
           <TableRow>
-            {columns.map((col) => (
-              <TableHead key={col.key}>{col.header}</TableHead>
+            {columns.map((col, cIdx) => (
+              <TableHead key={col.key || `header-${cIdx}`}>{col.header}</TableHead>
             ))}
           </TableRow>
         </TableHeader>
@@ -106,8 +109,8 @@ export function DataTable<T extends { id?: string | number }>({
           {isLoading ? (
             Array.from({ length: 4 }).map((_, rIdx) => (
               <TableRow key={`skeleton-row-${rIdx}`}>
-                {columns.map((_, cIdx) => (
-                  <TableCell key={`skeleton-cell-${rIdx}-${cIdx}`}>
+                {columns.map((col, cIdx) => (
+                  <TableCell key={col.key || `skeleton-cell-${rIdx}-${cIdx}`}>
                     <div className="h-4 bg-stone-100 rounded-md animate-pulse w-3/4" />
                   </TableCell>
                 ))}
@@ -129,10 +132,22 @@ export function DataTable<T extends { id?: string | number }>({
             </TableRow>
           ) : (
             data.map((row, index) => (
-              <TableRow key={row.id ? String(row.id) : index}>
-                {columns.map((col) => (
-                  <TableCell key={col.key}>
-                    {col.render ? col.render(row) : (row as Record<string, any>)[col.key]}
+              <TableRow
+                key={row.id ? String(row.id) : index}
+                className={
+                  onRowClick ? 'cursor-pointer hover:bg-amber-50/40 transition-colors' : undefined
+                }
+                onClick={() => onRowClick?.(row)}
+              >
+                {columns.map((col, cIdx) => (
+                  <TableCell key={col.key || `cell-${cIdx}`}>
+                    {col.render
+                      ? col.render(row)
+                      : col.accessor
+                        ? col.accessor(row)
+                        : col.key
+                          ? (row as Record<string, any>)[col.key]
+                          : null}
                   </TableCell>
                 ))}
               </TableRow>

@@ -25,6 +25,12 @@ export interface AuthenticatedUser {
   sessionId: string;
 }
 
+export interface AuthenticatedRequest {
+  user: AuthenticatedUser;
+  ip?: string;
+  headers: Record<string, string | string[] | undefined>;
+}
+
 export interface SafeUser {
   id: string;
   email: string;

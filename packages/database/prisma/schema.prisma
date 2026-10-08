@@ -1,5 +1,7 @@
 // Prisma Schema for HRMS Platform Foundation
 // Phase 1: Foundational Core Entities
+// Phase 2: Auth, RBAC, Sessions, Audit
+// Phase 3: Organization and Normalized Employee Management
 
 generator client {
   provider = "prisma-client-js"
@@ -20,7 +22,14 @@ model Organization {
   name           String
   legalName      String?
   logo           String?
+  email          String?
+  phone          String?
   website        String?
+  addressLine1   String?
+  addressLine2   String?
+  city           String?
+  state          String?
+  country        String?         @default("India")
   timezone       String          @default("Asia/Kolkata")
   currency       String          @default("INR")
   isActive       Boolean         @default(true)
@@ -35,6 +44,7 @@ model Organization {
   roles          Role[]
   auditLogs      AuditLog[]
   systemSettings SystemSetting[]
+  employees      Employee[]
 
   @@index([code])
   @@index([isActive])
@@ -42,30 +52,33 @@ model Organization {
 }
 
 model Branch {
-  id                    String        @id @default(uuid())
+  id                    String               @id @default(uuid())
   organizationId        String
-  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name                  String
   code                  String
   addressLine1          String?
   addressLine2          String?
   city                  String?
   state                 String?
-  country               String        @default("India")
+  country               String               @default("India")
   postalCode            String?
-  timezone              String        @default("Asia/Kolkata")
+  timezone              String               @default("Asia/Kolkata")
   
   // Geofencing coordinates ready for future Phase attendance requirements
+  latitude              Float?
+  longitude             Float?
   geofenceLat           Float?
   geofenceLng           Float?
-  geofenceRadiusMeters  Int?          @default(100)
+  geofenceRadiusMeters  Int?                 @default(100)
 
-  isActive              Boolean       @default(true)
-  createdAt             DateTime      @default(now())
-  updatedAt             DateTime      @updatedAt
+  isActive              Boolean              @default(true)
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
   deletedAt             DateTime?
 
   users                 User[]
+  employments           EmployeeEmployment[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -74,45 +87,54 @@ model Branch {
 }
 
 model Department {
-  id                 String         @id @default(uuid())
+  id                 String               @id @default(uuid())
   organizationId     String
-  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name               String
   code               String
+  description        String?
   parentDepartmentId String?
-  parentDepartment   Department?    @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
-  subDepartments     Department[]   @relation("DepartmentHierarchy")
+  parentDepartment   Department?          @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
+  subDepartments     Department[]         @relation("DepartmentHierarchy")
 
-  isActive           Boolean        @default(true)
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
+  departmentHeadId   String?
+  departmentHead     Employee?            @relation("DepartmentHead", fields: [departmentHeadId], references: [id], onDelete: SetNull)
+
+  isActive           Boolean              @default(true)
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
   deletedAt          DateTime?
 
   designations       Designation[]
   users              User[]
+  employments        EmployeeEmployment[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
   @@index([parentDepartmentId])
+  @@index([departmentHeadId])
   @@map("departments")
 }
 
 model Designation {
-  id             String        @id @default(uuid())
+  id             String               @id @default(uuid())
   organizationId String
-  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organization   Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   departmentId   String?
-  department     Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  department     Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   title          String
+  name           String?
   code           String
-  level          Int?          @default(1)
+  description    String?
+  level          Int?                 @default(1)
 
-  isActive       Boolean       @default(true)
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  isActive       Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
   deletedAt      DateTime?
 
   users          User[]
+  employments    EmployeeEmployment[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -139,40 +161,42 @@ enum UserStatus {
 }
 
 model User {
-  id                String         @id @default(uuid())
-  organizationId    String
-  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  branchId          String?
-  branch            Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
-  departmentId      String?
-  department        Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
-  designationId     String?
-  designation       Designation?   @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  id                  String               @id @default(uuid())
+  organizationId      String
+  organization        Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId            String?
+  branch              Branch?              @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId        String?
+  department          Department?          @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designationId       String?
+  designation         Designation?         @relation(fields: [designationId], references: [id], onDelete: SetNull)
 
-  employeeCode      String
-  email             String
-  passwordHash      String
-  firstName         String
-  lastName          String
-  phone             String?
-  avatarUrl         String?
+  employeeCode        String
+  email               String
+  passwordHash        String
+  firstName           String
+  lastName            String
+  phone               String?
+  avatarUrl           String?
 
-  status              UserStatus     @default(ACTIVE)
-  isActive            Boolean        @default(true)
-  isEmailVerified     Boolean        @default(false)
+  status              UserStatus           @default(ACTIVE)
+  isActive            Boolean              @default(true)
+  isEmailVerified     Boolean              @default(false)
   lastLoginAt         DateTime?
-  failedLoginAttempts Int            @default(0)
+  failedLoginAttempts Int                  @default(0)
   lockedUntil         DateTime?
   lastLoginIp         String?
   
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  deletedAt         DateTime?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+  deletedAt           DateTime?
 
   userRoles           UserRole[]
   auditLogs           AuditLog[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+  employee            Employee?
+  performedHistories  EmployeeHistory[]    @relation("HistoryActor")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -249,8 +273,8 @@ model Role {
 model Permission {
   id              String           @id @default(uuid())
   name            String
-  code            String           @unique // e.g. "employees:read", "leave:approve"
-  module          String           // e.g. "attendance", "leave", "employees"
+  code            String           @unique
+  module          String
   description     String?
 
   createdAt       DateTime         @default(now())
@@ -303,8 +327,8 @@ model AuditLog {
   userId         String?
   user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
   
-  action         String        // CREATE, UPDATE, DELETE, LOGIN, APPROVE
-  entity         String        // User, Leave, Attendance, Branch
+  action         String
+  entity         String
   entityId       String?
   oldValues      Json?
   newValues      Json?
@@ -331,7 +355,7 @@ model SystemSetting {
   
   key            String
   value          String
-  type           String        @default("STRING") // STRING, BOOLEAN, JSON, NUMBER
+  type           String        @default("STRING")
   isPublic       Boolean       @default(false)
   description    String?
 
@@ -342,4 +366,214 @@ model SystemSetting {
   @@index([organizationId])
   @@index([key])
   @@map("system_settings")
+}
+
+// -----------------------------------------------------------------------------
+// 5. Normalized Employee Models (Phase 3)
+// -----------------------------------------------------------------------------
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  CONTRACT
+  INTERN
+  CONSULTANT
+}
+
+enum EmploymentStatus {
+  PROBATION
+  ACTIVE
+  ON_NOTICE
+  RESIGNED
+  TERMINATED
+  EXITED
+}
+
+enum WorkMode {
+  OFFICE
+  HYBRID
+  REMOTE
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+  PREFER_NOT_TO_SAY
+}
+
+enum EmployeeHistoryEventType {
+  JOINED
+  DEPARTMENT_CHANGED
+  DESIGNATION_CHANGED
+  MANAGER_CHANGED
+  BRANCH_CHANGED
+  PROMOTED
+  TRANSFERRED
+  STATUS_CHANGED
+  WORK_MODE_CHANGED
+  EXITED
+}
+
+model Employee {
+  id             String           @id @default(uuid())
+  userId         String?          @unique
+  user           User?            @relation(fields: [userId], references: [id], onDelete: SetNull)
+  organizationId String
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  employeeCode   String
+  firstName      String
+  middleName     String?
+  lastName       String
+  displayName    String
+  profilePhoto   String?
+  dateOfBirth    DateTime?
+  gender         Gender?          @default(PREFER_NOT_TO_SAY)
+  status         EmploymentStatus @default(PROBATION)
+  joiningDate    DateTime         @default(now())
+  exitDate       DateTime?
+
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+  deletedAt      DateTime?
+
+  employment         EmployeeEmployment?
+  contact            EmployeeContact?
+  emergencyContacts  EmergencyContact[]
+  history            EmployeeHistory[]
+  documents          EmployeeDocumentMetadata[]
+  headedDepartments  Department[]             @relation("DepartmentHead")
+  managedEmployments EmployeeEmployment[]      @relation("EmployeeManager")
+
+  @@unique([organizationId, employeeCode])
+  @@index([organizationId])
+  @@index([employeeCode])
+  @@index([status])
+  @@index([isActive])
+  @@map("employees")
+}
+
+model EmployeeEmployment {
+  id               String           @id @default(uuid())
+  employeeId       String           @unique
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  
+  branchId         String
+  branch           Branch           @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  departmentId     String
+  department       Department       @relation(fields: [departmentId], references: [id], onDelete: Restrict)
+  designationId    String
+  designation      Designation      @relation(fields: [designationId], references: [id], onDelete: Restrict)
+  
+  managerId        String?
+  manager          Employee?        @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull)
+
+  employmentType   EmploymentType   @default(FULL_TIME)
+  employmentStatus EmploymentStatus @default(PROBATION)
+  workMode         WorkMode         @default(OFFICE)
+
+  joiningDate      DateTime         @default(now())
+  probationEndDate DateTime?
+  confirmationDate DateTime?
+  noticePeriodDays Int              @default(30)
+
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([branchId])
+  @@index([departmentId])
+  @@index([designationId])
+  @@index([managerId])
+  @@index([employmentType])
+  @@index([employmentStatus])
+  @@index([workMode])
+  @@map("employee_employments")
+}
+
+model EmployeeContact {
+  id             String    @id @default(uuid())
+  employeeId     String    @unique
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  workEmail      String
+  personalEmail  String?
+  phone          String?
+  alternatePhone String?
+  address        String?
+  city           String?
+  state          String?
+  postalCode     String?
+  country        String    @default("India")
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([workEmail])
+  @@map("employee_contacts")
+}
+
+model EmergencyContact {
+  id             String    @id @default(uuid())
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  name           String
+  relationship   String
+  phone          String
+  alternatePhone String?
+  address        String?
+  isPrimary      Boolean   @default(false)
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@map("emergency_contacts")
+}
+
+model EmployeeHistory {
+  id             String                    @id @default(uuid())
+  employeeId     String
+  employee       Employee                  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  eventType      EmployeeHistoryEventType
+  previousValue  String?
+  newValue       String?
+  performedById  String?
+  performedBy    User?                     @relation("HistoryActor", fields: [performedById], references: [id], onDelete: SetNull)
+  
+  timestamp      DateTime                  @default(now())
+  metadata       Json?
+
+  @@index([employeeId])
+  @@index([eventType])
+  @@index([timestamp])
+  @@map("employee_history")
+}
+
+model EmployeeDocumentMetadata {
+  id             String    @id @default(uuid())
+  employeeId     String
+  employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  documentType   String
+  documentName   String
+  documentNumber String?
+  fileUrl        String?
+  mimeType       String?
+  fileSize       Int?
+  issueDate      DateTime?
+  expiryDate     DateTime?
+  isVerified     Boolean   @default(false)
+  verifiedAt     DateTime?
+  verifiedById   String?
+
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([employeeId])
+  @@index([documentType])
+  @@map("employee_documents_metadata")
 }

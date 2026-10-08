@@ -240,3 +240,231 @@ export const authApi = {
     return { message: response.message };
   },
 };
+
+/**
+ * Organization REST API contracts (Phase 3)
+ */
+export const organizationApi = {
+  async getOverview() {
+    const res = await fetchWithAuth<any>('/organizations/overview');
+    return res.data;
+  },
+
+  async getCurrent() {
+    const res = await fetchWithAuth<any>('/organizations/current');
+    return res.data;
+  },
+
+  async updateCurrent(data: any) {
+    const res = await fetchWithAuth<any>('/organizations/current', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async getBranches(params?: { search?: string; status?: string }) {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetchWithAuth<any[]>(`/branches${query ? `?${query}` : ''}`);
+    return res.data;
+  },
+
+  async createBranch(data: any) {
+    const res = await fetchWithAuth<any>('/branches', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateBranch(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/branches/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deactivateBranch(id: string) {
+    const res = await fetchWithAuth<any>(`/branches/${id}`, {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+
+  async getDepartments(params?: { search?: string; status?: string }) {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetchWithAuth<any[]>(`/departments${query ? `?${query}` : ''}`);
+    return res.data;
+  },
+
+  async createDepartment(data: any) {
+    const res = await fetchWithAuth<any>('/departments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateDepartment(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/departments/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deactivateDepartment(id: string) {
+    const res = await fetchWithAuth<any>(`/departments/${id}`, {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+
+  async getDesignations(params?: { departmentId?: string; search?: string; status?: string }) {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetchWithAuth<any[]>(`/designations${query ? `?${query}` : ''}`);
+    return res.data;
+  },
+
+  async createDesignation(data: any) {
+    const res = await fetchWithAuth<any>('/designations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateDesignation(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/designations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deactivateDesignation(id: string) {
+    const res = await fetchWithAuth<any>(`/designations/${id}`, {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+};
+
+/**
+ * Employees REST API contracts (Phase 3)
+ */
+export const employeesApi = {
+  async findAll(query?: Record<string, any>) {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qStr = params.toString();
+    const res = await fetchWithAuth<any[]>(`/employees${qStr ? `?${qStr}` : ''}`);
+    return { items: res.data, meta: res.meta };
+  },
+
+  async getMe() {
+    const res = await fetchWithAuth<any>('/employees/me');
+    return res.data;
+  },
+
+  async findOne(id: string) {
+    const res = await fetchWithAuth<any>(`/employees/${id}`);
+    return res.data;
+  },
+
+  async create(data: any) {
+    const res = await fetchWithAuth<any>('/employees', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async update(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/employees/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async transitionStatus(
+    id: string,
+    data: { status: string; reason?: string; effectiveDate?: string },
+  ) {
+    const res = await fetchWithAuth<any>(`/employees/${id}/status`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deactivate(id: string) {
+    const res = await fetchWithAuth<any>(`/employees/${id}`, {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+
+  async getHistory(id: string) {
+    const res = await fetchWithAuth<any[]>(`/employees/${id}/history`);
+    return res.data;
+  },
+
+  async getOrgChart(params?: { departmentId?: string; branchId?: string }) {
+    const query = new URLSearchParams(params as Record<string, string>).toString();
+    const res = await fetchWithAuth<any[]>(`/org-chart${query ? `?${query}` : ''}`);
+    return res.data;
+  },
+
+  async previewImport(formData: FormData) {
+    const res = await fetchWithAuth<any>('/employees/import/preview', {
+      method: 'POST',
+      body: formData,
+    });
+    return res.data;
+  },
+
+  async confirmImport(rows: any[]) {
+    const res = await fetchWithAuth<any>('/employees/import/confirm', {
+      method: 'POST',
+      body: JSON.stringify({ rows }),
+    });
+    return res.data;
+  },
+
+  async export(format: 'csv' | 'xlsx' = 'csv', query?: Record<string, any>) {
+    const params = new URLSearchParams({ format });
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v) params.append(k, String(v));
+      });
+    }
+    const token = getAccessToken();
+    const response = await fetch(`${API_BASE_URL}/employees/export?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Export download failed');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `employees_export_${new Date().toISOString().split('T')[0]}.${format}`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+};

@@ -283,3 +283,304 @@ export interface EmployeeDashboardData {
     isRead: boolean;
   }>;
 }
+
+// -----------------------------------------------------------------------------
+// 8. Phase 3: Organization & Hierarchy Entities
+// -----------------------------------------------------------------------------
+
+export interface OrganizationEntity {
+  id: string;
+  code: string;
+  name: string;
+  legalName?: string | null;
+  logo?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  website?: string | null;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country?: string | null;
+  timezone: string;
+  currency: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BranchEntity {
+  id: string;
+  organizationId: string;
+  name: string;
+  code: string;
+  addressLine1?: string | null;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  country: string;
+  postalCode?: string | null;
+  timezone: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  geofenceRadiusMeters?: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  employeeCount?: number;
+}
+
+export interface DepartmentEntity {
+  id: string;
+  organizationId: string;
+  name: string;
+  code: string;
+  description?: string | null;
+  parentDepartmentId?: string | null;
+  departmentHeadId?: string | null;
+  departmentHead?: {
+    id: string;
+    displayName: string;
+    employeeCode: string;
+  } | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  employeeCount?: number;
+}
+
+export interface DesignationEntity {
+  id: string;
+  organizationId: string;
+  departmentId?: string | null;
+  title: string;
+  name?: string | null;
+  code: string;
+  description?: string | null;
+  level?: number | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  employeeCount?: number;
+}
+
+// -----------------------------------------------------------------------------
+// 9. Phase 3: Normalized Employee Models & Lifecycle
+// -----------------------------------------------------------------------------
+
+export type EmploymentType = 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERN' | 'CONSULTANT';
+
+export const EMPLOYMENT_TYPES: EmploymentType[] = [
+  'FULL_TIME',
+  'PART_TIME',
+  'CONTRACT',
+  'INTERN',
+  'CONSULTANT',
+];
+
+export type EmploymentStatus =
+  'PROBATION' | 'ACTIVE' | 'ON_NOTICE' | 'RESIGNED' | 'TERMINATED' | 'EXITED';
+
+export const EMPLOYMENT_STATUSES: EmploymentStatus[] = [
+  'PROBATION',
+  'ACTIVE',
+  'ON_NOTICE',
+  'RESIGNED',
+  'TERMINATED',
+  'EXITED',
+];
+
+export type WorkMode = 'OFFICE' | 'HYBRID' | 'REMOTE';
+
+export const WORK_MODES: WorkMode[] = ['OFFICE', 'HYBRID', 'REMOTE'];
+
+export type Gender = 'MALE' | 'FEMALE' | 'OTHER' | 'PREFER_NOT_TO_SAY';
+
+export type EmployeeHistoryEventType =
+  | 'JOINED'
+  | 'DEPARTMENT_CHANGED'
+  | 'DESIGNATION_CHANGED'
+  | 'MANAGER_CHANGED'
+  | 'BRANCH_CHANGED'
+  | 'PROMOTED'
+  | 'TRANSFERRED'
+  | 'STATUS_CHANGED'
+  | 'WORK_MODE_CHANGED'
+  | 'EXITED';
+
+export interface EmployeeListItem {
+  id: string;
+  userId?: string | null;
+  employeeCode: string;
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  displayName: string;
+  profilePhoto?: string | null;
+  status: EmploymentStatus;
+  joiningDate: string;
+  workEmail?: string | null;
+  phone?: string | null;
+  branchName?: string | null;
+  branchId?: string | null;
+  departmentName?: string | null;
+  departmentId?: string | null;
+  designationTitle?: string | null;
+  designationId?: string | null;
+  managerName?: string | null;
+  managerId?: string | null;
+  employmentType?: EmploymentType | null;
+  workMode?: WorkMode | null;
+}
+
+export interface EmployeeDetailResponse {
+  id: string;
+  userId?: string | null;
+  organizationId: string;
+  employeeCode: string;
+  firstName: string;
+  middleName?: string | null;
+  lastName: string;
+  displayName: string;
+  profilePhoto?: string | null;
+  dateOfBirth?: string | null;
+  gender?: Gender | null;
+  status: EmploymentStatus;
+  joiningDate: string;
+  exitDate?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+
+  employment?: {
+    id: string;
+    branchId: string;
+    branch: BranchEntity;
+    departmentId: string;
+    department: DepartmentEntity;
+    designationId: string;
+    designation: DesignationEntity;
+    managerId?: string | null;
+    manager?: {
+      id: string;
+      displayName: string;
+      employeeCode: string;
+      profilePhoto?: string | null;
+      designationTitle?: string | null;
+    } | null;
+    employmentType: EmploymentType;
+    employmentStatus: EmploymentStatus;
+    workMode: WorkMode;
+    joiningDate: string;
+    probationEndDate?: string | null;
+    confirmationDate?: string | null;
+    noticePeriodDays: number;
+  } | null;
+
+  contact?: {
+    id: string;
+    workEmail: string;
+    personalEmail?: string | null;
+    phone?: string | null;
+    alternatePhone?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postalCode?: string | null;
+    country: string;
+  } | null;
+
+  emergencyContacts: Array<{
+    id: string;
+    name: string;
+    relationship: string;
+    phone: string;
+    alternatePhone?: string | null;
+    address?: string | null;
+    isPrimary: boolean;
+  }>;
+
+  documents: Array<{
+    id: string;
+    documentType: string;
+    documentName: string;
+    documentNumber?: string | null;
+    fileUrl?: string | null;
+    mimeType?: string | null;
+    fileSize?: number | null;
+    issueDate?: string | null;
+    expiryDate?: string | null;
+    isVerified: boolean;
+  }>;
+
+  history: Array<{
+    id: string;
+    eventType: EmployeeHistoryEventType;
+    previousValue?: string | null;
+    newValue?: string | null;
+    performedBy?: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+    } | null;
+    timestamp: string;
+    metadata?: Record<string, unknown> | null;
+  }>;
+}
+
+// -----------------------------------------------------------------------------
+// 10. Org Chart Hierarchy Models
+// -----------------------------------------------------------------------------
+
+export interface OrgChartNode {
+  id: string;
+  employeeCode: string;
+  name: string;
+  designation: string;
+  department: string;
+  branch: string;
+  avatarUrl?: string | null;
+  status: EmploymentStatus;
+  workMode: WorkMode;
+  managerId?: string | null;
+  directReportsCount: number;
+  subordinates: OrgChartNode[];
+}
+
+// -----------------------------------------------------------------------------
+// 11. Bulk Import & Export DTOs
+// -----------------------------------------------------------------------------
+
+export interface EmployeeImportRow {
+  rowNumber: number;
+  employeeCode: string;
+  firstName: string;
+  middleName?: string;
+  lastName: string;
+  workEmail: string;
+  phone?: string;
+  departmentCode: string;
+  designationCode: string;
+  branchCode: string;
+  managerEmployeeCode?: string;
+  employmentType?: EmploymentType;
+  employmentStatus?: EmploymentStatus;
+  workMode?: WorkMode;
+  joiningDate?: string;
+}
+
+export interface EmployeeImportRowError {
+  row: number;
+  field: string;
+  value: unknown;
+  message: string;
+}
+
+export interface EmployeeImportPreviewResult {
+  totalRows: number;
+  validRowsCount: number;
+  errorRowsCount: number;
+  errors: EmployeeImportRowError[];
+  previewData: EmployeeImportRow[];
+}

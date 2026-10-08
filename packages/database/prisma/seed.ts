@@ -1,18 +1,49 @@
-import { PrismaClient, RoleCode, UserStatus } from '@prisma/client';
+import {
+  PrismaClient,
+  RoleCode,
+  UserStatus,
+  EmploymentType,
+  EmploymentStatus,
+  WorkMode,
+  Gender,
+  EmployeeHistoryEventType,
+} from '@prisma/client';
+import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding foundational HRMS data...');
+  console.log('Seeding foundational Phase 3 HRMS data...');
 
   // 1. Create Organization
   const org = await prisma.organization.upsert({
     where: { code: 'PEOPLEOS' },
-    update: {},
+    update: {
+      name: 'PeopleOS Technologies Inc.',
+      legalName: 'PeopleOS Solutions Private Limited',
+      email: 'contact@peopleos.local',
+      phone: '+91 80 4123 4567',
+      website: 'https://peopleos.local',
+      addressLine1: 'Prestige Tech Cloud, Phase 2',
+      addressLine2: 'Bellary Road',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      country: 'India',
+      timezone: 'Asia/Kolkata',
+      currency: 'INR',
+    },
     create: {
       code: 'PEOPLEOS',
       name: 'PeopleOS Technologies Inc.',
       legalName: 'PeopleOS Solutions Private Limited',
+      email: 'contact@peopleos.local',
+      phone: '+91 80 4123 4567',
+      website: 'https://peopleos.local',
+      addressLine1: 'Prestige Tech Cloud, Phase 2',
+      addressLine2: 'Bellary Road',
+      city: 'Bengaluru',
+      state: 'Karnataka',
+      country: 'India',
       timezone: 'Asia/Kolkata',
       currency: 'INR',
     },
@@ -26,68 +57,212 @@ async function main() {
         code: 'BLR-HQ',
       },
     },
-    update: {},
+    update: {
+      latitude: 12.9716,
+      longitude: 77.5946,
+      geofenceLat: 12.9716,
+      geofenceLng: 77.5946,
+    },
     create: {
       organizationId: org.id,
       code: 'BLR-HQ',
       name: 'Bengaluru Headquarters',
+      addressLine1: 'Prestige Tech Cloud, Tower 3',
       city: 'Bengaluru',
       state: 'Karnataka',
       country: 'India',
+      postalCode: '560001',
+      latitude: 12.9716,
+      longitude: 77.5946,
       geofenceLat: 12.9716,
       geofenceLng: 77.5946,
       geofenceRadiusMeters: 150,
     },
   });
 
-  // 3. Create Departments
-  const engineeringDept = await prisma.department.upsert({
+  const mumBranch = await prisma.branch.upsert({
     where: {
       organizationId_code: {
         organizationId: org.id,
-        code: 'ENG',
+        code: 'MUM-01',
       },
     },
-    update: {},
+    update: {
+      latitude: 19.076,
+      longitude: 72.8777,
+      geofenceLat: 19.076,
+      geofenceLng: 72.8777,
+    },
     create: {
       organizationId: org.id,
-      code: 'ENG',
-      name: 'Engineering',
+      code: 'MUM-01',
+      name: 'Mumbai Tech Park',
+      addressLine1: 'Nesco IT Park, Western Express Hwy',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      country: 'India',
+      postalCode: '400063',
+      latitude: 19.076,
+      longitude: 72.8777,
+      geofenceLat: 19.076,
+      geofenceLng: 72.8777,
+      geofenceRadiusMeters: 100,
     },
   });
 
-  const hrDept = await prisma.department.upsert({
+  const delBranch = await prisma.branch.upsert({
     where: {
       organizationId_code: {
         organizationId: org.id,
-        code: 'HR',
+        code: 'DEL-01',
       },
     },
-    update: {},
+    update: {
+      latitude: 28.4595,
+      longitude: 77.0266,
+      geofenceLat: 28.4595,
+      geofenceLng: 77.0266,
+    },
     create: {
       organizationId: org.id,
-      code: 'HR',
-      name: 'Human Resources',
+      code: 'DEL-01',
+      name: 'Delhi NCR Hub',
+      addressLine1: 'Cyber City, DLF Phase 2',
+      city: 'Gurugram',
+      state: 'Haryana',
+      country: 'India',
+      postalCode: '122002',
+      latitude: 28.4595,
+      longitude: 77.0266,
+      geofenceLat: 28.4595,
+      geofenceLng: 77.0266,
+      geofenceRadiusMeters: 120,
     },
   });
+
+  // 3. Create Departments
+  const departmentsData = [
+    { code: 'EXEC', name: 'Executive Leadership', description: 'C-suite & strategic governance' },
+    { code: 'HR', name: 'Human Resources', description: 'People operations, talent, and culture' },
+    {
+      code: 'ENG',
+      name: 'Engineering & Product',
+      description: 'Software engineering, architecture, and design',
+    },
+    {
+      code: 'OPS',
+      name: 'Operations & Facilities',
+      description: 'Infrastructure, workplace, and procurement',
+    },
+    {
+      code: 'FIN',
+      name: 'Finance & Accounts',
+      description: 'Financial planning, accounting, and compliance',
+    },
+  ];
+
+  const deptMap: Record<string, string> = {};
+  for (const dept of departmentsData) {
+    const record = await prisma.department.upsert({
+      where: {
+        organizationId_code: {
+          organizationId: org.id,
+          code: dept.code,
+        },
+      },
+      update: {
+        description: dept.description,
+      },
+      create: {
+        organizationId: org.id,
+        code: dept.code,
+        name: dept.name,
+        description: dept.description,
+      },
+    });
+    deptMap[dept.code] = record.id;
+  }
 
   // 4. Create Designations
-  const devDesignation = await prisma.designation.upsert({
-    where: {
-      organizationId_code: {
-        organizationId: org.id,
-        code: 'SE-2',
-      },
+  const designationsData = [
+    {
+      code: 'CTO',
+      title: 'Chief Technology Officer',
+      level: 5,
+      deptCode: 'EXEC',
+      desc: 'Executive leadership of technology',
     },
-    update: {},
-    create: {
-      organizationId: org.id,
-      departmentId: engineeringDept.id,
-      code: 'SE-2',
+    {
+      code: 'HR-LEAD',
+      title: 'People Operations Lead',
+      level: 3,
+      deptCode: 'HR',
+      desc: 'HR policies and employee experience',
+    },
+    {
+      code: 'EM',
+      title: 'Engineering Manager',
+      level: 4,
+      deptCode: 'ENG',
+      desc: 'Engineering team and technical execution',
+    },
+    {
+      code: 'SR-SWE',
       title: 'Senior Software Engineer',
       level: 3,
+      deptCode: 'ENG',
+      desc: 'Senior frontend and backend engineering',
     },
-  });
+    {
+      code: 'SWE',
+      title: 'Software Engineer',
+      level: 2,
+      deptCode: 'ENG',
+      desc: 'Full-stack software development',
+    },
+    {
+      code: 'OPS-LEAD',
+      title: 'Operations Lead',
+      level: 3,
+      deptCode: 'OPS',
+      desc: 'Workplace and logistical leadership',
+    },
+    {
+      code: 'FIN-LEAD',
+      title: 'Finance Controller',
+      level: 3,
+      deptCode: 'FIN',
+      desc: 'Accounts, taxation, and payroll audit',
+    },
+  ];
+
+  const desigMap: Record<string, string> = {};
+  for (const desig of designationsData) {
+    const record = await prisma.designation.upsert({
+      where: {
+        organizationId_code: {
+          organizationId: org.id,
+          code: desig.code,
+        },
+      },
+      update: {
+        title: desig.title,
+        name: desig.title,
+        level: desig.level,
+        description: desig.desc,
+      },
+      create: {
+        organizationId: org.id,
+        departmentId: deptMap[desig.deptCode],
+        code: desig.code,
+        title: desig.title,
+        name: desig.title,
+        level: desig.level,
+        description: desig.desc,
+      },
+    });
+    desigMap[desig.code] = record.id;
+  }
 
   // 5. Create System Roles
   const roles: RoleCode[] = [RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE];
@@ -110,98 +285,7 @@ async function main() {
     });
   }
 
-  // 6. Create Seed Users for the 4 Roles
-  const usersToSeed = [
-    {
-      code: 'EMP001',
-      email: 'admin@peopleos.local',
-      firstName: 'Vikram',
-      lastName: 'Aditya',
-      role: RoleCode.ADMIN,
-      deptId: engineeringDept.id,
-      desigId: devDesignation.id,
-    },
-    {
-      code: 'EMP002',
-      email: 'hr@peopleos.local',
-      firstName: 'Ananya',
-      lastName: 'Sharma',
-      role: RoleCode.HR,
-      deptId: hrDept.id,
-      desigId: devDesignation.id,
-    },
-    {
-      code: 'EMP003',
-      email: 'manager@peopleos.local',
-      firstName: 'Rajesh',
-      lastName: 'Kumar',
-      role: RoleCode.MANAGER,
-      deptId: engineeringDept.id,
-      desigId: devDesignation.id,
-    },
-    {
-      code: 'EMP004',
-      email: 'employee@peopleos.local',
-      firstName: 'Priya',
-      lastName: 'Nair',
-      role: RoleCode.EMPLOYEE,
-      deptId: engineeringDept.id,
-      desigId: devDesignation.id,
-    },
-  ];
-
-  for (const u of usersToSeed) {
-    const user = await prisma.user.upsert({
-      where: {
-        organizationId_email: {
-          organizationId: org.id,
-          email: u.email,
-        },
-      },
-      update: {
-        passwordHash:
-          '$argon2id$v=19$m=65536,p=4,t=3$RtLrf7yRIv58OUiRnn+C9Q$boeWAvt1AnaJGPdlZC7HXYBli7iUUUpX+uR22uWVeFI',
-      },
-      create: {
-        organizationId: org.id,
-        branchId: hqBranch.id,
-        departmentId: u.deptId,
-        designationId: u.desigId,
-        employeeCode: u.code,
-        email: u.email,
-        passwordHash:
-          '$argon2id$v=19$m=65536,p=4,t=3$RtLrf7yRIv58OUiRnn+C9Q$boeWAvt1AnaJGPdlZC7HXYBli7iUUUpX+uR22uWVeFI',
-        firstName: u.firstName,
-        lastName: u.lastName,
-        status: UserStatus.ACTIVE,
-        isActive: true,
-        failedLoginAttempts: 0,
-      },
-    });
-
-    const role = await prisma.role.findFirst({
-      where: { organizationId: org.id, code: u.role },
-    });
-
-    if (role) {
-      await prisma.userRole.upsert({
-        where: {
-          userId_roleId: {
-            userId: user.id,
-            roleId: role.id,
-          },
-        },
-        update: {},
-        create: {
-          userId: user.id,
-          roleId: role.id,
-          assignedBy: 'SYSTEM_SEED',
-        },
-      });
-    }
-  }
-
-  // 7. Seed Granular Permissions (RESOURCE_ACTION Naming Convention)
+  // 6. Seed Granular Permissions (Phase 3 Expanded)
   const permissionsToSeed = [
     // User Management
     { code: 'USER_VIEW', name: 'View System Users', module: 'USER' },
@@ -213,11 +297,31 @@ async function main() {
     { code: 'ROLE_VIEW', name: 'View Roles & Permissions', module: 'ROLE' },
     { code: 'ROLE_UPDATE', name: 'Modify Roles & Permissions', module: 'ROLE' },
 
+    // Organization Structure
+    { code: 'ORGANIZATION_VIEW', name: 'View Organization Structure', module: 'ORGANIZATION' },
+    { code: 'ORGANIZATION_UPDATE', name: 'Update Organization Details', module: 'ORGANIZATION' },
+    { code: 'BRANCH_VIEW', name: 'View Branches', module: 'BRANCH' },
+    { code: 'BRANCH_CREATE', name: 'Create Branch', module: 'BRANCH' },
+    { code: 'BRANCH_UPDATE', name: 'Update Branch', module: 'BRANCH' },
+    { code: 'BRANCH_DELETE', name: 'Deactivate Branch', module: 'BRANCH' },
+    { code: 'DEPARTMENT_VIEW', name: 'View Departments', module: 'DEPARTMENT' },
+    { code: 'DEPARTMENT_CREATE', name: 'Create Department', module: 'DEPARTMENT' },
+    { code: 'DEPARTMENT_UPDATE', name: 'Update Department', module: 'DEPARTMENT' },
+    { code: 'DEPARTMENT_DELETE', name: 'Deactivate Department', module: 'DEPARTMENT' },
+    { code: 'DESIGNATION_VIEW', name: 'View Designations', module: 'DESIGNATION' },
+    { code: 'DESIGNATION_CREATE', name: 'Create Designation', module: 'DESIGNATION' },
+    { code: 'DESIGNATION_UPDATE', name: 'Update Designation', module: 'DESIGNATION' },
+    { code: 'DESIGNATION_DELETE', name: 'Deactivate Designation', module: 'DESIGNATION' },
+
     // Employee Master
     { code: 'EMPLOYEE_VIEW', name: 'View Employee Directory', module: 'EMPLOYEE' },
     { code: 'EMPLOYEE_CREATE', name: 'Create Employee Records', module: 'EMPLOYEE' },
     { code: 'EMPLOYEE_UPDATE', name: 'Update Employee Records', module: 'EMPLOYEE' },
     { code: 'EMPLOYEE_DELETE', name: 'Deactivate Employee Records', module: 'EMPLOYEE' },
+    { code: 'EMPLOYEE_IMPORT', name: 'Bulk Import Employees', module: 'EMPLOYEE' },
+    { code: 'EMPLOYEE_EXPORT', name: 'Export Employee Directory', module: 'EMPLOYEE' },
+    { code: 'EMPLOYEE_HISTORY_VIEW', name: 'View Employee History', module: 'EMPLOYEE' },
+    { code: 'ORG_CHART_VIEW', name: 'View Organization Chart', module: 'EMPLOYEE' },
 
     // Attendance Management
     { code: 'ATTENDANCE_VIEW', name: 'View Attendance Records', module: 'ATTENDANCE' },
@@ -248,10 +352,6 @@ async function main() {
     // Audit Log
     { code: 'AUDIT_VIEW', name: 'View Audit Trail', module: 'AUDIT' },
 
-    // Organization Structure
-    { code: 'ORGANIZATION_VIEW', name: 'View Organization Structure', module: 'ORGANIZATION' },
-    { code: 'ORGANIZATION_UPDATE', name: 'Update Organization Structure', module: 'ORGANIZATION' },
-
     // System Settings
     { code: 'SETTING_VIEW', name: 'View System Settings', module: 'SETTING' },
     { code: 'SETTING_UPDATE', name: 'Update System Settings', module: 'SETTING' },
@@ -267,21 +367,39 @@ async function main() {
     permissionRecords[perm.code] = record.id;
   }
 
-  // 8. Map Permissions to the Exactly Four Application Roles
+  // 7. Map Permissions to the Exactly Four Application Roles
   const allPermissionCodes = permissionsToSeed.map((p) => p.code);
 
   const rolePermissionsMap: Record<RoleCode, string[]> = {
-    // ADMIN receives all current permissions
+    // ADMIN receives full access to all operations
     [RoleCode.ADMIN]: allPermissionCodes,
 
-    // HR receives HR-related permissions
+    // HR receives complete employee and organization operational management
     [RoleCode.HR]: [
       'USER_VIEW',
       'ROLE_VIEW',
+      'ORGANIZATION_VIEW',
+      'ORGANIZATION_UPDATE',
+      'BRANCH_VIEW',
+      'BRANCH_CREATE',
+      'BRANCH_UPDATE',
+      'BRANCH_DELETE',
+      'DEPARTMENT_VIEW',
+      'DEPARTMENT_CREATE',
+      'DEPARTMENT_UPDATE',
+      'DEPARTMENT_DELETE',
+      'DESIGNATION_VIEW',
+      'DESIGNATION_CREATE',
+      'DESIGNATION_UPDATE',
+      'DESIGNATION_DELETE',
       'EMPLOYEE_VIEW',
       'EMPLOYEE_CREATE',
       'EMPLOYEE_UPDATE',
       'EMPLOYEE_DELETE',
+      'EMPLOYEE_IMPORT',
+      'EMPLOYEE_EXPORT',
+      'EMPLOYEE_HISTORY_VIEW',
+      'ORG_CHART_VIEW',
       'ATTENDANCE_VIEW',
       'ATTENDANCE_MARK',
       'ATTENDANCE_UPDATE',
@@ -299,13 +417,14 @@ async function main() {
       'REPORT_VIEW',
       'REPORT_EXPORT',
       'AUDIT_VIEW',
-      'ORGANIZATION_VIEW',
       'SETTING_VIEW',
     ],
 
-    // MANAGER receives team-management permissions
+    // MANAGER receives team visibility, approval rights, and org chart
     [RoleCode.MANAGER]: [
       'EMPLOYEE_VIEW',
+      'EMPLOYEE_HISTORY_VIEW',
+      'ORG_CHART_VIEW',
       'ATTENDANCE_VIEW',
       'ATTENDANCE_MARK',
       'ATTENDANCE_APPROVE',
@@ -320,8 +439,10 @@ async function main() {
       'REPORT_VIEW',
     ],
 
-    // EMPLOYEE receives self-service permissions
+    // EMPLOYEE receives self-service and org chart visibility
     [RoleCode.EMPLOYEE]: [
+      'EMPLOYEE_VIEW',
+      'ORG_CHART_VIEW',
       'ATTENDANCE_VIEW',
       'ATTENDANCE_MARK',
       'LEAVE_VIEW',
@@ -362,6 +483,398 @@ async function main() {
     }
   }
 
+  // 8. Seed Employees & Users with Normalized Hierarchy (Director -> Manager -> Employees)
+  const seedPeople = [
+    {
+      code: 'EMP001',
+      email: 'admin@peopleos.local',
+      firstName: 'Vikram',
+      lastName: 'Aditya',
+      role: RoleCode.ADMIN,
+      deptCode: 'EXEC',
+      desigCode: 'CTO',
+      branchCode: 'BLR-HQ',
+      managerCode: null,
+      gender: Gender.MALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.OFFICE,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2022-01-10'),
+      phone: '+91 98765 00001',
+      dob: new Date('1984-06-15'),
+      city: 'Bengaluru',
+      state: 'Karnataka',
+    },
+    {
+      code: 'EMP002',
+      email: 'hr@peopleos.local',
+      firstName: 'Ananya',
+      lastName: 'Sharma',
+      role: RoleCode.HR,
+      deptCode: 'HR',
+      desigCode: 'HR-LEAD',
+      branchCode: 'BLR-HQ',
+      managerCode: 'EMP001',
+      gender: Gender.FEMALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.HYBRID,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2022-03-01'),
+      phone: '+91 98765 00002',
+      dob: new Date('1990-09-22'),
+      city: 'Bengaluru',
+      state: 'Karnataka',
+    },
+    {
+      code: 'EMP003',
+      email: 'manager@peopleos.local',
+      firstName: 'Rajesh',
+      lastName: 'Kumar',
+      role: RoleCode.MANAGER,
+      deptCode: 'ENG',
+      desigCode: 'EM',
+      branchCode: 'BLR-HQ',
+      managerCode: 'EMP001',
+      gender: Gender.MALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.HYBRID,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2022-04-15'),
+      phone: '+91 98765 00003',
+      dob: new Date('1987-11-05'),
+      city: 'Bengaluru',
+      state: 'Karnataka',
+    },
+    {
+      code: 'EMP004',
+      email: 'employee@peopleos.local',
+      firstName: 'Priya',
+      lastName: 'Nair',
+      role: RoleCode.EMPLOYEE,
+      deptCode: 'ENG',
+      desigCode: 'SR-SWE',
+      branchCode: 'BLR-HQ',
+      managerCode: 'EMP003',
+      gender: Gender.FEMALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.HYBRID,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2023-01-10'),
+      phone: '+91 98765 00004',
+      dob: new Date('1994-03-18'),
+      city: 'Bengaluru',
+      state: 'Karnataka',
+    },
+    {
+      code: 'EMP005',
+      email: 'amitabh.roy@peopleos.local',
+      firstName: 'Amitabh',
+      lastName: 'Roy',
+      role: RoleCode.EMPLOYEE,
+      deptCode: 'ENG',
+      desigCode: 'SWE',
+      branchCode: 'MUM-01',
+      managerCode: 'EMP003',
+      gender: Gender.MALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.REMOTE,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2023-05-15'),
+      phone: '+91 98765 00005',
+      dob: new Date('1996-08-30'),
+      city: 'Mumbai',
+      state: 'Maharashtra',
+    },
+    {
+      code: 'EMP006',
+      email: 'neha.gupta@peopleos.local',
+      firstName: 'Neha',
+      lastName: 'Gupta',
+      role: RoleCode.EMPLOYEE,
+      deptCode: 'ENG',
+      desigCode: 'SWE',
+      branchCode: 'BLR-HQ',
+      managerCode: 'EMP003',
+      gender: Gender.FEMALE,
+      status: EmploymentStatus.PROBATION,
+      workMode: WorkMode.OFFICE,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2024-01-15'),
+      phone: '+91 98765 00006',
+      dob: new Date('1997-12-10'),
+      city: 'Bengaluru',
+      state: 'Karnataka',
+    },
+    {
+      code: 'EMP007',
+      email: 'karan.m@peopleos.local',
+      firstName: 'Karan',
+      lastName: 'Mehra',
+      role: RoleCode.MANAGER,
+      deptCode: 'OPS',
+      desigCode: 'OPS-LEAD',
+      branchCode: 'DEL-01',
+      managerCode: 'EMP001',
+      gender: Gender.MALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.OFFICE,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2022-08-01'),
+      phone: '+91 98765 00007',
+      dob: new Date('1989-02-14'),
+      city: 'Gurugram',
+      state: 'Haryana',
+    },
+    {
+      code: 'EMP008',
+      email: 'sneha.patel@peopleos.local',
+      firstName: 'Sneha',
+      lastName: 'Patel',
+      role: RoleCode.EMPLOYEE,
+      deptCode: 'OPS',
+      desigCode: 'OPS-LEAD',
+      branchCode: 'DEL-01',
+      managerCode: 'EMP007',
+      gender: Gender.FEMALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.OFFICE,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2023-09-01'),
+      phone: '+91 98765 00008',
+      dob: new Date('1995-07-04'),
+      city: 'Gurugram',
+      state: 'Haryana',
+    },
+  ];
+
+  // Hash: Password123!
+  const passwordHash = await argon2.hash('Password123!');
+
+  const employeeRecordMap: Record<string, string> = {};
+  const branchMap: Record<string, string> = {
+    'BLR-HQ': hqBranch.id,
+    'MUM-01': mumBranch.id,
+    'DEL-01': delBranch.id,
+  };
+
+  // Step 8a: Create Users and Base Employees
+  for (const person of seedPeople) {
+    const branchId = branchMap[person.branchCode];
+    const deptId = deptMap[person.deptCode];
+    const desigId = desigMap[person.desigCode];
+
+    // 1. User Account
+    const user = await prisma.user.upsert({
+      where: {
+        organizationId_email: {
+          organizationId: org.id,
+          email: person.email,
+        },
+      },
+      update: {
+        passwordHash,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        branchId,
+        departmentId: deptId,
+        designationId: desigId,
+      },
+      create: {
+        organizationId: org.id,
+        branchId,
+        departmentId: deptId,
+        designationId: desigId,
+        employeeCode: person.code,
+        email: person.email,
+        passwordHash,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        phone: person.phone,
+        status: UserStatus.ACTIVE,
+        isActive: true,
+        failedLoginAttempts: 0,
+      },
+    });
+
+    // 2. Role assignment
+    const role = await prisma.role.findFirst({
+      where: { organizationId: org.id, code: person.role },
+    });
+    if (role) {
+      await prisma.userRole.upsert({
+        where: {
+          userId_roleId: {
+            userId: user.id,
+            roleId: role.id,
+          },
+        },
+        update: {},
+        create: {
+          userId: user.id,
+          roleId: role.id,
+          assignedBy: 'SYSTEM_SEED',
+        },
+      });
+    }
+
+    // 3. Employee Normalized Record
+    const employee = await prisma.employee.upsert({
+      where: {
+        organizationId_employeeCode: {
+          organizationId: org.id,
+          employeeCode: person.code,
+        },
+      },
+      update: {
+        userId: user.id,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        displayName: `${person.firstName} ${person.lastName}`,
+        gender: person.gender,
+        status: person.status,
+        joiningDate: person.joiningDate,
+      },
+      create: {
+        userId: user.id,
+        organizationId: org.id,
+        employeeCode: person.code,
+        firstName: person.firstName,
+        lastName: person.lastName,
+        displayName: `${person.firstName} ${person.lastName}`,
+        dateOfBirth: person.dob,
+        gender: person.gender,
+        status: person.status,
+        joiningDate: person.joiningDate,
+        isActive: true,
+      },
+    });
+
+    employeeRecordMap[person.code] = employee.id;
+
+    // 4. Employee Contact
+    await prisma.employeeContact.upsert({
+      where: { employeeId: employee.id },
+      update: {
+        workEmail: person.email,
+        phone: person.phone,
+        city: person.city,
+        state: person.state,
+      },
+      create: {
+        employeeId: employee.id,
+        workEmail: person.email,
+        personalEmail: `${person.firstName.toLowerCase()}.${person.lastName.toLowerCase()}@personal.example.com`,
+        phone: person.phone,
+        city: person.city,
+        state: person.state,
+        country: 'India',
+        postalCode: '560001',
+      },
+    });
+
+    // 5. Emergency Contact
+    const existingEmergency = await prisma.emergencyContact.findFirst({
+      where: { employeeId: employee.id, isPrimary: true },
+    });
+    if (!existingEmergency) {
+      await prisma.emergencyContact.create({
+        data: {
+          employeeId: employee.id,
+          name: `${person.firstName} Family Contact`,
+          relationship: 'Spouse / Parent',
+          phone: '+91 98765 99999',
+          isPrimary: true,
+          address: `${person.city}, ${person.state}`,
+        },
+      });
+    }
+
+    // 6. Documents Metadata
+    const existingDoc = await prisma.employeeDocumentMetadata.findFirst({
+      where: { employeeId: employee.id, documentType: 'GOVT_ID' },
+    });
+    if (!existingDoc) {
+      await prisma.employeeDocumentMetadata.create({
+        data: {
+          employeeId: employee.id,
+          documentType: 'GOVT_ID',
+          documentName: 'Aadhaar / National ID Card',
+          documentNumber: `XXXX-XXXX-${person.code.slice(-4)}`,
+          isVerified: true,
+          verifiedAt: new Date(),
+        },
+      });
+    }
+  }
+
+  // Step 8b: Wire Manager Relationships & Employments in Second Pass
+  for (const person of seedPeople) {
+    const employeeId = employeeRecordMap[person.code];
+    const branchId = branchMap[person.branchCode];
+    const deptId = deptMap[person.deptCode];
+    const desigId = desigMap[person.desigCode];
+    const managerId = person.managerCode ? employeeRecordMap[person.managerCode] : null;
+
+    await prisma.employeeEmployment.upsert({
+      where: { employeeId },
+      update: {
+        branchId,
+        departmentId: deptId,
+        designationId: desigId,
+        managerId,
+        employmentType: person.employmentType,
+        employmentStatus: person.status,
+        workMode: person.workMode,
+      },
+      create: {
+        employeeId,
+        branchId,
+        departmentId: deptId,
+        designationId: desigId,
+        managerId,
+        employmentType: person.employmentType,
+        employmentStatus: person.status,
+        workMode: person.workMode,
+        joiningDate: person.joiningDate,
+        noticePeriodDays: 30,
+      },
+    });
+
+    // Initial Join History Record
+    const existingHistory = await prisma.employeeHistory.findFirst({
+      where: { employeeId, eventType: EmployeeHistoryEventType.JOINED },
+    });
+    if (!existingHistory) {
+      await prisma.employeeHistory.create({
+        data: {
+          employeeId,
+          eventType: EmployeeHistoryEventType.JOINED,
+          previousValue: null,
+          newValue: person.status,
+          metadata: {
+            department: person.deptCode,
+            designation: person.desigCode,
+            branch: person.branchCode,
+          },
+        },
+      });
+    }
+  }
+
+  // Set Department Heads
+  await prisma.department.update({
+    where: { id: deptMap['ENG'] },
+    data: { departmentHeadId: employeeRecordMap['EMP003'] }, // Rajesh Kumar
+  });
+  await prisma.department.update({
+    where: { id: deptMap['HR'] },
+    data: { departmentHeadId: employeeRecordMap['EMP002'] }, // Ananya Sharma
+  });
+  await prisma.department.update({
+    where: { id: deptMap['OPS'] },
+    data: { departmentHeadId: employeeRecordMap['EMP007'] }, // Karan Mehra
+  });
+
   // 9. System Settings
   await prisma.systemSetting.upsert({
     where: {
@@ -380,7 +893,7 @@ async function main() {
     },
   });
 
-  console.log('Seeding completed successfully!');
+  console.log('Phase 3 foundational seeding completed successfully!');
 }
 
 main()

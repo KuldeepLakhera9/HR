@@ -29,6 +29,7 @@ import {
   Palette,
   LucideIcon,
   X,
+  GitFork,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -53,6 +54,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   Home,
   UserCircle,
   Palette,
+  GitFork,
 };
 
 export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({
