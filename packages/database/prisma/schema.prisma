@@ -454,6 +454,7 @@ model Employee {
   @@index([employeeCode])
   @@index([status])
   @@index([isActive])
+  @@index([joiningDate])
   @@map("employees")
 }
 
@@ -491,6 +492,7 @@ model EmployeeEmployment {
   @@index([employmentType])
   @@index([employmentStatus])
   @@index([workMode])
+  @@index([joiningDate])
   @@map("employee_employments")
 }
 
@@ -499,7 +501,7 @@ model EmployeeContact {
   employeeId     String    @unique
   employee       Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  workEmail      String
+  workEmail      String    @unique
   personalEmail  String?
   phone          String?
   alternatePhone String?
@@ -513,6 +515,7 @@ model EmployeeContact {
   updatedAt      DateTime  @updatedAt
 
   @@index([workEmail])
+  @@index([phone])
   @@map("employee_contacts")
 }
 
@@ -532,6 +535,7 @@ model EmergencyContact {
   updatedAt      DateTime  @updatedAt
 
   @@index([employeeId])
+  @@index([isPrimary])
   @@map("emergency_contacts")
 }
 
@@ -552,6 +556,7 @@ model EmployeeHistory {
   @@index([employeeId])
   @@index([eventType])
   @@index([timestamp])
+  @@index([performedById])
   @@map("employee_history")
 }
 
@@ -577,5 +582,6 @@ model EmployeeDocumentMetadata {
 
   @@index([employeeId])
   @@index([documentType])
+  @@index([isVerified])
   @@map("employee_documents_metadata")
 }

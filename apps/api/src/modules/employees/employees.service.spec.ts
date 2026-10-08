@@ -181,6 +181,94 @@ describe('EmployeesService', () => {
         service.validateManagerHierarchy('emp-target', 'emp-mgr', mockOrgId),
       ).rejects.toThrow(BadRequestException);
     });
+
+    it('should detect and reject multi-tier circular manager relationship (A -> B -> C -> A)', async () => {
+      prisma.employee.findUnique.mockResolvedValue({
+        id: 'emp-c',
+        organizationId: mockOrgId,
+        isActive: true,
+      });
+
+      // Chain: C -> B -> A
+      prisma.employeeEmployment.findUnique
+        .mockResolvedValueOnce({ managerId: 'emp-b' }) // C reports to B
+        .mockResolvedValueOnce({ managerId: 'emp-target' }); // B reports to A (target)
+
+      await expect(
+        service.validateManagerHierarchy('emp-target', 'emp-c', mockOrgId),
+      ).rejects.toThrow('Circular manager relationship detected');
+    });
+
+    it('should reject manager from a different organization', async () => {
+      prisma.employee.findUnique.mockResolvedValue({
+        id: 'emp-other-org',
+        organizationId: 'other-org-999',
+        isActive: true,
+      });
+
+      await expect(
+        service.validateManagerHierarchy('emp-target', 'emp-other-org', mockOrgId),
+      ).rejects.toThrow('Assigned manager does not exist in this organization');
+    });
+
+    it('should reject inactive employee as manager', async () => {
+      prisma.employee.findUnique.mockResolvedValue({
+        id: 'emp-inactive',
+        organizationId: mockOrgId,
+        isActive: false,
+      });
+
+      await expect(
+        service.validateManagerHierarchy('emp-target', 'emp-inactive', mockOrgId),
+      ).rejects.toThrow('Cannot assign an inactive employee as manager');
+    });
+  });
+
+  describe('Uniqueness and Data Constraints', () => {
+    it('should reject duplicate employee code with ConflictException', async () => {
+      prisma.employee.findUnique.mockResolvedValue({
+        id: 'existing-emp',
+        employeeCode: 'EMP001',
+      });
+
+      await expect(
+        service.create(
+          {
+            employeeCode: 'EMP001',
+            firstName: 'Aarav',
+            lastName: 'Sharma',
+            workEmail: 'aarav@peopleos.local',
+            branchId: 'br-1',
+            departmentId: 'dept-1',
+            designationId: 'desig-1',
+          } as any,
+          mockAdminUser,
+        ),
+      ).rejects.toThrow("Employee code 'EMP001' already exists");
+    });
+
+    it('should reject duplicate work email with ConflictException', async () => {
+      prisma.employee.findUnique.mockResolvedValue(null); // Code is unique
+      prisma.employeeContact.findFirst.mockResolvedValue({
+        id: 'contact-1',
+        workEmail: 'existing@peopleos.local',
+      });
+
+      await expect(
+        service.create(
+          {
+            employeeCode: 'EMP002',
+            firstName: 'Rohan',
+            lastName: 'Verma',
+            workEmail: 'existing@peopleos.local',
+            branchId: 'br-1',
+            departmentId: 'dept-1',
+            designationId: 'desig-1',
+          } as any,
+          mockAdminUser,
+        ),
+      ).rejects.toThrow("Work email 'existing@peopleos.local' is already registered");
+    });
   });
 
   describe('Controlled Status Lifecycle', () => {
