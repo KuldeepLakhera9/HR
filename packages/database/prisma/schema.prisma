@@ -25,6 +25,7 @@ model Organization {
   email          String?
   phone          String?
   website        String?
+  address        String?
   addressLine1   String?
   addressLine2   String?
   city           String?
@@ -57,6 +58,7 @@ model Branch {
   organization          Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name                  String
   code                  String
+  address               String?
   addressLine1          String?
   addressLine2          String?
   city                  String?
