@@ -8,6 +8,21 @@ export type RoleType = 'ADMIN' | 'HR' | 'MANAGER' | 'EMPLOYEE';
 
 export const USER_ROLES: RoleType[] = ['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'];
 
+// 1b. Data Access Scopes (Phase 2 Step 6)
+export type AccessScope = 'GLOBAL' | 'ORGANIZATION' | 'TEAM' | 'SELF';
+
+export const ACCESS_SCOPES: AccessScope[] = ['GLOBAL', 'ORGANIZATION', 'TEAM', 'SELF'];
+
+export interface ResourceTarget {
+  id?: string;
+  userId?: string;
+  organizationId?: string;
+  departmentId?: string | null;
+  branchId?: string | null;
+  managerId?: string | null;
+  [key: string]: unknown;
+}
+
 export interface PermissionDefinition {
   id: string;
   name: string;
@@ -25,25 +40,26 @@ export type AttendanceStatus =
 // 3. User & Auth Profile
 export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'LOCKED';
 
-export interface UserProfile {
+export interface AuthUser {
   id: string;
   email: string;
   firstName: string;
   lastName: string;
-  avatarUrl?: string | null;
-  role: RoleType;
+  employeeCode: string;
   organizationId: string;
-  organizationName?: string;
+  branchId?: string | null;
   departmentId?: string | null;
-  departmentName?: string | null;
-  designationId?: string | null;
-  designationTitle?: string | null;
-  status?: UserStatus;
-  isActive: boolean;
-  lastLoginAt?: string | null;
-  failedLoginAttempts?: number;
-  lockedUntil?: string | null;
+  status: UserStatus;
+  roles: RoleType[];
+  permissions: string[];
 }
+
+export interface LoginCredentials {
+  email: string;
+  password: string;
+}
+
+export type UserProfile = AuthUser;
 
 export interface SessionInfo {
   id: string;
@@ -115,6 +131,7 @@ export interface NavigationItem {
   icon: string; // icon identifier
   badge?: string | number;
   allowedRoles: RoleType[];
+  requiredPermission?: string; // RESOURCE_ACTION e.g. 'EMPLOYEE_VIEW', 'REPORT_VIEW'
   children?: NavigationItem[];
 }
 

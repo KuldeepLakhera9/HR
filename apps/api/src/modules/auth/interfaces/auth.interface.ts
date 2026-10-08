@@ -14,6 +14,8 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   organizationId: string;
+  branchId?: string | null;
+  departmentId?: string | null;
   firstName: string;
   lastName: string;
   employeeCode: string;
@@ -30,6 +32,8 @@ export interface SafeUser {
   lastName: string;
   employeeCode: string;
   organizationId: string;
+  branchId?: string | null;
+  departmentId?: string | null;
   status: UserStatus;
   roles: RoleType[];
   permissions: string[];

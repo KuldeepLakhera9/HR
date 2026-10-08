@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { RoleType } from '@hrms/types';
+import { useAuth } from './AuthContext';
 
 interface RoleUser {
   name: string;
@@ -46,28 +47,53 @@ interface RoleContextType {
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [role, setRoleState] = useState<RoleType>('ADMIN');
+  const { user, primaryRole, isAuthenticated } = useAuth();
+  const [roleOverride, setRoleOverride] = useState<RoleType | null>(null);
 
+  // Sync role with authenticated user's primary role upon login
   useEffect(() => {
-    const saved = localStorage.getItem('hrms_preview_role') as RoleType;
-    if (saved && ['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'].includes(saved)) {
-      setRoleState(saved);
+    if (isAuthenticated && primaryRole) {
+      setRoleOverride(primaryRole);
     }
-  }, []);
+  }, [isAuthenticated, primaryRole]);
+
+  // Load preview role from localStorage if in preview mode
+  useEffect(() => {
+    if (!isAuthenticated) {
+      const saved = localStorage.getItem('hrms_preview_role') as RoleType;
+      if (saved && ['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'].includes(saved)) {
+        setRoleOverride(saved);
+      }
+    }
+  }, [isAuthenticated]);
+
+  const activeRole: RoleType = roleOverride || primaryRole || 'ADMIN';
 
   const setRole = (newRole: RoleType) => {
-    setRoleState(newRole);
+    setRoleOverride(newRole);
     if (typeof window !== 'undefined') {
       localStorage.setItem('hrms_preview_role', newRole);
     }
   };
 
+  const currentUser: RoleUser = React.useMemo(() => {
+    if (user && isAuthenticated) {
+      return {
+        name: `${user.firstName} ${user.lastName}`.trim(),
+        email: user.email,
+        role: activeRole,
+        title: user.employeeCode ? `Emp ID: ${user.employeeCode}` : 'Team Member',
+      };
+    }
+    return ROLE_PRESETS[activeRole] || ROLE_PRESETS.ADMIN;
+  }, [user, isAuthenticated, activeRole]);
+
   return (
     <RoleContext.Provider
       value={{
-        role,
+        role: activeRole,
         setRole,
-        currentUser: ROLE_PRESETS[role],
+        currentUser,
       }}
     >
       {children}

@@ -3,8 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useRole } from '../context/RoleContext';
-import { NAVIGATION_CONFIG } from '@hrms/config';
+import { useNavigation } from '../hooks/useNavigation';
 import { cn } from '@hrms/ui';
 import {
   LayoutDashboard,
@@ -61,8 +60,7 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({
   onClose,
 }) => {
   const pathname = usePathname();
-  const { role } = useRole();
-  const navItems = NAVIGATION_CONFIG[role] || [];
+  const { navItems, role } = useNavigation();
 
   return (
     <aside

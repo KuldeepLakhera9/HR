@@ -127,6 +127,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/organization',
       icon: 'Building2',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'SETTING_VIEW',
     },
     {
       id: 'admin-employees',
@@ -134,6 +135,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/employees',
       icon: 'Users',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'EMPLOYEE_VIEW',
     },
     {
       id: 'admin-attendance',
@@ -141,6 +143,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/attendance',
       icon: 'Clock',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'ATTENDANCE_VIEW',
     },
     {
       id: 'admin-leaves',
@@ -148,6 +151,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/leave',
       icon: 'CalendarDays',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'LEAVE_VIEW',
     },
     {
       id: 'admin-visits',
@@ -155,6 +159,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/visits',
       icon: 'Briefcase',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'ATTENDANCE_VIEW',
     },
     {
       id: 'admin-reports',
@@ -162,6 +167,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/reports',
       icon: 'BarChart3',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'REPORT_VIEW',
     },
     {
       id: 'admin-roles',
@@ -169,6 +175,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/roles',
       icon: 'ShieldCheck',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'ROLE_VIEW',
     },
     {
       id: 'admin-audit',
@@ -176,6 +183,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/audit',
       icon: 'FileText',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'AUDIT_VIEW',
     },
     {
       id: 'admin-settings',
@@ -183,6 +191,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/settings',
       icon: 'Settings',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'SETTING_VIEW',
     },
     {
       id: 'admin-design-system',
@@ -190,6 +199,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/design-system',
       icon: 'Palette',
       allowedRoles: ['ADMIN'],
+      requiredPermission: 'SETTING_VIEW',
     },
   ],
   HR: [
@@ -206,6 +216,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/employees',
       icon: 'Users',
       allowedRoles: ['HR'],
+      requiredPermission: 'EMPLOYEE_VIEW',
     },
     {
       id: 'hr-attendance',
@@ -213,6 +224,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/attendance',
       icon: 'Clock',
       allowedRoles: ['HR'],
+      requiredPermission: 'ATTENDANCE_VIEW',
     },
     {
       id: 'hr-leaves',
@@ -220,6 +232,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/leave',
       icon: 'CalendarCheck',
       allowedRoles: ['HR'],
+      requiredPermission: 'LEAVE_VIEW',
       badge: '3',
     },
     {
@@ -228,6 +241,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/visits',
       icon: 'MapPin',
       allowedRoles: ['HR'],
+      requiredPermission: 'ATTENDANCE_VIEW',
       badge: '2',
     },
     {
@@ -236,6 +250,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/progress',
       icon: 'TrendingUp',
       allowedRoles: ['HR'],
+      requiredPermission: 'EMPLOYEE_VIEW',
     },
     {
       id: 'hr-documents',
@@ -243,6 +258,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/documents',
       icon: 'Files',
       allowedRoles: ['HR'],
+      requiredPermission: 'EMPLOYEE_VIEW',
     },
     {
       id: 'hr-reports',
@@ -250,6 +266,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/reports',
       icon: 'BarChart3',
       allowedRoles: ['HR'],
+      requiredPermission: 'REPORT_VIEW',
     },
   ],
   MANAGER: [
@@ -260,13 +277,21 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'LayoutDashboard',
       allowedRoles: ['MANAGER'],
     },
-    { id: 'mgr-team', label: 'My Team', href: '/team', icon: 'Users', allowedRoles: ['MANAGER'] },
+    {
+      id: 'mgr-team',
+      label: 'My Team',
+      href: '/team',
+      icon: 'Users',
+      allowedRoles: ['MANAGER'],
+      requiredPermission: 'EMPLOYEE_VIEW',
+    },
     {
       id: 'mgr-attendance',
       label: 'Team Attendance',
       href: '/attendance',
       icon: 'Clock',
       allowedRoles: ['MANAGER'],
+      requiredPermission: 'ATTENDANCE_VIEW',
     },
     {
       id: 'mgr-approvals',
@@ -274,6 +299,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/leave',
       icon: 'CheckSquare',
       allowedRoles: ['MANAGER'],
+      requiredPermission: 'LEAVE_VIEW',
       badge: '2',
     },
     {
@@ -282,6 +308,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/visits',
       icon: 'MapPin',
       allowedRoles: ['MANAGER'],
+      requiredPermission: 'ATTENDANCE_VIEW',
       badge: '1',
     },
     {
@@ -290,6 +317,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/progress',
       icon: 'LineChart',
       allowedRoles: ['MANAGER'],
+      requiredPermission: 'REPORT_VIEW',
     },
   ],
   EMPLOYEE: [
@@ -306,6 +334,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/attendance',
       icon: 'Clock',
       allowedRoles: ['EMPLOYEE'],
+      requiredPermission: 'ATTENDANCE_VIEW',
     },
     {
       id: 'emp-leave',
@@ -313,6 +342,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/leave',
       icon: 'Calendar',
       allowedRoles: ['EMPLOYEE'],
+      requiredPermission: 'LEAVE_APPLY',
     },
     {
       id: 'emp-visits',
@@ -320,6 +350,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/visits',
       icon: 'Briefcase',
       allowedRoles: ['EMPLOYEE'],
+      requiredPermission: 'ATTENDANCE_VIEW',
     },
     {
       id: 'emp-docs',
@@ -327,6 +358,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/documents',
       icon: 'FolderLock',
       allowedRoles: ['EMPLOYEE'],
+      requiredPermission: 'EMPLOYEE_VIEW',
     },
     {
       id: 'emp-profile',
@@ -334,6 +366,23 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/profile',
       icon: 'UserCircle',
       allowedRoles: ['EMPLOYEE'],
+      requiredPermission: 'EMPLOYEE_VIEW',
     },
   ],
 };
+
+/**
+ * Filter navigation items based on user roles and permissions.
+ * Admins bypass permission filtering; other roles must possess the exact requiredPermission.
+ */
+export function filterNavigationItems(
+  items: NavigationItem[],
+  permissions: string[] = [],
+  isAdmin: boolean = false,
+): NavigationItem[] {
+  return items.filter((item) => {
+    if (isAdmin) return true;
+    if (!item.requiredPermission) return true;
+    return permissions.includes(item.requiredPermission);
+  });
+}

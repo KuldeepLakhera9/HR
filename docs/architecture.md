@@ -52,3 +52,14 @@ graph TD
 1. **OFFICE**: Attendance validation strictly against branch GPS coordinates within the organization-defined radius (e.g. 150m).
 2. **OFFICIAL VISIT (OD)**: Allows outdoor duty punch outside the office perimeter when supported by an approved Official Visit workflow.
 3. **WORK FROM HOME (WFH)**: Remote check-in authorized through manager-approved remote work requests.
+
+## 5. Data Access Scopes & Authorization
+
+In Phase 2 Step 6, the system formalizes data access scopes:
+
+- **`GLOBAL`**: Cross-tenant administrative reach (`ADMIN`).
+- **`ORGANIZATION`**: Tenant-wide visibility (`HR`).
+- **`TEAM`**: Supervised team/department visibility (`MANAGER`).
+- **`SELF`**: Personal identity and records (`EMPLOYEE`).
+
+Detailed blueprint and policy handler specification: [Data Access Scope Architecture](file:///c:/Kuldeep's%20Work/Projects/HR/docs/data-access-scope-architecture.md).

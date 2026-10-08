@@ -1,10 +1,12 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRole } from '../context/RoleContext';
+import { useAuth } from '../context/AuthContext';
 import { RoleType } from '@hrms/types';
-import { Search, Menu, Command } from 'lucide-react';
-import { UserMenu, NotificationMenu } from '@hrms/ui';
+import { Search, Menu, Command, LogIn } from 'lucide-react';
+import { UserMenu, NotificationMenu, Button } from '@hrms/ui';
 import { GlobalSearch } from './GlobalSearch';
 
 const INITIAL_NOTIFICATIONS = [
@@ -33,6 +35,7 @@ const INITIAL_NOTIFICATIONS = [
 
 export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleMobileMenu }) => {
   const { role, setRole, currentUser } = useRole();
+  const { isAuthenticated, logout } = useAuth();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
@@ -112,19 +115,41 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
           {/* Notification Menu */}
           <NotificationMenu notifications={notifications} onMarkAllRead={handleMarkAllRead} />
 
-          {/* User Menu */}
-          <UserMenu
-            name={currentUser.name}
-            email={currentUser.email}
-            role={role}
-            avatarUrl={null}
-            onProfileClick={() => {
-              window.location.href = '/profile';
-            }}
-            onLogout={() => {
-              setRole('ADMIN');
-            }}
-          />
+          {/* User Menu or Sign In Button */}
+          {isAuthenticated ? (
+            <UserMenu
+              name={currentUser.name}
+              email={currentUser.email}
+              role={role}
+              avatarUrl={null}
+              onProfileClick={() => {
+                window.location.href = '/profile';
+              }}
+              onLogout={() => {
+                logout();
+              }}
+            />
+          ) : (
+            <div className="flex items-center gap-2">
+              <UserMenu
+                name={currentUser.name}
+                email={currentUser.email}
+                role={role}
+                avatarUrl={null}
+                onProfileClick={() => {
+                  window.location.href = '/profile';
+                }}
+                onLogout={() => {
+                  window.location.href = '/login';
+                }}
+              />
+              <Link href="/login" className="hidden sm:inline-flex">
+                <Button variant="outline" size="sm" leftIcon={<LogIn className="h-3.5 w-3.5" />}>
+                  Sign In
+                </Button>
+              </Link>
+            </div>
+          )}
         </div>
       </header>
 

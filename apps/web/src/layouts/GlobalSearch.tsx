@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useRole } from '../context/RoleContext';
-import { NAVIGATION_CONFIG } from '@hrms/config';
+import { useNavigation } from '../hooks/useNavigation';
 import { RoleType } from '@hrms/types';
 import {
   Search,
@@ -28,16 +28,16 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) =
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const { role, setRole } = useRole();
+  const { navItems } = useNavigation();
 
   // Filtered navigation results
   const filteredNav = React.useMemo(() => {
-    const roleNavItems = NAVIGATION_CONFIG[role] || [];
-    return roleNavItems.filter(
+    return navItems.filter(
       (item) =>
         item.label.toLowerCase().includes(query.toLowerCase()) ||
         item.href.toLowerCase().includes(query.toLowerCase()),
     );
-  }, [role, query]);
+  }, [navItems, query]);
 
   // Quick Persona switch actions
   const roleActions = React.useMemo(() => {

@@ -6,11 +6,19 @@ import { Sidebar } from './Sidebar';
 import { Header } from './Header';
 import { Breadcrumb } from '@hrms/ui';
 import { useRole } from '../context/RoleContext';
+import { useAuth } from '../context/AuthContext';
+import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 
-export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+export interface AppShellProps {
+  children: React.ReactNode;
+  requireAuth?: boolean;
+}
+
+export const AppShell: React.FC<AppShellProps> = ({ children, requireAuth = false }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const { role } = useRole();
+  const { isAuthenticated, user } = useAuth();
 
   // Generate breadcrumb path
   const pathSegments = (pathname || '').split('/').filter(Boolean);
@@ -54,13 +62,22 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           {/* Breadcrumb row */}
           <div className="pb-1 flex items-center justify-between">
             <Breadcrumb items={breadcrumbs} />
-            <span className="text-[11px] font-medium text-stone-500">
-              Active Persona: <strong className="text-amber-700">{role}</strong>
-            </span>
+            <div className="flex items-center gap-2">
+              {isAuthenticated ? (
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  {user?.firstName} ({role})
+                </span>
+              ) : (
+                <span className="text-[11px] font-medium text-stone-500">
+                  Active Persona: <strong className="text-amber-700">{role}</strong>
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Child Page Content */}
-          {children}
+          {requireAuth ? <ProtectedRoute>{children}</ProtectedRoute> : children}
         </main>
       </div>
     </div>
