@@ -13,7 +13,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const { role } = useRole();
 
   // Generate breadcrumb path
-  const pathSegments = pathname.split('/').filter(Boolean);
+  const pathSegments = (pathname || '').split('/').filter(Boolean);
   const breadcrumbs = [
     { label: 'Home', href: '/dashboard' },
     ...pathSegments.map((segment, index) => {

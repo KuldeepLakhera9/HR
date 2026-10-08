@@ -29,6 +29,7 @@ import {
   UserCircle,
   Palette,
   LucideIcon,
+  X,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -71,24 +72,40 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({
       )}
     >
       {/* Brand Header */}
-      <div className="h-16 flex items-center gap-3 px-6 border-b border-stone-150">
-        <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-amber-700 to-amber-500 flex items-center justify-center text-white font-bold text-lg shadow-sm shadow-amber-600/30">
-          P
+      <div className="h-16 flex items-center justify-between px-5 border-b border-stone-150">
+        <div className="flex items-center gap-3">
+          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-amber-700 to-amber-500 flex items-center justify-center text-white font-bold text-lg shadow-sm shadow-amber-600/30">
+            P
+          </div>
+          <div>
+            <span className="font-bold text-base text-stone-900 tracking-tight block leading-tight">
+              PeopleOS
+            </span>
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-amber-700 block">
+              Self-Hosted HRMS
+            </span>
+          </div>
         </div>
-        <div>
-          <span className="font-bold text-base text-stone-900 tracking-tight block leading-tight">
-            PeopleOS
-          </span>
-          <span className="text-[10px] uppercase font-semibold tracking-wider text-amber-700 block">
-            Self-Hosted HRMS
-          </span>
-        </div>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="md:hidden p-1.5 rounded-lg text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+            aria-label="Close sidebar"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
 
       {/* Role Navigation Items */}
       <div className="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-        <div className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wider text-stone-400">
-          {role} Workspace
+        <div className="px-3 pb-2.5 flex items-center justify-between">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-stone-400">
+            Navigation
+          </span>
+          <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 uppercase tracking-wide">
+            {role}
+          </span>
         </div>
         {navItems.map((item) => {
           const Icon = ICON_MAP[item.icon] || LayoutDashboard;
