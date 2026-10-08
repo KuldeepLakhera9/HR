@@ -1,0 +1,24 @@
+{
+  "name": "hrms-monorepo",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Production-grade self-hosted HRMS platform monorepo",
+  "scripts": {
+    "build": "turbo run build",
+    "dev": "turbo run dev",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3",
+    "turbo": "^2.4.4",
+    "typescript": "^5.5.4"
+  },
+  "packageManager": "pnpm@12.8.1",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

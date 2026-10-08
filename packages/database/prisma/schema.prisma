@@ -1,0 +1,290 @@
+// Prisma Schema for HRMS Platform Foundation
+// Phase 1: Foundational Core Entities
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// -----------------------------------------------------------------------------
+// 1. Organization & Hierarchy Entities
+// -----------------------------------------------------------------------------
+
+model Organization {
+  id             String          @id @default(uuid())
+  code           String          @unique
+  name           String
+  legalName      String?
+  logo           String?
+  website        String?
+  timezone       String          @default("Asia/Kolkata")
+  currency       String          @default("INR")
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  branches       Branch[]
+  departments    Department[]
+  designations   Designation[]
+  users          User[]
+  roles          Role[]
+  auditLogs      AuditLog[]
+  systemSettings SystemSetting[]
+
+  @@index([code])
+  @@index([isActive])
+  @@map("organizations")
+}
+
+model Branch {
+  id                    String        @id @default(uuid())
+  organizationId        String
+  organization          Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name                  String
+  code                  String
+  addressLine1          String?
+  addressLine2          String?
+  city                  String?
+  state                 String?
+  country               String        @default("India")
+  postalCode            String?
+  timezone              String        @default("Asia/Kolkata")
+  
+  // Geofencing coordinates ready for future Phase attendance requirements
+  geofenceLat           Float?
+  geofenceLng           Float?
+  geofenceRadiusMeters  Int?          @default(100)
+
+  isActive              Boolean       @default(true)
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+  deletedAt             DateTime?
+
+  users                 User[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("branches")
+}
+
+model Department {
+  id                 String         @id @default(uuid())
+  organizationId     String
+  organization       Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name               String
+  code               String
+  parentDepartmentId String?
+  parentDepartment   Department?    @relation("DepartmentHierarchy", fields: [parentDepartmentId], references: [id])
+  subDepartments     Department[]   @relation("DepartmentHierarchy")
+
+  isActive           Boolean        @default(true)
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+  deletedAt          DateTime?
+
+  designations       Designation[]
+  users              User[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([parentDepartmentId])
+  @@map("departments")
+}
+
+model Designation {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  departmentId   String?
+  department     Department?   @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  title          String
+  code           String
+  level          Int?          @default(1)
+
+  isActive       Boolean       @default(true)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  deletedAt      DateTime?
+
+  users          User[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([departmentId])
+  @@map("designations")
+}
+
+// -----------------------------------------------------------------------------
+// 2. Identity, Access & User Management Entities
+// -----------------------------------------------------------------------------
+
+enum RoleCode {
+  ADMIN
+  HR
+  MANAGER
+  EMPLOYEE
+}
+
+model User {
+  id                String         @id @default(uuid())
+  organizationId    String
+  organization      Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId          String?
+  branch            Branch?        @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId      String?
+  department        Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designationId     String?
+  designation       Designation?   @relation(fields: [designationId], references: [id], onDelete: SetNull)
+
+  employeeCode      String
+  email             String
+  passwordHash      String
+  firstName         String
+  lastName          String
+  phone             String?
+  avatarUrl         String?
+
+  isActive          Boolean        @default(true)
+  isEmailVerified   Boolean        @default(false)
+  lastLoginAt       DateTime?
+  
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+
+  userRoles         UserRole[]
+  auditLogs         AuditLog[]
+
+  @@unique([organizationId, email])
+  @@unique([organizationId, employeeCode])
+  @@index([organizationId])
+  @@index([email])
+  @@index([employeeCode])
+  @@index([departmentId])
+  @@index([branchId])
+  @@map("users")
+}
+
+model Role {
+  id              String           @id @default(uuid())
+  organizationId  String?
+  organization    Organization?    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name            String
+  code            RoleCode
+  description     String?
+  isSystem        Boolean          @default(false)
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  userRoles       UserRole[]
+  rolePermissions RolePermission[]
+
+  @@unique([organizationId, code])
+  @@index([code])
+  @@map("roles")
+}
+
+model Permission {
+  id              String           @id @default(uuid())
+  name            String
+  code            String           @unique // e.g. "employees:read", "leave:approve"
+  module          String           // e.g. "attendance", "leave", "employees"
+  description     String?
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  rolePermissions RolePermission[]
+
+  @@index([module])
+  @@index([code])
+  @@map("permissions")
+}
+
+model UserRole {
+  id         String    @id @default(uuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roleId     String
+  role       Role      @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  assignedAt DateTime  @default(now())
+  assignedBy String?
+
+  @@unique([userId, roleId])
+  @@index([userId])
+  @@index([roleId])
+  @@map("user_roles")
+}
+
+model RolePermission {
+  id           String     @id @default(uuid())
+  roleId       String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permissionId String
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+  assignedAt   DateTime   @default(now())
+
+  @@unique([roleId, permissionId])
+  @@index([roleId])
+  @@index([permissionId])
+  @@map("role_permissions")
+}
+
+// -----------------------------------------------------------------------------
+// 3. Operational Governance & Audit Log
+// -----------------------------------------------------------------------------
+
+model AuditLog {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String?
+  user           User?         @relation(fields: [userId], references: [id], onDelete: SetNull)
+  
+  action         String        // CREATE, UPDATE, DELETE, LOGIN, APPROVE
+  entity         String        // User, Leave, Attendance, Branch
+  entityId       String?
+  oldValues      Json?
+  newValues      Json?
+  ipAddress      String?
+  userAgent      String?
+  
+  createdAt      DateTime      @default(now())
+
+  @@index([organizationId])
+  @@index([userId])
+  @@index([entity, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// -----------------------------------------------------------------------------
+// 4. System Settings
+// -----------------------------------------------------------------------------
+
+model SystemSetting {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  
+  key            String
+  value          String
+  type           String        @default("STRING") // STRING, BOOLEAN, JSON, NUMBER
+  isPublic       Boolean       @default(false)
+  description    String?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@index([key])
+  @@map("system_settings")
+}
