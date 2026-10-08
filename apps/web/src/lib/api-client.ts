@@ -263,10 +263,27 @@ export const organizationApi = {
     return res.data;
   },
 
-  async getBranches(params?: { search?: string; status?: string }) {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
+  async getBranches(params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: string;
+  }) {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          cleanParams[k] = String(v);
+        }
+      });
+    }
+    const query = new URLSearchParams(cleanParams).toString();
     const res = await fetchWithAuth<any[]>(`/branches${query ? `?${query}` : ''}`);
-    return res.data;
+    const items = res.data || [];
+    (items as any).meta = res.meta;
+    return items;
   },
 
   async createBranch(data: any) {
@@ -279,23 +296,49 @@ export const organizationApi = {
 
   async updateBranch(id: string, data: any) {
     const res = await fetchWithAuth<any>(`/branches/${id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
     return res.data;
   },
 
-  async deactivateBranch(id: string) {
+  async activateBranch(id: string) {
     const res = await fetchWithAuth<any>(`/branches/${id}`, {
-      method: 'DELETE',
+      method: 'PATCH',
+      body: JSON.stringify({ isActive: true }),
     });
     return res.data;
   },
 
-  async getDepartments(params?: { search?: string; status?: string }) {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
-    const res = await fetchWithAuth<any[]>(`/departments${query ? `?${query}` : ''}`);
+  async deactivateBranch(id: string, reason?: string) {
+    const res = await fetchWithAuth<any>(`/branches/${id}/deactivate`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason }),
+    });
     return res.data;
+  },
+
+  async getDepartments(params?: {
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: string;
+  }) {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          cleanParams[k] = String(v);
+        }
+      });
+    }
+    const query = new URLSearchParams(cleanParams).toString();
+    const res = await fetchWithAuth<any[]>(`/departments${query ? `?${query}` : ''}`);
+    const items = res.data || [];
+    (items as any).meta = res.meta;
+    return items;
   },
 
   async createDepartment(data: any) {
@@ -308,23 +351,50 @@ export const organizationApi = {
 
   async updateDepartment(id: string, data: any) {
     const res = await fetchWithAuth<any>(`/departments/${id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
     return res.data;
   },
 
-  async deactivateDepartment(id: string) {
+  async activateDepartment(id: string) {
     const res = await fetchWithAuth<any>(`/departments/${id}`, {
-      method: 'DELETE',
+      method: 'PATCH',
+      body: JSON.stringify({ isActive: true }),
     });
     return res.data;
   },
 
-  async getDesignations(params?: { departmentId?: string; search?: string; status?: string }) {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
-    const res = await fetchWithAuth<any[]>(`/designations${query ? `?${query}` : ''}`);
+  async deactivateDepartment(id: string, reason?: string) {
+    const res = await fetchWithAuth<any>(`/departments/${id}/deactivate`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason }),
+    });
     return res.data;
+  },
+
+  async getDesignations(params?: {
+    departmentId?: string;
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: string;
+  }) {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          cleanParams[k] = String(v);
+        }
+      });
+    }
+    const query = new URLSearchParams(cleanParams).toString();
+    const res = await fetchWithAuth<any[]>(`/designations${query ? `?${query}` : ''}`);
+    const items = res.data || [];
+    (items as any).meta = res.meta;
+    return items;
   },
 
   async createDesignation(data: any) {
@@ -337,15 +407,24 @@ export const organizationApi = {
 
   async updateDesignation(id: string, data: any) {
     const res = await fetchWithAuth<any>(`/designations/${id}`, {
-      method: 'PUT',
+      method: 'PATCH',
       body: JSON.stringify(data),
     });
     return res.data;
   },
 
-  async deactivateDesignation(id: string) {
+  async activateDesignation(id: string) {
     const res = await fetchWithAuth<any>(`/designations/${id}`, {
-      method: 'DELETE',
+      method: 'PATCH',
+      body: JSON.stringify({ isActive: true }),
+    });
+    return res.data;
+  },
+
+  async deactivateDesignation(id: string, reason?: string) {
+    const res = await fetchWithAuth<any>(`/designations/${id}/deactivate`, {
+      method: 'PATCH',
+      body: JSON.stringify({ reason }),
     });
     return res.data;
   },
