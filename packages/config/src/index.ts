@@ -258,7 +258,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/documents',
       icon: 'Files',
       allowedRoles: ['HR'],
-      requiredPermission: 'EMPLOYEE_VIEW',
+      requiredPermission: 'DOCUMENT_VIEW',
     },
     {
       id: 'hr-reports',
@@ -308,7 +308,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/visits',
       icon: 'MapPin',
       allowedRoles: ['MANAGER'],
-      requiredPermission: 'ATTENDANCE_VIEW',
+      requiredPermission: 'VISIT_VIEW',
       badge: '1',
     },
     {
@@ -350,7 +350,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/visits',
       icon: 'Briefcase',
       allowedRoles: ['EMPLOYEE'],
-      requiredPermission: 'ATTENDANCE_VIEW',
+      requiredPermission: 'VISIT_VIEW',
     },
     {
       id: 'emp-docs',
@@ -358,7 +358,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/documents',
       icon: 'FolderLock',
       allowedRoles: ['EMPLOYEE'],
-      requiredPermission: 'EMPLOYEE_VIEW',
+      requiredPermission: 'DOCUMENT_VIEW',
     },
     {
       id: 'emp-profile',
@@ -366,7 +366,6 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       href: '/profile',
       icon: 'UserCircle',
       allowedRoles: ['EMPLOYEE'],
-      requiredPermission: 'EMPLOYEE_VIEW',
     },
   ],
 };
