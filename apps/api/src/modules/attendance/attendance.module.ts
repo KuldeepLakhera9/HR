@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Injectable, Module } from '@nestjs/common';
+import { Controller, Get, Injectable, Module } from '@nestjs/common';
 import { ApiTags, ApiOperation } from '@nestjs/swagger';
 
 @Injectable()

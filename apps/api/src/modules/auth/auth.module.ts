@@ -1,5 +1,5 @@
-import { Controller, Post, Body, Get, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse as SwaggerResponse } from '@nestjs/swagger';
+import { Controller, Post, Body, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation } from '@nestjs/swagger';
 import { Injectable } from '@nestjs/common';
 import { Module } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
