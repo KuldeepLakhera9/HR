@@ -21,6 +21,18 @@ export const Dialog: React.FC<DialogProps> = ({
   footer,
   maxWidth = 'md',
 }) => {
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const maxWidths = {
@@ -32,11 +44,16 @@ export const Dialog: React.FC<DialogProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      role="dialog"
+      aria-modal="true"
+    >
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs transition-opacity animate-fade-in"
         onClick={onClose}
+        aria-hidden="true"
       />
       {/* Modal Dialog */}
       <div
@@ -52,7 +69,8 @@ export const Dialog: React.FC<DialogProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors"
+            aria-label="Close dialog"
+            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/20"
           >
             <X className="h-4 w-4" />
           </button>
@@ -85,16 +103,29 @@ export const Drawer: React.FC<DrawerProps> = ({
   footer,
   side = 'right',
 }) => {
+  React.useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const sideClasses =
     side === 'right' ? 'right-0 top-0 bottom-0 max-w-md' : 'left-0 top-0 bottom-0 max-w-md';
 
   return (
-    <div className="fixed inset-0 z-50 flex">
+    <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
       <div
         className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs transition-opacity"
         onClick={onClose}
+        aria-hidden="true"
       />
       <div
         className={cn(
@@ -107,7 +138,8 @@ export const Drawer: React.FC<DrawerProps> = ({
           {title && <h3 className="text-base font-semibold text-stone-900">{title}</h3>}
           <button
             onClick={onClose}
-            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors"
+            aria-label="Close drawer"
+            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/20"
           >
             <X className="h-4 w-4" />
           </button>

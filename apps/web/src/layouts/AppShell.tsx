@@ -18,13 +18,16 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     { label: 'Home', href: '/dashboard' },
     ...pathSegments.map((segment, index) => {
       const href = '/' + pathSegments.slice(0, index + 1).join('/');
-      const label = segment.charAt(0).toUpperCase() + segment.slice(1);
+      const label = segment
+        .split('-')
+        .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+        .join(' ');
       return { label, href };
     }),
   ];
 
   return (
-    <div className="min-h-screen bg-[#FAF8F5] flex">
+    <div className="min-h-screen bg-ivory-50 flex">
       {/* Desktop Sidebar */}
       <div className="hidden md:flex shrink-0">
         <Sidebar isOpen={true} />

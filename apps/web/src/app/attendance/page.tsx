@@ -209,38 +209,29 @@ export default function AttendancePage() {
 
         {/* Mode Overview KPIs */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
-                Mode 1: Office Geofence
-              </span>
-              <Building className="h-4 w-4 text-amber-600" />
-            </div>
-            <p className="text-2xl font-bold text-stone-900 mt-2">52 Staff</p>
-            <p className="text-[11px] text-stone-500 mt-0.5">Punch validated via GPS perimeter</p>
-          </div>
+          <KPICard
+            title="Mode 1: Office Geofence"
+            value="52 Staff"
+            description="Punch validated via GPS perimeter"
+            icon={<Building className="h-5 w-5 text-amber-700" />}
+            iconBg="bg-amber-100"
+          />
 
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-purple-800 bg-purple-50 px-2 py-0.5 rounded">
-                Mode 2: Official Visit (OD)
-              </span>
-              <Briefcase className="h-4 w-4 text-purple-600" />
-            </div>
-            <p className="text-2xl font-bold text-stone-900 mt-2">4 Staff</p>
-            <p className="text-[11px] text-stone-500 mt-0.5">Approved outdoor duty trips</p>
-          </div>
+          <KPICard
+            title="Mode 2: Official Visit (OD)"
+            value="4 Staff"
+            description="Approved outdoor duty trips"
+            icon={<Briefcase className="h-5 w-5 text-purple-700" />}
+            iconBg="bg-purple-100"
+          />
 
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-sky-800 bg-sky-50 px-2 py-0.5 rounded">
-                Mode 3: Work From Home
-              </span>
-              <Home className="h-4 w-4 text-sky-600" />
-            </div>
-            <p className="text-2xl font-bold text-stone-900 mt-2">8 Staff</p>
-            <p className="text-[11px] text-stone-500 mt-0.5">Approved remote work requests</p>
-          </div>
+          <KPICard
+            title="Mode 3: Work From Home"
+            value="8 Staff"
+            description="Approved remote work requests"
+            icon={<Home className="h-5 w-5 text-sky-700" />}
+            iconBg="bg-sky-100"
+          />
         </div>
 
         {/* Filters */}

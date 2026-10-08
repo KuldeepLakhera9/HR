@@ -2,7 +2,18 @@
 
 import React, { useState } from 'react';
 import { AppShell } from '../../layouts/AppShell';
-import { Input, Switch, Button, Badge, Toast } from '@hrms/ui';
+import {
+  Input,
+  Switch,
+  Button,
+  Badge,
+  Toast,
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from '@hrms/ui';
 import { Settings, Save, ShieldCheck, MapPin } from 'lucide-react';
 
 export default function SettingsPage() {
@@ -41,77 +52,89 @@ export default function SettingsPage() {
         </div>
 
         {/* Organization Information */}
-        <div className="p-6 rounded-xl border border-stone-200 bg-white space-y-4">
-          <h3 className="text-sm font-semibold text-stone-900">Organization Identity</h3>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Input label="Organization Name" defaultValue="PeopleOS Technologies Inc." />
-            <Input label="Organization Code" defaultValue="PEOPLEOS" disabled />
-            <Input label="Default Timezone" defaultValue="Asia/Kolkata (IST)" />
-            <Input label="Operating Currency" defaultValue="INR (₹)" />
-          </div>
-        </div>
-
-        {/* Geofence & Attendance Rules (Requirement 25) */}
-        <div className="p-6 rounded-xl border border-stone-200 bg-white space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-sm font-semibold text-stone-900">
-                Attendance Geofence Configuration
-              </h3>
-              <p className="text-xs text-stone-500 mt-0.5">
-                Controls perimeter enforcement for Office punches.
-              </p>
+        <Card>
+          <CardHeader>
+            <CardTitle>Organization Identity</CardTitle>
+            <CardDescription>
+              Legal corporate entity name, base timezone, and currency
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input label="Organization Name" defaultValue="PeopleOS Technologies Inc." />
+              <Input label="Organization Code" defaultValue="PEOPLEOS" disabled />
+              <Input label="Default Timezone" defaultValue="Asia/Kolkata (IST)" />
+              <Input label="Operating Currency" defaultValue="INR (₹)" />
             </div>
-            <Badge variant="success">Geofencing Active</Badge>
-          </div>
+          </CardContent>
+        </Card>
 
-          <div className="space-y-4 pt-2">
-            <Switch
-              label="Enforce GPS Geofence for Office Attendance"
-              description="Requires employees to be within verified branch perimeter when attendance mode is Office."
-              defaultChecked={true}
-            />
-
-            <Switch
-              label="Allow Outdoor Duty (Official Visit) Geofence Bypass"
-              description="Permits punches outside geofence when manager-approved Official Visit is active."
-              defaultChecked={true}
-            />
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-              <Input
-                label="HQ Geofence Radius (Meters)"
-                type="number"
-                defaultValue="150"
-                helperText="Allowed circular radius around branch coordinates."
-              />
-              <Input
-                label="Attendance Grace Period (Minutes)"
-                type="number"
-                defaultValue="15"
-                helperText="Minutes allowed after scheduled shift before flagging late."
-              />
+        {/* Geofence & Attendance Rules */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>Attendance Geofence Configuration</CardTitle>
+                <CardDescription>
+                  Controls perimeter enforcement for Office punches.
+                </CardDescription>
+              </div>
+              <Badge variant="success">Geofencing Active</Badge>
             </div>
-          </div>
-        </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              <Switch
+                label="Enforce GPS Geofence for Office Attendance"
+                description="Requires employees to be within verified branch perimeter when attendance mode is Office."
+                defaultChecked={true}
+              />
+
+              <Switch
+                label="Allow Outdoor Duty (Official Visit) Geofence Bypass"
+                description="Permits punches outside geofence when manager-approved Official Visit is active."
+                defaultChecked={true}
+              />
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <Input
+                  label="HQ Geofence Radius (Meters)"
+                  type="number"
+                  defaultValue="150"
+                  helperText="Allowed circular radius around branch coordinates."
+                />
+                <Input
+                  label="Attendance Grace Period (Minutes)"
+                  type="number"
+                  defaultValue="15"
+                  helperText="Minutes allowed after scheduled shift before flagging late."
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Data Protection & Self-Hosting */}
-        <div className="p-6 rounded-xl border border-stone-200 bg-white space-y-3">
-          <h3 className="text-sm font-semibold text-stone-900 flex items-center gap-2">
-            <ShieldCheck className="h-4 w-4 text-emerald-600" /> Self-Hosted Data Center Controls
-          </h3>
-          <p className="text-xs text-stone-500">
-            All user data, attendance GPS captures, documents, and audit logs are stored strictly
-            inside your organization's PostgreSQL and local storage cluster without external cloud
-            dependencies.
-          </p>
-          <div className="pt-2 flex items-center gap-2">
-            <span className="text-xs font-semibold text-stone-700">Storage Location:</span>
-            <span className="text-xs bg-stone-100 text-stone-800 px-2 py-0.5 rounded font-mono">
-              /var/lib/postgresql/data (Mounted Volume)
-            </span>
-          </div>
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-emerald-600" /> Self-Hosted Data Center Controls
+            </CardTitle>
+            <CardDescription>
+              All user data, attendance GPS captures, documents, and audit logs are stored strictly
+              inside your organization's PostgreSQL and local storage cluster without external cloud
+              dependencies.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-stone-700">Storage Location:</span>
+              <span className="text-xs bg-stone-100 text-stone-800 px-2 py-0.5 rounded font-mono">
+                /var/lib/postgresql/data (Mounted Volume)
+              </span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </AppShell>
   );

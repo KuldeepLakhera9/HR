@@ -72,26 +72,19 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Organization Overview & Quick Stats */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="p-4 rounded-xl border border-stone-200/90 bg-white">
-          <p className="text-xs text-stone-500">Active Branches</p>
-          <p className="text-lg font-bold text-stone-900 mt-1">3 Locations</p>
-          <p className="text-[11px] text-stone-400 mt-0.5">BLR (HQ), MUM, DEL</p>
-        </div>
-        <div className="p-4 rounded-xl border border-stone-200/90 bg-white">
-          <p className="text-xs text-stone-500">Departments</p>
-          <p className="text-lg font-bold text-stone-900 mt-1">4 Units</p>
-          <p className="text-[11px] text-stone-400 mt-0.5">Engineering, HR, Ops, Finance</p>
-        </div>
-        <div className="p-4 rounded-xl border border-stone-200/90 bg-white">
-          <p className="text-xs text-stone-500">Avg Attendance Rate</p>
-          <p className="text-lg font-bold text-stone-900 mt-1">93.4%</p>
-          <p className="text-[11px] text-emerald-600 font-medium mt-0.5">+1.2% above benchmark</p>
-        </div>
-        <div className="p-4 rounded-xl border border-stone-200/90 bg-white">
-          <p className="text-xs text-stone-500">Audit Events Today</p>
-          <p className="text-lg font-bold text-stone-900 mt-1">142 Logs</p>
-          <p className="text-[11px] text-stone-400 mt-0.5">No security anomalies</p>
-        </div>
+        <KPICard title="Active Branches" value="3 Locations" description="BLR (HQ), MUM, DEL" />
+        <KPICard title="Departments" value="4 Units" description="Engineering, HR, Ops, Finance" />
+        <KPICard
+          title="Avg Attendance Rate"
+          value="93.4%"
+          change={{ value: '+1.2% above benchmark', trend: 'up' }}
+        />
+        <KPICard
+          title="Audit Events Today"
+          value="142 Logs"
+          description="No security anomalies recorded"
+          change={{ value: 'Healthy', trend: 'neutral' }}
+        />
       </div>
 
       {/* Charts Section */}

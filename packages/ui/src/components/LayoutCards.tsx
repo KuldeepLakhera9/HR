@@ -121,18 +121,22 @@ export interface BreadcrumbProps {
 
 export const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
   return (
-    <nav className="flex items-center space-x-1.5 text-xs text-stone-500">
+    <nav aria-label="Breadcrumb" className="flex items-center space-x-1.5 text-xs text-stone-500">
       {items.map((item, idx) => {
         const isLast = idx === items.length - 1;
         return (
           <React.Fragment key={idx}>
-            {idx > 0 && <ChevronRight className="h-3 w-3 text-stone-400 shrink-0" />}
+            {idx > 0 && (
+              <ChevronRight className="h-3 w-3 text-stone-400 shrink-0" aria-hidden="true" />
+            )}
             {isLast ? (
-              <span className="font-semibold text-stone-900">{item.label}</span>
+              <span className="font-semibold text-stone-900" aria-current="page">
+                {item.label}
+              </span>
             ) : (
               <a
                 href={item.href || '#'}
-                className="hover:text-stone-800 hover:underline transition-colors"
+                className="hover:text-stone-800 hover:underline transition-colors focus:outline-none focus:ring-1 focus:ring-amber-500 rounded px-0.5"
               >
                 {item.label}
               </a>

@@ -2,7 +2,17 @@
 
 import React, { useState } from 'react';
 import { AppShell } from '../../layouts/AppShell';
-import { DataTable, Button, Badge, Dialog, Input, Select, Textarea, Toast } from '@hrms/ui';
+import {
+  DataTable,
+  Button,
+  Badge,
+  Dialog,
+  Input,
+  Select,
+  Textarea,
+  Toast,
+  KPICard,
+} from '@hrms/ui';
 import { CalendarPlus, Calendar, Clock, CheckCircle } from 'lucide-react';
 
 interface LeaveRequestItem {
@@ -126,38 +136,29 @@ export default function LeavePage() {
 
         {/* Leave Entitlements Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <span className="text-xs font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded">
-              Casual Leave (CL)
-            </span>
-            <div className="mt-3 flex items-baseline justify-between">
-              <span className="text-2xl font-bold text-stone-900">8 Remaining</span>
-              <span className="text-xs text-stone-400">Total: 12</span>
-            </div>
-            <p className="text-[11px] text-stone-500 mt-1">4 days utilized this calendar year</p>
-          </div>
+          <KPICard
+            title="Casual Leave (CL)"
+            value="8 Remaining"
+            description="4 of 12 days utilized this calendar year"
+            icon={<Calendar className="h-5 w-5 text-amber-700" />}
+            iconBg="bg-amber-100"
+          />
 
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <span className="text-xs font-semibold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded">
-              Sick Leave (SL)
-            </span>
-            <div className="mt-3 flex items-baseline justify-between">
-              <span className="text-2xl font-bold text-stone-900">10 Remaining</span>
-              <span className="text-xs text-stone-400">Total: 10</span>
-            </div>
-            <p className="text-[11px] text-stone-500 mt-1">0 days utilized this calendar year</p>
-          </div>
+          <KPICard
+            title="Sick Leave (SL)"
+            value="10 Remaining"
+            description="0 of 10 days utilized this calendar year"
+            icon={<CheckCircle className="h-5 w-5 text-emerald-700" />}
+            iconBg="bg-emerald-100"
+          />
 
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <span className="text-xs font-semibold text-sky-800 bg-sky-50 px-2 py-0.5 rounded">
-              Privilege Leave (PL)
-            </span>
-            <div className="mt-3 flex items-baseline justify-between">
-              <span className="text-2xl font-bold text-stone-900">14 Remaining</span>
-              <span className="text-xs text-stone-400">Total: 18</span>
-            </div>
-            <p className="text-[11px] text-stone-500 mt-1">Carried forward: 6 days</p>
-          </div>
+          <KPICard
+            title="Privilege Leave (PL)"
+            value="14 Remaining"
+            description="6 days carried forward from prior year"
+            icon={<Clock className="h-5 w-5 text-sky-700" />}
+            iconBg="bg-sky-100"
+          />
         </div>
 
         {/* Leave Requests Table */}

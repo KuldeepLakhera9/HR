@@ -228,12 +228,36 @@ export const UserMenu: React.FC<UserMenuProps> = ({
   onProfileClick,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
 
   return (
-    <div className="relative">
+    <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-2.5 p-1 rounded-xl hover:bg-stone-100 transition-colors cursor-pointer text-left"
+        aria-haspopup="menu"
+        aria-expanded={isOpen}
+        aria-label="User Profile Menu"
+        className="flex items-center gap-2.5 p-1 rounded-xl hover:bg-stone-100 transition-colors cursor-pointer text-left focus:outline-none focus:ring-2 focus:ring-amber-500/20"
       >
         <Avatar name={name} src={avatarUrl} size="sm" status="online" />
         <div className="hidden md:block">
@@ -245,7 +269,10 @@ export const UserMenu: React.FC<UserMenuProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-56 rounded-xl bg-white shadow-xl border border-stone-100 py-2 z-50 animate-in fade-in zoom-in-95">
+        <div
+          role="menu"
+          className="absolute right-0 mt-2 w-56 rounded-xl bg-white shadow-xl border border-stone-100 py-2 z-50 animate-in fade-in zoom-in-95"
+        >
           <div className="px-4 py-2 border-b border-stone-100">
             <p className="text-xs font-semibold text-stone-900">{name}</p>
             <p className="text-[11px] text-stone-500 truncate">{email}</p>
@@ -254,22 +281,24 @@ export const UserMenu: React.FC<UserMenuProps> = ({
             </span>
           </div>
           <button
+            role="menuitem"
             onClick={() => {
               setIsOpen(false);
               onProfileClick?.();
             }}
-            className="w-full text-left px-4 py-2 text-xs text-stone-700 hover:bg-stone-50 flex items-center gap-2"
+            className="w-full text-left px-4 py-2 text-xs text-stone-700 hover:bg-stone-50 flex items-center gap-2 transition-colors cursor-pointer"
           >
             <User className="h-3.5 w-3.5 text-stone-400" />
             My Profile
           </button>
           <div className="border-t border-stone-100 mt-1 pt-1">
             <button
+              role="menuitem"
               onClick={() => {
                 setIsOpen(false);
                 onLogout?.();
               }}
-              className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-medium"
+              className="w-full text-left px-4 py-2 text-xs text-rose-600 hover:bg-rose-50 font-medium transition-colors cursor-pointer"
             >
               Sign out
             </button>
@@ -299,14 +328,37 @@ export const NotificationMenu: React.FC<NotificationMenuProps> = ({
   onMarkAllRead,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
+  const menuRef = React.useRef<HTMLDivElement>(null);
   const unreadCount = notifications.filter((n) => !n.isRead).length;
 
+  React.useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsOpen(false);
+    };
+
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('keydown', handleKeyDown);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen]);
+
   return (
-    <div className="relative">
+    <div className="relative" ref={menuRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="relative p-2 rounded-xl text-stone-500 hover:text-stone-800 hover:bg-stone-100 transition-colors cursor-pointer"
-        aria-label="Notifications"
+        aria-haspopup="true"
+        aria-expanded={isOpen}
+        aria-label={`Notifications, ${unreadCount} unread`}
+        className="relative p-2 rounded-xl text-stone-500 hover:text-stone-800 hover:bg-stone-100 transition-colors cursor-pointer focus:outline-none focus:ring-2 focus:ring-amber-500/20"
       >
         <Bell className="h-4 w-4" />
         {unreadCount > 0 && (
@@ -315,13 +367,17 @@ export const NotificationMenu: React.FC<NotificationMenuProps> = ({
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 mt-2 w-80 rounded-xl bg-white shadow-xl border border-stone-100 py-2 z-50 animate-in fade-in zoom-in-95">
+        <div
+          role="region"
+          aria-label="Notifications Panel"
+          className="absolute right-0 mt-2 w-80 rounded-xl bg-white shadow-xl border border-stone-100 py-2 z-50 animate-in fade-in zoom-in-95"
+        >
           <div className="flex items-center justify-between px-4 py-2 border-b border-stone-100">
             <h5 className="text-xs font-semibold text-stone-900">Notifications</h5>
             {unreadCount > 0 && (
               <button
                 onClick={onMarkAllRead}
-                className="text-[11px] text-amber-700 hover:underline font-medium"
+                className="text-[11px] text-amber-700 hover:underline font-medium cursor-pointer"
               >
                 Mark all read
               </button>

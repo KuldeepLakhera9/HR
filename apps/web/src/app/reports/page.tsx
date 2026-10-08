@@ -33,26 +33,28 @@ export default function ReportsPage() {
 
         {/* High-Level MIS Stats */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <p className="text-xs text-stone-500">Monthly Attendance Rate</p>
-            <p className="text-2xl font-bold text-stone-900 mt-1">94.6%</p>
-            <p className="text-[11px] text-emerald-600 font-medium mt-0.5">+1.8% vs last month</p>
-          </div>
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <p className="text-xs text-stone-500">Avg Daily Work Hours</p>
-            <p className="text-2xl font-bold text-stone-900 mt-1">8.4 hrs</p>
-            <p className="text-[11px] text-stone-400 mt-0.5">Target: 8.5 hrs</p>
-          </div>
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <p className="text-xs text-stone-500">On-Time Arrival Rate</p>
-            <p className="text-2xl font-bold text-stone-900 mt-1">91.2%</p>
-            <p className="text-[11px] text-emerald-600 font-medium mt-0.5">Within 15-min grace</p>
-          </div>
-          <div className="p-4 rounded-xl border border-stone-200 bg-white">
-            <p className="text-xs text-stone-500">Annualized Attrition</p>
-            <p className="text-2xl font-bold text-stone-900 mt-1">4.1%</p>
-            <p className="text-[11px] text-stone-400 mt-0.5">Low turnover tier</p>
-          </div>
+          <KPICard
+            title="Monthly Attendance"
+            value="94.6%"
+            change={{ value: '+1.8% vs last month', trend: 'up' }}
+          />
+          <KPICard
+            title="Avg Daily Hours"
+            value="8.4 hrs"
+            description="Organization target: 8.5 hrs"
+          />
+          <KPICard
+            title="On-Time Arrival"
+            value="91.2%"
+            description="Within 15-min grace window"
+            change={{ value: 'Compliant', trend: 'up' }}
+          />
+          <KPICard
+            title="Annual Attrition"
+            value="4.1%"
+            description="Low organizational turnover tier"
+            change={{ value: 'Healthy', trend: 'neutral' }}
+          />
         </div>
 
         {/* Analytic Charts */}

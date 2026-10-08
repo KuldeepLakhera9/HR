@@ -6,6 +6,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar as CalendarIcon,
+  Inbox,
 } from 'lucide-react';
 
 export const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
@@ -82,16 +83,18 @@ export interface DataTableProps<T> {
   columns: Column<T>[];
   data: T[];
   emptyMessage?: string;
+  isLoading?: boolean;
 }
 
 export function DataTable<T extends { id?: string | number }>({
   columns,
   data,
   emptyMessage = 'No records found.',
+  isLoading = false,
 }: DataTableProps<T>) {
   return (
     <div className="rounded-xl border border-stone-200 bg-white overflow-hidden shadow-xs">
-      <Table>
+      <Table aria-busy={isLoading}>
         <TableHeader>
           <TableRow>
             {columns.map((col) => (
@@ -100,10 +103,28 @@ export function DataTable<T extends { id?: string | number }>({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {data.length === 0 ? (
+          {isLoading ? (
+            Array.from({ length: 4 }).map((_, rIdx) => (
+              <TableRow key={`skeleton-row-${rIdx}`}>
+                {columns.map((_, cIdx) => (
+                  <TableCell key={`skeleton-cell-${rIdx}-${cIdx}`}>
+                    <div className="h-4 bg-stone-100 rounded-md animate-pulse w-3/4" />
+                  </TableCell>
+                ))}
+              </TableRow>
+            ))
+          ) : data.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={columns.length} className="h-24 text-center text-stone-400">
-                {emptyMessage}
+              <TableCell colSpan={columns.length} className="h-36 text-center text-stone-400">
+                <div className="flex flex-col items-center justify-center py-4">
+                  <div className="p-2.5 rounded-full bg-stone-100 text-stone-400 mb-2">
+                    <Inbox className="h-5 w-5" />
+                  </div>
+                  <span className="text-xs font-semibold text-stone-600">{emptyMessage}</span>
+                  <span className="text-[11px] text-stone-400 mt-0.5">
+                    No data matching current criteria
+                  </span>
+                </div>
               </TableCell>
             </TableRow>
           ) : (
@@ -228,6 +249,7 @@ export const Pagination: React.FC<PaginationProps> = ({
         <button
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage <= 1}
+          aria-label="Previous page"
           className="p-1.5 rounded-md border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           <ChevronLeft className="h-3.5 w-3.5" />
@@ -235,6 +257,7 @@ export const Pagination: React.FC<PaginationProps> = ({
         <button
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage >= totalPages}
+          aria-label="Next page"
           className="p-1.5 rounded-md border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           <ChevronRight className="h-3.5 w-3.5" />
