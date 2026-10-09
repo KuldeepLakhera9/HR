@@ -170,6 +170,14 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       requiredPermission: 'ATTENDANCE_VIEW',
     },
     {
+      id: 'admin-wfh',
+      label: 'Work From Home',
+      href: '/wfh',
+      icon: 'Home',
+      allowedRoles: ['ADMIN'],
+      requiredPermission: 'WFH_VIEW',
+    },
+    {
       id: 'admin-reports',
       label: 'Analytics & Reports',
       href: '/reports',
@@ -269,6 +277,14 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       badge: '2',
     },
     {
+      id: 'hr-wfh',
+      label: 'WFH Requests',
+      href: '/wfh',
+      icon: 'Home',
+      allowedRoles: ['HR'],
+      requiredPermission: 'WFH_VIEW',
+    },
+    {
       id: 'hr-progress',
       label: 'Employee Progress',
       href: '/progress',
@@ -344,6 +360,14 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       badge: '1',
     },
     {
+      id: 'mgr-wfh',
+      label: 'WFH Approvals',
+      href: '/wfh',
+      icon: 'Home',
+      allowedRoles: ['MANAGER'],
+      requiredPermission: 'WFH_VIEW',
+    },
+    {
       id: 'mgr-progress',
       label: 'Team Progress',
       href: '/progress',
@@ -383,6 +407,14 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'Briefcase',
       allowedRoles: ['EMPLOYEE'],
       requiredPermission: 'VISIT_VIEW',
+    },
+    {
+      id: 'emp-wfh',
+      label: 'Work From Home',
+      href: '/wfh',
+      icon: 'Home',
+      allowedRoles: ['EMPLOYEE'],
+      requiredPermission: 'WFH_VIEW',
     },
     {
       id: 'emp-docs',

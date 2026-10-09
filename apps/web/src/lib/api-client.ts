@@ -802,6 +802,7 @@ export const attendanceApi = {
     officeLocationId?: string;
     attendanceMode?: string;
     officialVisitId?: string;
+    wfhRequestId?: string;
     destinationId?: string;
     gpsExceptionReason?: string;
     deviceInfo?: string;
@@ -820,6 +821,7 @@ export const attendanceApi = {
     accuracyMeters?: number;
     timestamp?: string | number;
     officialVisitId?: string;
+    wfhRequestId?: string;
     isVisitConcluded?: boolean;
     deviceInfo?: string;
   }) {
@@ -1201,6 +1203,87 @@ export const shiftsApi = {
     const res = await fetchWithAuth<any>(`/attendance/shifts/assignments/${id}`, {
       method: 'DELETE',
     });
+    return res;
+  },
+};
+
+export const wfhApi = {
+  async getMyWfh(params?: { status?: string; search?: string; page?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/wfh/my${qs}`);
+    return res;
+  },
+
+  async getWfhById(id: string) {
+    const res = await fetchWithAuth<any>(`/wfh/${id}`);
+    return res.data;
+  },
+
+  async createWfh(payload: {
+    startDate: string;
+    endDate: string;
+    durationType: string;
+    reason: string;
+  }) {
+    const res = await fetchWithAuth<any>('/wfh', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async updateWfh(
+    id: string,
+    payload: {
+      startDate?: string;
+      endDate?: string;
+      durationType?: string;
+      reason?: string;
+    },
+  ) {
+    const res = await fetchWithAuth<any>(`/wfh/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async cancelWfh(id: string, payload: { reason?: string; cancellationReason?: string }) {
+    const res = await fetchWithAuth<any>(`/wfh/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({
+        cancellationReason: payload.cancellationReason || payload.reason || 'Cancelled by employee',
+      }),
+    });
+    return res;
+  },
+
+  async decideWfh(
+    id: string,
+    payload: {
+      decision: 'APPROVED' | 'REJECTED';
+      comments?: string;
+    },
+  ) {
+    const res = await fetchWithAuth<any>(`/wfh/${id}/decide`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async getManagerPending(params?: { search?: string; page?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/wfh/manager/pending${qs}`);
     return res;
   },
 };
