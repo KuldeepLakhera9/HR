@@ -3,6 +3,7 @@ import {
   NotFoundException,
   ConflictException,
   BadRequestException,
+  ForbiddenException,
   Logger,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -231,13 +232,18 @@ export class EmployeesService {
     const limit = query.limit || 20;
     const skip = (page - 1) * limit;
 
+    const allowedSortFields = ['displayName', 'employeeCode', 'joiningDate', 'createdAt', 'status'];
+    const sortField =
+      query.sortBy && allowedSortFields.includes(query.sortBy) ? query.sortBy : 'displayName';
+    const sortDirection = query.sortOrder === 'desc' ? 'desc' : 'asc';
+
     const [total, records] = await Promise.all([
       this.prisma.employee.count({ where }),
       this.prisma.employee.findMany({
         where,
         skip,
         take: limit,
-        orderBy: { displayName: query.sortOrder || 'asc' },
+        orderBy: { [sortField]: sortDirection },
         include: {
           employment: {
             include: {
@@ -334,6 +340,15 @@ export class EmployeesService {
   }
 
   async findOne(id: string, user: AuthenticatedUser) {
+    const existsInOrg = await this.prisma.employee.findUnique({
+      where: { id },
+      select: { id: true, organizationId: true },
+    });
+
+    if (!existsInOrg || existsInOrg.organizationId !== user.organizationId) {
+      throw new NotFoundException(`Employee #${id} not found`);
+    }
+
     const scopeFilter = await this.getScopedEmployeeFilter(user);
 
     const employee = await this.prisma.employee.findFirst({
@@ -371,8 +386,8 @@ export class EmployeesService {
     });
 
     if (!employee) {
-      throw new NotFoundException(
-        `Employee #${id} not found or you lack authorized scope to view this record`,
+      throw new ForbiddenException(
+        `Access denied: You do not have permission to view employee #${id} outside your authorized scope`,
       );
     }
 
@@ -384,6 +399,11 @@ export class EmployeesService {
   // ---------------------------------------------------------------------------
 
   async create(dto: CreateEmployeeDto, user: AuthenticatedUser) {
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    if (!isAdminOrHr) {
+      throw new ForbiddenException('Only Admin and HR roles are authorized to create employees');
+    }
+
     const orgId = user.organizationId;
 
     // 1. Check duplicate employee code
@@ -593,6 +613,28 @@ export class EmployeesService {
   async update(id: string, dto: UpdateEmployeeDto, user: AuthenticatedUser) {
     const existing = await this.findOne(id, user);
 
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    if (!isAdminOrHr) {
+      const isSelf = existing.userId === user.id || existing.employeeCode === user.employeeCode;
+      if (!isSelf && !user.roles.includes('MANAGER')) {
+        throw new ForbiddenException('You are not authorized to update this employee profile');
+      }
+
+      // Prohibit non-Admin/HR from modifying organizational assignments
+      if (
+        dto.branchId ||
+        dto.departmentId ||
+        dto.designationId ||
+        dto.managerId !== undefined ||
+        dto.employmentType ||
+        dto.workMode
+      ) {
+        throw new ForbiddenException(
+          'Only Admin and HR roles can modify organizational assignments (branch, department, designation, manager, or employment terms)',
+        );
+      }
+    }
+
     // Verify manager hierarchy if managerId is being modified
     if (dto.managerId !== undefined && dto.managerId !== existing.employment?.managerId) {
       await this.validateManagerHierarchy(id, dto.managerId, user.organizationId);
@@ -756,6 +798,13 @@ export class EmployeesService {
   // ---------------------------------------------------------------------------
 
   async transitionStatus(id: string, dto: TransitionStatusDto, user: AuthenticatedUser) {
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    if (!isAdminOrHr) {
+      throw new ForbiddenException(
+        'Only Admin and HR roles are authorized to transition employee status',
+      );
+    }
+
     const employee = await this.findOne(id, user);
     const currentStatus = employee.status;
     const nextStatus = dto.status;
@@ -847,6 +896,13 @@ export class EmployeesService {
   // ---------------------------------------------------------------------------
 
   async deactivate(id: string, user: AuthenticatedUser) {
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    if (!isAdminOrHr) {
+      throw new ForbiddenException(
+        'Only Admin and HR roles are authorized to deactivate employees',
+      );
+    }
+
     const employee = await this.findOne(id, user);
 
     await this.prisma.$transaction(async (tx) => {

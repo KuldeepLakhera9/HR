@@ -3,7 +3,7 @@ import { EmployeesService } from './employees.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
 import { EmploymentStatus, EmployeeHistoryEventType } from '@prisma/client';
 import * as XLSX from 'xlsx';
 
@@ -57,7 +57,17 @@ describe('EmployeesService', () => {
     prisma = {
       employee: {
         findFirst: jest.fn(),
-        findUnique: jest.fn(),
+        findUnique: jest.fn().mockImplementation((args: any) => {
+          if (args?.where?.id) {
+            return Promise.resolve({
+              id: args.where.id,
+              organizationId: mockOrgId,
+              isActive: true,
+              displayName: 'Mock Employee',
+            });
+          }
+          return Promise.resolve(null);
+        }),
         findMany: jest.fn(),
         count: jest.fn().mockResolvedValue(1),
         create: jest.fn(),
@@ -450,6 +460,165 @@ describe('EmployeesService', () => {
       const content = result.buffer.toString('utf-8');
       expect(content).toContain('EMP001');
       expect(content).toContain('Vikram Aditya');
+    });
+  });
+
+  describe('Role Authorization & Scoped Access Control', () => {
+    it('should allow Admin and HR to create employees, but block Manager and Employee with ForbiddenException', async () => {
+      // Manager attempts creation
+      await expect(
+        service.create(
+          {
+            employeeCode: 'EMP100',
+            firstName: 'Test',
+            lastName: 'User',
+            workEmail: 'test@peopleos.local',
+            branchId: 'br-1',
+            departmentId: 'dept-1',
+            designationId: 'desig-1',
+          } as any,
+          mockManagerUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      // Employee attempts creation
+      await expect(
+        service.create(
+          {
+            employeeCode: 'EMP101',
+            firstName: 'Test',
+            lastName: 'User',
+            workEmail: 'test2@peopleos.local',
+            branchId: 'br-1',
+            departmentId: 'dept-1',
+            designationId: 'desig-1',
+          } as any,
+          mockEmployeeUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should create employee inside a transaction with all normalized records', async () => {
+      prisma.employee.findUnique.mockImplementation((args: any) => {
+        if (args?.where?.id) {
+          return Promise.resolve({
+            id: args.where.id,
+            organizationId: mockOrgId,
+            displayName: 'Aarav Sharma',
+          });
+        }
+        return Promise.resolve(null);
+      });
+      prisma.employeeContact.findFirst.mockResolvedValue(null);
+      prisma.employee.create.mockResolvedValue({
+        id: 'new-emp-id',
+        employeeCode: 'EMP200',
+        displayName: 'Aarav Sharma',
+        status: EmploymentStatus.PROBATION,
+      });
+
+      prisma.employee.findFirst.mockResolvedValue({
+        id: 'new-emp-id',
+        employeeCode: 'EMP200',
+        displayName: 'Aarav Sharma',
+        status: EmploymentStatus.PROBATION,
+      });
+
+      const result = await service.create(
+        {
+          employeeCode: 'EMP200',
+          firstName: 'Aarav',
+          lastName: 'Sharma',
+          workEmail: 'aarav@peopleos.local',
+          branchId: 'br-1',
+          departmentId: 'dept-1',
+          designationId: 'desig-1',
+          createLoginAccount: false,
+        } as any,
+        mockAdminUser,
+      );
+
+      expect(prisma.$transaction).toHaveBeenCalled();
+      expect(prisma.employee.create).toHaveBeenCalled();
+      expect(prisma.employeeEmployment.create).toHaveBeenCalled();
+      expect(prisma.employeeContact.create).toHaveBeenCalled();
+      expect(prisma.employeeHistory.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            eventType: EmployeeHistoryEventType.JOINED,
+          }),
+        }),
+      );
+      expect(result).toBeDefined();
+    });
+
+    it('should allow Employee to update permitted personal contact info', async () => {
+      const mockEmp = {
+        id: 'emp-self',
+        userId: mockEmployeeUser.id,
+        employeeCode: mockEmployeeUser.employeeCode,
+        employment: { id: 'empl-1' },
+        contact: { id: 'cont-1' },
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockEmp);
+      prisma.employee.update.mockResolvedValue(mockEmp);
+
+      const result = await service.update(
+        'emp-self',
+        {
+          firstName: 'Priya',
+          phone: '+91 99999 88888',
+          personalEmail: 'priya.personal@gmail.com',
+        } as any,
+        mockEmployeeUser,
+      );
+
+      expect(result).toBeDefined();
+      expect(prisma.employeeContact.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ phone: '+91 99999 88888' }),
+        }),
+      );
+    });
+
+    it('should block Employee from modifying organizational assignments with ForbiddenException', async () => {
+      const mockEmp = {
+        id: 'emp-self',
+        userId: mockEmployeeUser.id,
+        employeeCode: mockEmployeeUser.employeeCode,
+        employment: { id: 'empl-1', departmentId: 'dept-1' },
+        contact: { id: 'cont-1' },
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockEmp);
+
+      await expect(
+        service.update(
+          'emp-self',
+          {
+            departmentId: 'dept-2', // Unauthorized org change
+          } as any,
+          mockEmployeeUser,
+        ),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should block non-Admin/HR from transitioning employee status with ForbiddenException', async () => {
+      await expect(
+        service.transitionStatus('emp-1', { status: EmploymentStatus.ACTIVE }, mockEmployeeUser),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.transitionStatus('emp-1', { status: EmploymentStatus.ACTIVE }, mockManagerUser),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should block non-Admin/HR from deactivating employees with ForbiddenException', async () => {
+      await expect(service.deactivate('emp-1', mockEmployeeUser)).rejects.toThrow(
+        ForbiddenException,
+      );
+      await expect(service.deactivate('emp-1', mockManagerUser)).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 });

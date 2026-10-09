@@ -150,9 +150,12 @@ export class EmployeesController {
     };
   }
 
+  @Patch(':id')
   @Put(':id')
   @RequirePermissions('EMPLOYEE_UPDATE')
-  @ApiOperation({ summary: 'Update employee details and track organizational history' })
+  @ApiOperation({
+    summary: 'Update employee details and track organizational history (PATCH / PUT)',
+  })
   async update(
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
