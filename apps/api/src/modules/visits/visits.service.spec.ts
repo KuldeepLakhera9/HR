@@ -9,8 +9,9 @@ import { VisitsService, MAX_VISIT_DURATION_DAYS } from './visits.service';
 import { HierarchyService } from '../employees/hierarchy.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { NotificationsService } from '../notifications/notifications.module';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
-import { VisitStatus } from '@hrms/database';
+import { VisitStatus, ApprovalDecision } from '@hrms/database';
 
 describe('VisitsService', () => {
   let service: VisitsService;
@@ -115,12 +116,22 @@ describe('VisitsService', () => {
       record: jest.fn().mockResolvedValue(undefined),
     };
 
+    const notificationsService = {
+      createNotification: jest.fn().mockResolvedValue({}),
+    };
+
+    prisma.officialVisit.updateMany = jest.fn();
+    prisma.visitApproval = {
+      create: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         VisitsService,
         { provide: PrismaService, useValue: prisma },
         { provide: HierarchyService, useValue: hierarchyService },
         { provide: AuditService, useValue: auditService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -477,6 +488,157 @@ describe('VisitsService', () => {
       });
 
       expect(res.data.status).toBe(VisitStatus.CANCELLED);
+    });
+  });
+
+  describe('decideVisit', () => {
+    const futureDate = new Date();
+    futureDate.setDate(futureDate.getDate() + 5);
+
+    const pendingVisit = {
+      id: 'vis-pending-1',
+      organizationId: mockOrgId,
+      employeeId: mockEmployeeId,
+      status: VisitStatus.SUBMITTED,
+      title: 'Client Data Center Audit',
+      startDate: futureDate,
+      endDate: futureDate,
+      employee: {
+        id: mockEmployeeId,
+        userId: mockUserId,
+        displayName: 'Alice Smith',
+      },
+      destinations: [{ destinationName: 'Site 1' }],
+    };
+
+    beforeEach(() => {
+      prisma.employee.findFirst.mockResolvedValue(mockManagerEmployee);
+      prisma.officialVisit.findUnique.mockResolvedValue(pendingVisit);
+      prisma.officialVisit.updateMany.mockResolvedValue({ count: 1 });
+      prisma.visitApproval.create.mockResolvedValue({
+        id: 'appr-1',
+        visitId: 'vis-pending-1',
+        approverId: mockManagerUserId,
+        decision: ApprovalDecision.APPROVED,
+        comments: 'Looks good.',
+        decidedAt: new Date(),
+      });
+      hierarchyService.isManagerOf.mockResolvedValue(true);
+    });
+
+    it('allows manager to approve a subordinate visit and dispatches notification & audit', async () => {
+      const res = await service.decideVisit(mockManagerUser, 'vis-pending-1', {
+        decision: ApprovalDecision.APPROVED,
+        comments: 'Looks good, proceed.',
+      });
+
+      expect(prisma.officialVisit.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'vis-pending-1',
+          organizationId: mockOrgId,
+          status: VisitStatus.SUBMITTED,
+        },
+        data: {
+          status: VisitStatus.APPROVED,
+        },
+      });
+      expect(prisma.visitApproval.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            decision: ApprovalDecision.APPROVED,
+            comments: 'Looks good, proceed.',
+          }),
+        }),
+      );
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'VISIT_APPROVED',
+          entity: 'OfficialVisit',
+          entityId: 'vis-pending-1',
+        }),
+      );
+    });
+
+    it('prevents self-approval when requester attempts to review own visit', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockEmployee); // Alice herself
+
+      await expect(
+        service.decideVisit(mockEmployeeUser, 'vis-pending-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects decision if manager is outside the reporting hierarchy and not HR/Admin', async () => {
+      hierarchyService.isManagerOf.mockResolvedValue(false); // Outside hierarchy
+
+      await expect(
+        service.decideVisit(mockManagerUser, 'vis-pending-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('allows HR Admin to approve visit as escalation override even if not direct manager', async () => {
+      hierarchyService.isManagerOf.mockResolvedValue(false);
+      prisma.employee.findFirst.mockResolvedValue({ id: 'emp-admin', organizationId: mockOrgId });
+
+      const res = await service.decideVisit(mockAdminUser, 'vis-pending-1', {
+        decision: ApprovalDecision.APPROVED,
+        comments: 'HR escalation approval.',
+      });
+
+      expect(res.meta.isEscalationOverride).toBe(true);
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          metadata: expect.objectContaining({ isEscalationOverride: true }),
+        }),
+      );
+    });
+
+    it('enforces concurrency protection if request was already updated by another reviewer', async () => {
+      prisma.officialVisit.updateMany.mockResolvedValue({ count: 0 }); // Concurrent change
+
+      await expect(
+        service.decideVisit(mockManagerUser, 'vis-pending-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rejects decision if request is already cancelled', async () => {
+      prisma.officialVisit.findUnique.mockResolvedValue({
+        ...pendingVisit,
+        status: VisitStatus.CANCELLED,
+      });
+
+      await expect(
+        service.decideVisit(mockManagerUser, 'vis-pending-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects decision and marks EXPIRED if visit end date has already passed', async () => {
+      const pastDate = new Date();
+      pastDate.setDate(pastDate.getDate() - 2);
+
+      prisma.officialVisit.findUnique.mockResolvedValue({
+        ...pendingVisit,
+        startDate: pastDate,
+        endDate: pastDate,
+      });
+
+      await expect(
+        service.decideVisit(mockManagerUser, 'vis-pending-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(BadRequestException);
+      expect(prisma.officialVisit.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: { status: VisitStatus.EXPIRED },
+        }),
+      );
     });
   });
 });

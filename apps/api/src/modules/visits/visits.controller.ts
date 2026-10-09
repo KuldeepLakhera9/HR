@@ -22,6 +22,7 @@ import { CreateOfficialVisitDto } from './dto/create-official-visit.dto';
 import { UpdateOfficialVisitDto } from './dto/update-official-visit.dto';
 import { CancelOfficialVisitDto } from './dto/cancel-official-visit.dto';
 import { QueryOfficialVisitsDto } from './dto/query-official-visits.dto';
+import { DecideOfficialVisitDto } from './dto/decide-official-visit.dto';
 
 @ApiTags('Official Visits')
 @ApiBearerAuth()
@@ -48,6 +49,19 @@ export class VisitsController {
     @Query() query: QueryOfficialVisitsDto,
   ) {
     return this.visitsService.getVisits(user, { ...query, scope: 'my' });
+  }
+
+  @Get('manager/pending')
+  @RequirePermissions('VISIT_APPROVE')
+  @ApiOperation({
+    summary: 'List pending official visit requests submitted by reporting team members',
+  })
+  @ApiResponse({ status: 200, description: 'Pending team visit requests' })
+  async getManagerPendingVisits(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryOfficialVisitsDto,
+  ) {
+    return this.visitsService.getManagerPendingVisits(user, query);
   }
 
   @Get()
@@ -101,5 +115,23 @@ export class VisitsController {
     @Body() dto: CancelOfficialVisitDto,
   ) {
     return this.visitsService.cancelVisit(user, id, dto);
+  }
+
+  @Post(':id/decide')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('VISIT_APPROVE')
+  @ApiOperation({
+    summary: 'Manager or HR Admin approval/rejection decision on pending official visit request',
+  })
+  @ApiResponse({ status: 200, description: 'Official visit request decided successfully' })
+  @ApiResponse({ status: 400, description: 'Request not in pending status or expired' })
+  @ApiResponse({ status: 403, description: 'Self-approval disallowed or reviewer outside scope' })
+  @ApiResponse({ status: 409, description: 'Concurrent review conflict' })
+  async decideVisit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: DecideOfficialVisitDto,
+  ) {
+    return this.visitsService.decideVisit(user, id, dto);
   }
 }

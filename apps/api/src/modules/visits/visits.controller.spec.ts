@@ -12,6 +12,8 @@ describe('VisitsController', () => {
     getVisitById: jest.Mock;
     updateVisit: jest.Mock;
     cancelVisit: jest.Mock;
+    getManagerPendingVisits: jest.Mock;
+    decideVisit: jest.Mock;
   };
 
   const mockUser: AuthenticatedUser = {
@@ -34,6 +36,8 @@ describe('VisitsController', () => {
       getVisitById: jest.fn(),
       updateVisit: jest.fn(),
       cancelVisit: jest.fn(),
+      getManagerPendingVisits: jest.fn(),
+      decideVisit: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -142,6 +146,34 @@ describe('VisitsController', () => {
       const res = await controller.cancelVisit(mockUser, 'vis-123', dto);
       expect(visitsService.cancelVisit).toHaveBeenCalledWith(mockUser, 'vis-123', dto);
       expect(res.data.status).toBe(VisitStatus.CANCELLED);
+    });
+  });
+
+  describe('GET /visits/manager/pending', () => {
+    it('calls visitsService.getManagerPendingVisits with query', async () => {
+      visitsService.getManagerPendingVisits = jest.fn().mockResolvedValue({
+        message: 'Pending team visit requests retrieved',
+        data: [{ id: 'vis-pending-1' }],
+        meta: { total: 1 },
+      });
+
+      const res = await controller.getManagerPendingVisits(mockUser, { page: 1 });
+      expect(visitsService.getManagerPendingVisits).toHaveBeenCalledWith(mockUser, { page: 1 });
+      expect(res.data.length).toBe(1);
+    });
+  });
+
+  describe('POST /visits/:id/decide', () => {
+    it('calls visitsService.decideVisit with user, id, and decision DTO', async () => {
+      visitsService.decideVisit = jest.fn().mockResolvedValue({
+        message: 'Official visit request approved successfully',
+        data: { id: 'vis-123', status: VisitStatus.APPROVED },
+      });
+
+      const dto = { decision: 'APPROVED' as any, comments: 'Approved' };
+      const res = await controller.decideVisit(mockUser, 'vis-123', dto);
+      expect(visitsService.decideVisit).toHaveBeenCalledWith(mockUser, 'vis-123', dto);
+      expect(res.data?.status).toBe(VisitStatus.APPROVED);
     });
   });
 });
