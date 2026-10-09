@@ -740,6 +740,76 @@ describe('EmployeesService', () => {
       const content = result.buffer.toString('utf-8');
       expect(content).toContain('EMP001');
       expect(content).toContain('Vikram Aditya');
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'EMPLOYEE_EXPORTED',
+          metadata: expect.objectContaining({
+            format: 'csv',
+            recordCount: 1,
+          }),
+        }),
+      );
+    });
+
+    it('should generate valid Excel (.xlsx) export file and record audit log', async () => {
+      prisma.employee.findMany.mockResolvedValue([
+        {
+          id: 'emp-1',
+          employeeCode: 'EMP001',
+          displayName: 'Vikram Aditya',
+          status: EmploymentStatus.ACTIVE,
+          joiningDate: new Date('2022-01-01'),
+          contact: { workEmail: 'admin@peopleos.local', phone: '123' },
+          employment: {
+            branch: { name: 'BLR' },
+            department: { name: 'ENG' },
+            designation: { title: 'CTO' },
+          },
+        },
+      ]);
+
+      const result = await service.exportEmployees(mockAdminUser, 'xlsx', {});
+
+      expect(result.contentType).toBe(
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      );
+      expect(result.buffer).toBeInstanceOf(Buffer);
+      expect(result.filename).toMatch(/\.xlsx$/);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'EMPLOYEE_EXPORTED',
+          metadata: expect.objectContaining({
+            format: 'xlsx',
+            recordCount: 1,
+          }),
+        }),
+      );
+    });
+
+    it('should omit sensitive fields (phone) when exported by unauthorized user for other employees', async () => {
+      prisma.employee.findMany.mockResolvedValue([
+        {
+          id: 'emp-other',
+          employeeCode: 'EMP999', // not mockEmployeeUser's code (EMP004)
+          displayName: 'Other Colleague',
+          status: EmploymentStatus.ACTIVE,
+          joiningDate: new Date('2023-01-01'),
+          contact: { workEmail: 'other@peopleos.local', phone: '+91-9988776655' },
+          employment: {
+            branch: { name: 'HQ' },
+            department: { name: 'Design' },
+            designation: { title: 'Designer' },
+          },
+        },
+      ]);
+
+      const result = await service.exportEmployees(mockEmployeeUser, 'csv', {});
+      const content = result.buffer.toString('utf-8');
+
+      // Employee code and name should be present
+      expect(content).toContain('EMP999');
+      // Phone header or personal phone number should NOT be exported
+      expect(content).not.toContain('+91-9988776655');
     });
   });
 

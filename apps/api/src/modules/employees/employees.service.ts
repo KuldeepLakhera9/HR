@@ -1507,38 +1507,76 @@ export class EmployeesService {
   ) {
     const listResult = await this.findAll(user, { ...query, limit: 10000 });
 
-    const exportRows = listResult.items.map((e) => ({
-      'Employee Code': e.employeeCode,
-      'Full Name': e.displayName,
-      'Work Email': e.workEmail || '',
-      Phone: e.phone || '',
-      Department: e.departmentName || '',
-      Designation: e.designationTitle || '',
-      Branch: e.branchName || '',
-      Manager: e.managerName || '',
-      Status: e.status,
-      'Work Mode': e.workMode || '',
-      'Employment Type': e.employmentType || '',
-      'Joining Date': e.joiningDate.split('T')[0],
-    }));
+    const isAdminOrHr = Boolean(
+      user.roles.includes('ADMIN') ||
+      user.roles.includes('HR') ||
+      user.permissions.includes('EMPLOYEE_MANAGE') ||
+      user.permissions.includes('EMPLOYEE_UPDATE'),
+    );
+
+    const exportRows = listResult.items.map((e) => {
+      const isSelf = user.employeeCode === e.employeeCode;
+      const canAccessSensitive = isAdminOrHr || isSelf;
+
+      const row: Record<string, any> = {
+        'Employee Code': e.employeeCode,
+        'Full Name': e.displayName,
+        'Work Email': e.workEmail || '',
+        Department: e.departmentName || '',
+        Designation: e.designationTitle || '',
+        Branch: e.branchName || '',
+        Manager: e.managerName || 'None',
+        Status: e.status,
+        'Work Mode': e.workMode || 'OFFICE',
+        'Employment Type': e.employmentType || 'FULL_TIME',
+        'Joining Date': e.joiningDate ? e.joiningDate.split('T')[0] : '',
+      };
+
+      if (canAccessSensitive) {
+        row['Phone'] = e.phone || '';
+      }
+
+      return row;
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(exportRows);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, 'Employees');
+
+    // Record audit event for export action
+    await this.auditService.record({
+      action: 'EMPLOYEE_EXPORTED',
+      entity: 'Employee',
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        format,
+        recordCount: exportRows.length,
+        filters: {
+          search: query.search || null,
+          departmentId: query.departmentId || null,
+          designationId: query.designationId || null,
+          branchId: query.branchId || null,
+          status: query.status || null,
+        },
+      },
+    });
+
+    const timestamp = new Date().toISOString().split('T')[0];
 
     if (format === 'xlsx') {
       const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
       return {
         buffer,
         contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        filename: `employees_export_${new Date().toISOString().split('T')[0]}.xlsx`,
+        filename: `employees_export_${timestamp}.xlsx`,
       };
     } else {
       const csv = XLSX.utils.sheet_to_csv(worksheet);
       return {
         buffer: Buffer.from(csv, 'utf-8'),
         contentType: 'text/csv',
-        filename: `employees_export_${new Date().toISOString().split('T')[0]}.csv`,
+        filename: `employees_export_${timestamp}.csv`,
       };
     }
   }

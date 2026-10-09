@@ -18,6 +18,7 @@ import {
   MapPin,
   UserCheck,
   RotateCcw,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { employeesApi, organizationApi } from '../../lib/api-client';
 import { useAuth } from '../../context/AuthContext';
@@ -252,14 +253,26 @@ export default function EmployeesPage() {
 
           <div className="flex flex-wrap items-center gap-2">
             {hasPermission('EMPLOYEE_EXPORT') && (
-              <Button
-                variant="outline"
-                className="border-stone-200 text-stone-700 hover:bg-stone-50"
-                onClick={() => handleExport('csv')}
-              >
-                <Download className="h-4 w-4 mr-2 text-stone-500" />
-                Export CSV
-              </Button>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  variant="outline"
+                  className="border-stone-200 text-stone-700 hover:bg-stone-50 text-xs h-9"
+                  onClick={() => handleExport('csv')}
+                  title="Export filtered directory to CSV"
+                >
+                  <Download className="h-3.5 w-3.5 mr-1.5 text-stone-500" />
+                  CSV
+                </Button>
+                <Button
+                  variant="outline"
+                  className="border-stone-200 text-stone-700 hover:bg-stone-50 text-xs h-9"
+                  onClick={() => handleExport('xlsx')}
+                  title="Export filtered directory to Excel"
+                >
+                  <FileSpreadsheet className="h-3.5 w-3.5 mr-1.5 text-amber-800" />
+                  Excel
+                </Button>
+              </div>
             )}
 
             {hasPermission('EMPLOYEE_IMPORT') && (
