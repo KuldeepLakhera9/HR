@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { AttendancePoliciesService } from './attendance-policies.service';
 import {
   CreatePolicyDto,
@@ -58,6 +59,7 @@ export class AttendancePoliciesController {
   }
 
   @Post()
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Create new attendance policy (Admin only)' })
   async createPolicy(@Req() req: AuthenticatedRequest, @Body() dto: CreatePolicyDto) {
@@ -70,6 +72,7 @@ export class AttendancePoliciesController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Update attendance policy (Admin only)' })
   async updatePolicy(
@@ -91,6 +94,7 @@ export class AttendancePoliciesController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Delete attendance policy (Admin only)' })
   async deletePolicy(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
@@ -142,6 +146,7 @@ export class AttendanceShiftsController {
   }
 
   @Post()
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Create new shift schedule (Admin only)' })
   async createShift(@Req() req: AuthenticatedRequest, @Body() dto: CreateShiftDto) {
@@ -154,6 +159,7 @@ export class AttendanceShiftsController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Update shift schedule (Admin only)' })
   async updateShift(
@@ -175,6 +181,7 @@ export class AttendanceShiftsController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Delete shift schedule (Admin only)' })
   async deleteShift(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
@@ -198,6 +205,7 @@ export class AttendanceShiftsController {
   }
 
   @Post('assignments')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Assign shift schedule to employee' })
   async assignShift(@Req() req: AuthenticatedRequest, @Body() dto: AssignShiftDto) {
@@ -210,6 +218,7 @@ export class AttendanceShiftsController {
   }
 
   @Delete('assignments/:id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Delete shift assignment' })
   async deleteAssignment(@Req() req: AuthenticatedRequest, @Param('id') id: string) {

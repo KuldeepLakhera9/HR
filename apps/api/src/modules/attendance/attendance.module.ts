@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { AttendanceService } from './attendance.service';
@@ -112,6 +113,7 @@ export class AttendanceController {
   }
 
   @Post('reconcile-missing')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({
     summary:
@@ -122,6 +124,7 @@ export class AttendanceController {
   }
 
   @Post('recalculate')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({
     summary:
@@ -171,6 +174,7 @@ export class AttendanceController {
   }
 
   @Get('operations/dashboard')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary: 'Get organizational attendance operations dashboard metrics, headcount, and trend',
@@ -183,6 +187,7 @@ export class AttendanceController {
   }
 
   @Get('operations/records')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary: 'Get paginated employee attendance operations records with filters and search',
@@ -208,6 +213,7 @@ export class AttendanceController {
   }
 
   @Get('operations/corrections')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary: 'Get all organizational attendance correction requests for HR/Admin review',
@@ -220,6 +226,7 @@ export class AttendanceController {
   }
 
   @Post('corrections/:requestId/decide')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({
     summary: 'Approves or rejects an attendance correction request (HR or reporting Manager)',
@@ -237,6 +244,7 @@ export class AttendanceController {
   // ===========================================================================
 
   @Get('exceptions')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary:
@@ -250,6 +258,7 @@ export class AttendanceController {
   }
 
   @Get('exceptions/:id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary: 'Get single attendance exception detail by ID',
@@ -259,6 +268,7 @@ export class AttendanceController {
   }
 
   @Post('exceptions/:id/resolve')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({
     summary: 'Resolve or dismiss an attendance exception with resolution audit notes',
@@ -272,6 +282,7 @@ export class AttendanceController {
   }
 
   @Post('exceptions/scan')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({
     summary:
@@ -289,6 +300,7 @@ export class AttendanceController {
   // ===========================================================================
 
   @Get('reports/daily')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary:
@@ -302,6 +314,7 @@ export class AttendanceController {
   }
 
   @Get('reports/monthly')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary:
@@ -319,6 +332,7 @@ export class AttendanceController {
   // ===========================================================================
 
   @Get('manager/dashboard')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary: 'Get manager team attendance summary, headcount, and pending corrections count',
@@ -328,6 +342,7 @@ export class AttendanceController {
   }
 
   @Get('manager/records')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary:
@@ -341,6 +356,7 @@ export class AttendanceController {
   }
 
   @Get('manager/corrections')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary: 'Get pending attendance correction requests from manager team members',
@@ -350,6 +366,7 @@ export class AttendanceController {
   }
 
   @Post('manager/corrections/:requestId/decide')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({
     summary:
@@ -364,6 +381,7 @@ export class AttendanceController {
   }
 
   @Get('manager/records/:employeeId')
+  @Roles('ADMIN', 'HR', 'MANAGER')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({
     summary:

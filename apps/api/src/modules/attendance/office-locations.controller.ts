@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { OfficeLocationsService } from './office-locations.service';
 import {
   CreateOfficeLocationDto,
@@ -65,6 +66,7 @@ export class OfficeLocationsController {
   }
 
   @Post()
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Create new office location with geofence perimeter' })
   async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateOfficeLocationDto) {
@@ -81,6 +83,7 @@ export class OfficeLocationsController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Update office location details and geofence coordinates' })
   async update(
@@ -102,6 +105,7 @@ export class OfficeLocationsController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Delete or deactivate office location' })
   async delete(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
@@ -173,6 +177,7 @@ export class OfficeLocationsAliasController {
   }
 
   @Post()
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Create new office location (alias)' })
   async create(@Req() req: AuthenticatedRequest, @Body() dto: CreateOfficeLocationDto) {
@@ -189,6 +194,7 @@ export class OfficeLocationsAliasController {
   }
 
   @Put(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Update office location (alias)' })
   async update(
@@ -210,6 +216,7 @@ export class OfficeLocationsAliasController {
   }
 
   @Delete(':id')
+  @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
   @ApiOperation({ summary: 'Delete or deactivate office location (alias)' })
   async delete(@Req() req: AuthenticatedRequest, @Param('id') id: string) {

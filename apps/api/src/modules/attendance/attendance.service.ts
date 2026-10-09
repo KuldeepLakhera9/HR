@@ -2506,6 +2506,58 @@ export class AttendanceService {
       });
     }
 
+    // Authorization & Scope enforcement (anti-horizontal privilege escalation)
+    const isGlobalOrAdmin =
+      user.roles?.includes('ADMIN' as any) || user.roles?.includes('HR' as any);
+
+    if (!isGlobalOrAdmin) {
+      if (user.roles?.includes('MANAGER' as any)) {
+        // Managers can view their own details or their team members' details
+        const managerEmployee = await this.prisma.employee.findFirst({
+          where: {
+            userId: user.id,
+            organizationId: user.organizationId,
+            deletedAt: null,
+          },
+        });
+
+        if (!managerEmployee) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            message: 'No manager profile linked to current user account.',
+            code: 'FORBIDDEN_NOT_MANAGER',
+          });
+        }
+
+        if (managerEmployee.id !== employee.id) {
+          const isSubordinate = await this.hierarchyService.isManagerOf(
+            managerEmployee.id,
+            employee.id,
+            user.organizationId,
+          );
+
+          if (!isSubordinate) {
+            throw new ForbiddenException({
+              statusCode: 403,
+              message:
+                'Access denied: You are not authorized to view attendance details for an employee outside your reporting hierarchy.',
+              code: 'FORBIDDEN_OUTSIDE_HIERARCHY',
+            });
+          }
+        }
+      } else {
+        // Standard EMPLOYEE: can ONLY view their own records
+        if (employee.userId !== user.id) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            message:
+              'Access denied: Employees are strictly prohibited from viewing attendance records of another employee.',
+            code: 'FORBIDDEN_EMPLOYEE_ACCESS',
+          });
+        }
+      }
+    }
+
     const { policy, shift } = await this.policiesService.resolveEffectivePolicyAndShift(
       employee.id,
       workingDateUtc,
