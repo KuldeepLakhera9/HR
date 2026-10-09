@@ -43,6 +43,9 @@ export type AttendanceStatus =
   | 'HOLIDAY'
   | 'WEEK_OFF'
   | 'WEEKEND_OFF'
+  | 'INCOMPLETE'
+  | 'PENDING_REVIEW'
+  | 'NOT_SCHEDULED'
   | 'PENDING';
 
 // 3. User & Auth Profile
@@ -603,7 +606,18 @@ export type GeofenceVerificationStatus =
   'VERIFIED' | 'OUTSIDE_GEOFENCE' | 'LOW_ACCURACY' | 'EXEMPT' | 'FAILED';
 
 export type AttendanceDayStatus =
-  'PRESENT' | 'HALF_DAY' | 'LATE' | 'ABSENT' | 'ON_LEAVE' | 'HOLIDAY' | 'WEEKEND_OFF' | 'PENDING';
+  | 'PRESENT'
+  | 'HALF_DAY'
+  | 'LATE'
+  | 'ABSENT'
+  | 'ON_LEAVE'
+  | 'HOLIDAY'
+  | 'WEEKEND_OFF'
+  | 'WEEK_OFF'
+  | 'INCOMPLETE'
+  | 'PENDING_REVIEW'
+  | 'NOT_SCHEDULED'
+  | 'PENDING';
 
 export type CorrectionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
 

@@ -10,6 +10,7 @@ import { AttendanceService } from './attendance.service';
 import { CheckInDto } from './dto/check-in.dto';
 import { CheckOutDto } from './dto/check-out.dto';
 import { BreakDto } from './dto/break.dto';
+import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import {
   OfficeLocationsController,
   OfficeLocationsAliasController,
@@ -94,6 +95,16 @@ export class AttendanceController {
   })
   async reconcileMissing(@CurrentUser() user: AuthenticatedUser) {
     return this.attendanceService.reconcileMissingCheckouts(user.organizationId);
+  }
+
+  @Post('recalculate')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({
+    summary:
+      'Deterministic recalculation and reconciliation of daily attendance summaries for an employee or organization',
+  })
+  async recalculate(@CurrentUser() user: AuthenticatedUser, @Body() dto: RecalculateAttendanceDto) {
+    return this.attendanceService.recalculateAttendance(user.organizationId, dto, user.id);
   }
 
   @Get('today')

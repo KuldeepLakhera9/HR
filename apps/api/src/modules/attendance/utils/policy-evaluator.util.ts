@@ -4,6 +4,7 @@
  */
 
 import { AttendanceDayStatus } from '@hrms/types';
+export * from './daily-attendance-calculator.util';
 
 export interface ShiftTimingSpec {
   startTime: string; // "HH:mm" in 24h format e.g. "09:00"

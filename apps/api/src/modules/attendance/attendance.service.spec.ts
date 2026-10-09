@@ -706,4 +706,86 @@ describe('AttendanceService', () => {
       expect(checkoutEvents.length).toBe(0);
     });
   });
+
+  describe('Safe Daily Attendance Recalculation (recalculateAttendance)', () => {
+    it('safely recalculates attendance summaries for an employee over a date range', async () => {
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: mockEmployeeId,
+        organizationId: mockOrgId,
+      });
+
+      prisma.attendanceDailySummary.findUnique.mockResolvedValue(null);
+      prisma.attendanceSession.findMany.mockResolvedValue([
+        {
+          id: 'sess-recalc-1',
+          sessionNumber: 1,
+          checkInTime: new Date('2026-10-09T03:30:00.000Z'),
+          checkOutTime: new Date('2026-10-09T12:00:00.000Z'),
+          totalWorkMinutes: 510,
+          totalBreakMinutes: 30,
+          status: 'COMPLETED',
+          events: [],
+        },
+      ]);
+
+      prisma.attendanceDailySummary.upsert.mockResolvedValue({
+        id: 'sum-recalc-1',
+        organizationId: mockOrgId,
+        employeeId: mockEmployeeId,
+        date: new Date('2026-10-09T00:00:00.000Z'),
+        status: 'PRESENT',
+        totalWorkMinutes: 480,
+      });
+
+      const res = await service.recalculateAttendance(
+        mockOrgId,
+        {
+          startDate: '2026-10-09',
+          endDate: '2026-10-09',
+          employeeId: mockEmployeeId,
+        },
+        'user-admin-1',
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.recalculatedCount).toBe(1);
+      expect(res.skippedCount).toBe(0);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTENDANCE_SUMMARY_RECALCULATED',
+        }),
+      );
+    });
+
+    it('preserves manually corrected daily summaries unless force is true', async () => {
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: mockEmployeeId,
+        organizationId: mockOrgId,
+      });
+
+      // Existing summary marked as manually corrected
+      prisma.attendanceDailySummary.findUnique.mockResolvedValueOnce({
+        id: 'sum-corrected-1',
+        isCorrected: true,
+        status: 'PRESENT',
+      });
+
+      const res = await service.recalculateAttendance(
+        mockOrgId,
+        {
+          startDate: '2026-10-09',
+          endDate: '2026-10-09',
+          employeeId: mockEmployeeId,
+          force: false,
+        },
+        'user-admin-1',
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.recalculatedCount).toBe(0);
+      expect(res.skippedCount).toBe(1);
+      expect(res.data[0].skipped).toBe(true);
+      expect(res.data[0].reason).toContain('Manually corrected summary preserved');
+    });
+  });
 });

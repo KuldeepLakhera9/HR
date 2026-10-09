@@ -20,6 +20,8 @@ import {
   validateTimestampFreshness,
 } from './utils/geofence.util';
 import { resolveWorkingDay, calculateShiftWindow } from './utils/policy-evaluator.util';
+import { calculateDailyAttendance } from './utils/daily-attendance-calculator.util';
+import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { AttendanceDayStatus } from '@hrms/types';
 
 @Injectable()
@@ -1036,13 +1038,15 @@ export class AttendanceService {
             firstCheckIn: session.checkInTime,
             lastCheckOut: null,
             totalWorkMinutes: 0,
-            status: 'HALF_DAY',
-            correctionNotes: 'Missing checkout flagged by system',
+            status: 'INCOMPLETE',
+            correctionNotes:
+              'Missing checkout flagged by reconciliation engine (incomplete session)',
           },
           update: {
             lastCheckOut: null,
-            status: 'HALF_DAY',
-            correctionNotes: 'Missing checkout flagged by system',
+            status: 'INCOMPLETE',
+            correctionNotes:
+              'Missing checkout flagged by reconciliation engine (incomplete session)',
           },
         });
       });
@@ -1067,7 +1071,8 @@ export class AttendanceService {
   // ===========================================================================
 
   /**
-   * Safely recalculates working-day aggregates from all sessions on a given working date.
+   * Safely recalculates working-day aggregates from all sessions on a given working date using
+   * the deterministic daily attendance calculation engine.
    */
   async recalculateDailySummary(
     tx: any,
@@ -1076,76 +1081,35 @@ export class AttendanceService {
     workingDateUtc: Date,
     policy: any,
     shift: any,
+    options?: {
+      isHoliday?: boolean;
+      isApprovedLeave?: boolean;
+      referenceNow?: Date;
+    },
   ) {
     const allSessions = await tx.attendanceSession.findMany({
       where: { employeeId, date: workingDateUtc },
       orderBy: { sessionNumber: 'asc' },
+      include: {
+        events: {
+          orderBy: { eventTimestamp: 'asc' },
+        },
+      },
     });
 
-    const firstCheckIn = allSessions[0]?.checkInTime || null;
-    const completedSessions = allSessions.filter(
-      (s: any) => s.status === 'COMPLETED' && s.checkOutTime,
-    );
-    const lastCheckOut =
-      completedSessions.length > 0
-        ? completedSessions
-            .map((s: any) => s.checkOutTime)
-            .sort((a: Date, b: Date) => b.getTime() - a.getTime())[0]
-        : null;
-
-    const totalWorkMinutes = allSessions.reduce(
-      (acc: number, s: any) => acc + s.totalWorkMinutes,
-      0,
-    );
-    const totalBreakMinutes = allSessions.reduce(
-      (acc: number, s: any) => acc + s.totalBreakMinutes,
-      0,
-    );
-
     const workingDateStr = workingDateUtc.toISOString().split('T')[0];
-    const timezone = policy?.timezone || 'Asia/Kolkata';
+    const allEvents = allSessions.flatMap((s: any) => s.events || []);
 
-    let lateMinutes = 0;
-    let earlyExitMinutes = 0;
-    let overtimeMinutes = 0;
-    let dayStatus: AttendanceDayStatus = 'ABSENT';
-
-    if (shift) {
-      const shiftWindow = calculateShiftWindow(
-        shift,
-        workingDateStr,
-        policy?.gracePeriodMinutes || 0,
-        timezone,
-      );
-      if (firstCheckIn && firstCheckIn > shiftWindow.graceEndDate) {
-        lateMinutes = Math.max(
-          0,
-          Math.floor((firstCheckIn.getTime() - shiftWindow.shiftStartDate.getTime()) / 60000),
-        );
-      }
-      if (lastCheckOut && lastCheckOut < shiftWindow.shiftEndDate) {
-        earlyExitMinutes = Math.max(
-          0,
-          Math.floor((shiftWindow.shiftEndDate.getTime() - lastCheckOut.getTime()) / 60000),
-        );
-      }
-    }
-
-    const fullDayMin = policy?.fullDayThresholdMinutes ?? 420;
-    const halfDayMin = policy?.halfDayThresholdMinutes ?? 240;
-    const standardWorkMin = policy?.standardWorkMinutes ?? 480;
-
-    if (totalWorkMinutes >= fullDayMin) {
-      dayStatus = lateMinutes > 0 ? 'LATE' : 'PRESENT';
-    } else if (totalWorkMinutes >= halfDayMin) {
-      dayStatus = 'HALF_DAY';
-    } else if (totalWorkMinutes > 0) {
-      dayStatus = 'HALF_DAY';
-    }
-
-    if (totalWorkMinutes > standardWorkMin) {
-      overtimeMinutes = totalWorkMinutes - standardWorkMin;
-    }
+    const calculation = calculateDailyAttendance({
+      workingDate: workingDateStr,
+      sessions: allSessions,
+      events: allEvents,
+      shift,
+      policy,
+      isHoliday: options?.isHoliday ?? false,
+      isApprovedLeave: options?.isApprovedLeave ?? false,
+      referenceNow: options?.referenceNow ?? new Date(),
+    });
 
     const persistedPolicyId = policy?.id && !policy.id.startsWith('synthetic') ? policy.id : null;
     const persistedShiftId = shift?.id && !shift.id.startsWith('synthetic') ? shift.id : null;
@@ -1162,30 +1126,167 @@ export class AttendanceService {
         organizationId,
         employeeId,
         date: workingDateUtc,
-        firstCheckIn,
-        lastCheckOut,
-        totalWorkMinutes,
-        totalBreakMinutes,
-        lateMinutes,
-        earlyExitMinutes,
-        overtimeMinutes,
-        status: dayStatus,
+        firstCheckIn: calculation.firstCheckIn,
+        lastCheckOut: calculation.lastCheckOut,
+        totalWorkMinutes: calculation.netWorkMinutes,
+        totalBreakMinutes: calculation.breakDurationMinutes,
+        lateMinutes: calculation.lateMinutes,
+        earlyExitMinutes: calculation.earlyDepartureMinutes,
+        overtimeMinutes: calculation.overtimeCandidateMinutes,
+        status: calculation.status,
         shiftId: persistedShiftId,
         policyId: persistedPolicyId,
       },
       update: {
-        firstCheckIn,
-        lastCheckOut,
-        totalWorkMinutes,
-        totalBreakMinutes,
-        lateMinutes,
-        earlyExitMinutes,
-        overtimeMinutes,
-        status: dayStatus,
+        firstCheckIn: calculation.firstCheckIn,
+        lastCheckOut: calculation.lastCheckOut,
+        totalWorkMinutes: calculation.netWorkMinutes,
+        totalBreakMinutes: calculation.breakDurationMinutes,
+        lateMinutes: calculation.lateMinutes,
+        earlyExitMinutes: calculation.earlyDepartureMinutes,
+        overtimeMinutes: calculation.overtimeCandidateMinutes,
+        status: calculation.status,
         shiftId: persistedShiftId,
         policyId: persistedPolicyId,
       },
     });
+  }
+
+  /**
+   * Recalculates attendance summaries across an employee or all active employees in an organization
+   * for a given date range.
+   */
+  async recalculateAttendance(
+    organizationId: string,
+    dto: RecalculateAttendanceDto,
+    actorUserId: string,
+  ) {
+    const startDateStr = dto.startDate;
+    const endDateStr = dto.endDate || dto.startDate;
+    const force = dto.force ?? false;
+
+    let employees = [];
+    if (dto.employeeId) {
+      const emp = await this.prisma.employee.findFirst({
+        where: { id: dto.employeeId, organizationId, deletedAt: null },
+      });
+      if (!emp) {
+        throw new NotFoundException({
+          statusCode: 404,
+          message: `Employee ${dto.employeeId} not found in this organization.`,
+          code: 'EMPLOYEE_NOT_FOUND',
+        });
+      }
+      employees = [emp];
+    } else {
+      employees = await this.prisma.employee.findMany({
+        where: { organizationId, deletedAt: null, isActive: true },
+      });
+    }
+
+    const curr = new Date(`${startDateStr}T00:00:00.000Z`);
+    const end = new Date(`${endDateStr}T00:00:00.000Z`);
+
+    if (curr.getTime() > end.getTime()) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'startDate must be before or equal to endDate.',
+        code: 'INVALID_DATE_RANGE',
+      });
+    }
+
+    const diffDays = Math.round((end.getTime() - curr.getTime()) / 86400000);
+    if (diffDays > 365) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Date range cannot exceed 365 days.',
+        code: 'DATE_RANGE_TOO_LARGE',
+      });
+    }
+
+    const dates: string[] = [];
+    const walker = new Date(curr);
+    while (walker.getTime() <= end.getTime()) {
+      dates.push(walker.toISOString().split('T')[0]);
+      walker.setUTCDate(walker.getUTCDate() + 1);
+    }
+
+    const results = [];
+    for (const employee of employees) {
+      for (const dStr of dates) {
+        const workingDateUtc = new Date(`${dStr}T00:00:00.000Z`);
+
+        const existing = await this.prisma.attendanceDailySummary.findUnique({
+          where: {
+            organizationId_employeeId_date: {
+              organizationId,
+              employeeId: employee.id,
+              date: workingDateUtc,
+            },
+          },
+        });
+
+        if (existing?.isCorrected && !force) {
+          results.push({
+            employeeId: employee.id,
+            date: dStr,
+            status: existing.status,
+            skipped: true,
+            reason: 'Manually corrected summary preserved (use force: true to overwrite)',
+          });
+          continue;
+        }
+
+        const { policy, shift } = await this.policiesService.resolveEffectivePolicyAndShift(
+          employee.id,
+          workingDateUtc,
+          organizationId,
+        );
+
+        const summary = await this.recalculateDailySummary(
+          this.prisma,
+          employee.id,
+          organizationId,
+          workingDateUtc,
+          policy,
+          shift,
+        );
+
+        results.push({
+          employeeId: employee.id,
+          date: dStr,
+          status: summary.status,
+          netWorkMinutes: summary.totalWorkMinutes,
+          lateMinutes: summary.lateMinutes,
+          earlyExitMinutes: summary.earlyExitMinutes,
+          overtimeMinutes: summary.overtimeMinutes,
+          skipped: false,
+        });
+      }
+    }
+
+    await this.auditService.record({
+      action: 'ATTENDANCE_SUMMARY_RECALCULATED',
+      entity: 'AttendanceDailySummary',
+      entityId: organizationId,
+      userId: actorUserId,
+      organizationId,
+      metadata: {
+        startDate: startDateStr,
+        endDate: endDateStr,
+        employeeCount: employees.length,
+        totalRecalculated: results.filter((r) => !r.skipped).length,
+        totalSkipped: results.filter((r) => r.skipped).length,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Recalculated attendance summaries for ${employees.length} employee(s) across ${dates.length} day(s).`,
+      recalculatedCount: results.filter((r) => !r.skipped).length,
+      skippedCount: results.filter((r) => r.skipped).length,
+      data: results,
+    };
   }
 
   // ===========================================================================
