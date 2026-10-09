@@ -647,8 +647,8 @@ async function main() {
     },
   ];
 
-  // Hash: Password123!
-  const passwordHash = await argon2.hash('Password123!');
+  // Hash: Password@123 (matching documentation and login page quick-fill)
+  const passwordHash = await argon2.hash('Password@123');
 
   const employeeRecordMap: Record<string, string> = {};
   const branchMap: Record<string, string> = {
