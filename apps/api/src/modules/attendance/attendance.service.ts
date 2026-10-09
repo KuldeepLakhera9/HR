@@ -23,6 +23,7 @@ import { resolveWorkingDay, calculateShiftWindow } from './utils/policy-evaluato
 import { calculateDailyAttendance } from './utils/daily-attendance-calculator.util';
 import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
+import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.dto';
 import { AttendanceDayStatus } from '@hrms/types';
 
 @Injectable()
@@ -1640,6 +1641,513 @@ export class AttendanceService {
       success: true,
       message: 'Correction requests retrieved successfully.',
       data: requests,
+    };
+  }
+
+  // ===========================================================================
+  // 8. HR ATTENDANCE DASHBOARD & OPERATIONS
+  // ===========================================================================
+
+  /**
+   * Retrieves aggregated organizational attendance metrics, headcount, and trend data.
+   */
+  async getOperationsDashboard(organizationId: string, query: AttendanceOperationsQueryDto) {
+    const defaultResolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      'default',
+      new Date(),
+      organizationId,
+    );
+    const timezone = defaultResolution.policy?.timezone || 'Asia/Kolkata';
+    const cutoffHour = defaultResolution.policy?.workingDayStartHour ?? 5;
+
+    const workingDateStr =
+      query.date || resolveWorkingDay(new Date(), cutoffHour, timezone).workingDateStr;
+    const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
+
+    // Scoped employee filter
+    const employeeWhere: any = {
+      organizationId,
+      deletedAt: null,
+      isActive: true,
+    };
+    if (query.branchId) {
+      employeeWhere.employment = { ...employeeWhere.employment, branchId: query.branchId };
+    }
+    if (query.departmentId) {
+      employeeWhere.employment = { ...employeeWhere.employment, departmentId: query.departmentId };
+    }
+
+    const totalActiveEmployees = await this.prisma.employee.count({
+      where: employeeWhere,
+    });
+
+    // Fetch daily summaries for the date
+    const summaries = await this.prisma.attendanceDailySummary.findMany({
+      where: {
+        organizationId,
+        date: workingDateUtc,
+        employee: employeeWhere,
+      },
+      include: {
+        shift: true,
+      },
+    });
+
+    let present = 0;
+    let lateArrivals = 0;
+    let halfDay = 0;
+    let absent = 0;
+    let onLeave = 0;
+    let incomplete = 0;
+    let pendingReview = 0;
+    let weekOff = 0;
+    let holiday = 0;
+    let notScheduled = 0;
+
+    for (const s of summaries) {
+      if (s.status === 'PRESENT' || s.status === 'LATE') present++;
+      if (s.lateMinutes > 0) lateArrivals++;
+      if (s.status === 'HALF_DAY') halfDay++;
+      if (s.status === 'ABSENT') absent++;
+      if (s.status === 'ON_LEAVE') onLeave++;
+      if (s.status === 'INCOMPLETE') incomplete++;
+      if (s.status === 'PENDING_REVIEW') pendingReview++;
+      if (s.status === 'WEEK_OFF' || s.status === 'WEEKEND_OFF') weekOff++;
+      if (s.status === 'HOLIDAY') holiday++;
+      if (s.status === 'NOT_SCHEDULED') notScheduled++;
+    }
+
+    // Live active checked-in count
+    const checkedInNow = await this.prisma.attendanceSession.count({
+      where: {
+        organizationId,
+        date: workingDateUtc,
+        status: 'OPEN',
+        employee: employeeWhere,
+      },
+    });
+
+    // Unresolved exceptions count
+    const unresolvedExceptions = await this.prisma.attendanceException.count({
+      where: {
+        organizationId,
+        date: workingDateUtc,
+        resolved: false,
+        employee: employeeWhere,
+      },
+    });
+
+    // Check-in modes count
+    const checkInEvents = await this.prisma.attendanceEvent.findMany({
+      where: {
+        organizationId,
+        session: { date: workingDateUtc },
+        eventType: 'CHECK_IN',
+        employee: employeeWhere,
+      },
+      select: { attendanceMode: true },
+    });
+
+    const modes = {
+      office: checkInEvents.filter((e) => e.attendanceMode === 'OFFICE').length,
+      officialVisit: checkInEvents.filter((e) => e.attendanceMode === 'OFFICIAL_VISIT').length,
+      workFromHome: checkInEvents.filter((e) => e.attendanceMode === 'WFH').length,
+    };
+
+    // Past 7-day trend
+    const trendDays = [];
+    const [y, m, d] = workingDateStr.split('-').map(Number);
+    for (let i = 6; i >= 0; i--) {
+      const pastDate = new Date(Date.UTC(y, m - 1, d - i));
+      const pastDateStr = pastDate.toISOString().split('T')[0];
+      const pastDateUtc = new Date(`${pastDateStr}T00:00:00.000Z`);
+
+      const pastSummaries = await this.prisma.attendanceDailySummary.findMany({
+        where: {
+          organizationId,
+          date: pastDateUtc,
+          employee: employeeWhere,
+        },
+        select: { status: true, lateMinutes: true },
+      });
+
+      const dayName = pastDate.toLocaleDateString('en-US', { weekday: 'short' });
+      trendDays.push({
+        date: pastDateStr,
+        day: dayName,
+        present: pastSummaries.filter((s) => s.status === 'PRESENT' || s.status === 'LATE').length,
+        late: pastSummaries.filter((s) => s.lateMinutes > 0).length,
+        absent: pastSummaries.filter((s) => s.status === 'ABSENT').length,
+        halfDay: pastSummaries.filter((s) => s.status === 'HALF_DAY').length,
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Operations dashboard data retrieved successfully.',
+      data: {
+        date: workingDateStr,
+        reportingTimestamp: new Date().toISOString(),
+        timezone,
+        cutoffHour,
+        headcount: {
+          totalActiveEmployees,
+          checkedInNow,
+          present,
+          lateArrivals,
+          halfDay,
+          absent,
+          onLeave,
+          incomplete,
+          pendingReview,
+          weekOff,
+          holiday,
+          notScheduled,
+          unresolvedExceptions,
+        },
+        modes,
+        trend: trendDays,
+      },
+    };
+  }
+
+  /**
+   * Retrieves paginated employee attendance records for HR management with GPS privacy protection.
+   */
+  async getOperationsRecords(user: AuthenticatedUser, query: AttendanceOperationsQueryDto) {
+    const defaultResolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      'default',
+      new Date(),
+      user.organizationId,
+    );
+    const timezone = defaultResolution.policy?.timezone || 'Asia/Kolkata';
+    const cutoffHour = defaultResolution.policy?.workingDayStartHour ?? 5;
+
+    const workingDateStr =
+      query.date || resolveWorkingDay(new Date(), cutoffHour, timezone).workingDateStr;
+    const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
+
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    // Build employee filter
+    const employeeWhere: any = {
+      organizationId: user.organizationId,
+      deletedAt: null,
+      isActive: true,
+    };
+
+    if (query.search?.trim()) {
+      const term = query.search.trim();
+      employeeWhere.OR = [
+        { displayName: { contains: term, mode: 'insensitive' } },
+        { employeeCode: { contains: term, mode: 'insensitive' } },
+        { firstName: { contains: term, mode: 'insensitive' } },
+        { lastName: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    if (query.branchId) {
+      employeeWhere.employment = { ...employeeWhere.employment, branchId: query.branchId };
+    }
+    if (query.departmentId) {
+      employeeWhere.employment = { ...employeeWhere.employment, departmentId: query.departmentId };
+    }
+
+    // If filtered by status, match employee IDs having that status
+    if (query.status && query.status !== 'ALL') {
+      const matchingSummaries = await this.prisma.attendanceDailySummary.findMany({
+        where: {
+          organizationId: user.organizationId,
+          date: workingDateUtc,
+          status: query.status as any,
+        },
+        select: { employeeId: true },
+      });
+      employeeWhere.id = { in: matchingSummaries.map((s) => s.employeeId) };
+    }
+
+    const totalCount = await this.prisma.employee.count({ where: employeeWhere });
+
+    const employees = await this.prisma.employee.findMany({
+      where: employeeWhere,
+      skip,
+      take: limit,
+      orderBy: { employeeCode: 'asc' },
+      include: {
+        employment: {
+          include: {
+            branch: true,
+            department: true,
+          },
+        },
+      },
+    });
+
+    const employeeIds = employees.map((e) => e.id);
+
+    // Fetch summaries for these employees
+    const summaries = await this.prisma.attendanceDailySummary.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        employeeId: { in: employeeIds },
+      },
+      include: {
+        shift: true,
+      },
+    });
+
+    // Fetch active/all sessions on this date
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        employeeId: { in: employeeIds },
+      },
+      orderBy: { sessionNumber: 'asc' },
+      include: {
+        events: {
+          orderBy: { eventTimestamp: 'asc' },
+          include: { officeLocation: true },
+        },
+      },
+    });
+
+    // Fetch unresolved exceptions
+    const exceptions = await this.prisma.attendanceException.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        employeeId: { in: employeeIds },
+      },
+    });
+
+    // Check GPS privacy permission
+    const canViewPreciseGps =
+      user.roles?.includes('ADMIN' as any) ||
+      user.permissions?.includes('ATTENDANCE_VIEW_GPS') ||
+      false;
+
+    const records = employees.map((emp) => {
+      const summary = summaries.find((s) => s.employeeId === emp.id) || null;
+      const empSessions = sessions.filter((s) => s.employeeId === emp.id);
+      const activeSession = empSessions.find((s) => s.status === 'OPEN') || null;
+      const empExceptions = exceptions.filter((e) => e.employeeId === emp.id);
+
+      // Latest check-in event for location details
+      const latestCheckInEvent = empSessions
+        .flatMap((s) => s.events)
+        .filter((e) => e.eventType === 'CHECK_IN')
+        .pop();
+
+      return {
+        employee: {
+          id: emp.id,
+          employeeCode: emp.employeeCode,
+          displayName: emp.displayName,
+          department: emp.employment?.department?.name || 'General',
+          branch: emp.employment?.branch?.name || 'Main Office',
+        },
+        summary: summary
+          ? {
+              status: summary.status,
+              firstCheckIn: summary.firstCheckIn,
+              lastCheckOut: summary.lastCheckOut,
+              totalWorkMinutes: summary.totalWorkMinutes,
+              totalBreakMinutes: summary.totalBreakMinutes,
+              netHours: Math.round((summary.totalWorkMinutes / 60) * 100) / 100,
+              lateMinutes: summary.lateMinutes,
+              earlyExitMinutes: summary.earlyExitMinutes,
+              overtimeMinutes: summary.overtimeMinutes,
+              isCorrected: summary.isCorrected,
+            }
+          : {
+              status: 'NOT_SCHEDULED',
+              firstCheckIn: null,
+              lastCheckOut: null,
+              totalWorkMinutes: 0,
+              totalBreakMinutes: 0,
+              netHours: 0,
+              lateMinutes: 0,
+              earlyExitMinutes: 0,
+              overtimeMinutes: 0,
+              isCorrected: false,
+            },
+        activeSession: activeSession
+          ? {
+              id: activeSession.id,
+              sessionNumber: activeSession.sessionNumber,
+              checkInTime: activeSession.checkInTime,
+              status: activeSession.status,
+            }
+          : null,
+        sessionCount: empSessions.length,
+        exceptionCount: empExceptions.length,
+        exceptions: empExceptions.map((ex) => ({
+          id: ex.id,
+          exceptionType: ex.exceptionType,
+          severity: ex.severity,
+          resolved: ex.resolved,
+        })),
+        locationVerification: latestCheckInEvent
+          ? {
+              officeName: latestCheckInEvent.officeLocation?.name || 'Office',
+              geofenceStatus: latestCheckInEvent.geofenceStatus,
+              distanceMeters: latestCheckInEvent.distanceFromOfficeMeters,
+              latitude: canViewPreciseGps ? latestCheckInEvent.latitude : null,
+              longitude: canViewPreciseGps ? latestCheckInEvent.longitude : null,
+              isGpsRedacted: !canViewPreciseGps,
+            }
+          : null,
+      };
+    });
+
+    return {
+      success: true,
+      message: 'Operations attendance records retrieved successfully.',
+      data: records,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit) || 1,
+      },
+    };
+  }
+
+  /**
+   * Retrieves detailed timeline, sessions, events, and exceptions for a specific employee on a date.
+   */
+  async getOperationsEmployeeDetail(user: AuthenticatedUser, employeeId: string, dateStr?: string) {
+    const defaultResolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      'default',
+      new Date(),
+      user.organizationId,
+    );
+    const timezone = defaultResolution.policy?.timezone || 'Asia/Kolkata';
+    const cutoffHour = defaultResolution.policy?.workingDayStartHour ?? 5;
+
+    const workingDateStr =
+      dateStr || resolveWorkingDay(new Date(), cutoffHour, timezone).workingDateStr;
+    const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
+
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        id: employeeId,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+      include: {
+        employment: {
+          include: {
+            branch: true,
+            department: true,
+            designation: true,
+          },
+        },
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Employee not found.',
+        code: 'EMPLOYEE_NOT_FOUND',
+      });
+    }
+
+    const { policy, shift } = await this.policiesService.resolveEffectivePolicyAndShift(
+      employee.id,
+      workingDateUtc,
+      user.organizationId,
+    );
+
+    const summary = await this.prisma.attendanceDailySummary.findUnique({
+      where: {
+        organizationId_employeeId_date: {
+          organizationId: user.organizationId,
+          employeeId: employee.id,
+          date: workingDateUtc,
+        },
+      },
+      include: { shift: true },
+    });
+
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employeeId: employee.id,
+        date: workingDateUtc,
+      },
+      orderBy: { sessionNumber: 'asc' },
+      include: {
+        events: {
+          orderBy: { eventTimestamp: 'asc' },
+          include: { officeLocation: true },
+        },
+      },
+    });
+
+    const exceptions = await this.prisma.attendanceException.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employeeId: employee.id,
+        date: workingDateUtc,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    // Check GPS privacy authorization
+    const canViewPreciseGps =
+      user.roles?.includes('ADMIN' as any) ||
+      user.permissions?.includes('ATTENDANCE_VIEW_GPS') ||
+      false;
+
+    const sanitizedSessions = sessions.map((sess) => ({
+      ...sess,
+      events: sess.events.map((ev) => ({
+        id: ev.id,
+        eventType: ev.eventType,
+        eventTimestamp: ev.eventTimestamp,
+        attendanceMode: ev.attendanceMode,
+        geofenceStatus: ev.geofenceStatus,
+        distanceFromOfficeMeters: ev.distanceFromOfficeMeters,
+        officeName: ev.officeLocation?.name || null,
+        deviceInfo: ev.deviceInfo,
+        latitude: canViewPreciseGps ? ev.latitude : null,
+        longitude: canViewPreciseGps ? ev.longitude : null,
+        isGpsRedacted: !canViewPreciseGps,
+      })),
+    }));
+
+    return {
+      success: true,
+      message: 'Employee attendance details retrieved successfully.',
+      data: {
+        date: workingDateStr,
+        employee: {
+          id: employee.id,
+          employeeCode: employee.employeeCode,
+          displayName: employee.displayName,
+          designation: employee.employment?.designation?.name || 'Staff',
+          department: employee.employment?.department?.name || 'General',
+          branch: employee.employment?.branch?.name || 'Main Office',
+          status: employee.status,
+        },
+        shift,
+        policy: {
+          name: policy.name,
+          standardWorkMinutes: policy.standardWorkMinutes,
+          fullDayThresholdMinutes: policy.fullDayThresholdMinutes,
+          gracePeriodMinutes: policy.gracePeriodMinutes,
+          timezone: policy.timezone,
+        },
+        summary,
+        sessions: sanitizedSessions,
+        exceptions,
+      },
     };
   }
 

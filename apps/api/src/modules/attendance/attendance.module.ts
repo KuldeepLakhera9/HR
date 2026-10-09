@@ -1,4 +1,15 @@
-import { Body, Controller, Get, Headers, Ip, Module, Post, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Headers,
+  Ip,
+  Module,
+  Param,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -12,6 +23,7 @@ import { CheckOutDto } from './dto/check-out.dto';
 import { BreakDto } from './dto/break.dto';
 import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
+import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.dto';
 import {
   OfficeLocationsController,
   OfficeLocationsAliasController,
@@ -145,6 +157,43 @@ export class AttendanceController {
   })
   async getMyCorrections(@CurrentUser() user: AuthenticatedUser) {
     return this.attendanceService.getMyCorrections(user);
+  }
+
+  @Get('operations/dashboard')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get organizational attendance operations dashboard metrics, headcount, and trend',
+  })
+  async getOperationsDashboard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AttendanceOperationsQueryDto,
+  ) {
+    return this.attendanceService.getOperationsDashboard(user.organizationId, query);
+  }
+
+  @Get('operations/records')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get paginated employee attendance operations records with filters and search',
+  })
+  async getOperationsRecords(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AttendanceOperationsQueryDto,
+  ) {
+    return this.attendanceService.getOperationsRecords(user, query);
+  }
+
+  @Get('operations/records/:employeeId')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get detailed employee attendance timeline, events, and exceptions for detail drawer',
+  })
+  async getOperationsEmployeeDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('employeeId') employeeId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.attendanceService.getOperationsEmployeeDetail(user, employeeId, date);
   }
 
   @Get('summary')

@@ -41,6 +41,7 @@ import {
 import { attendanceApi } from '../../lib/api-client';
 import { useGeolocation, GeolocationPositionData } from '../../hooks/useGeolocation';
 import { AttendanceDayStatus } from '@hrms/types';
+import { HRAttendanceDashboard } from '../../features/attendance/components/HRAttendanceDashboard';
 
 // Helper: safe UUID generator for idempotency keys
 function generateIdempotencyKey(): string {
@@ -1064,62 +1065,7 @@ export default function AttendancePage() {
           /* =======================================================================
            * ORGANIZATION OVERVIEW TAB (ADMIN / MANAGERS)
            * ======================================================================= */
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <KPICard
-                title="Office Geofence"
-                value="52 Staff"
-                description="Punches validated inside office geofence"
-                icon={<Building className="h-5 w-5 text-amber-700" />}
-                iconBg="bg-amber-100"
-              />
-              <KPICard
-                title="Official Visit (OD)"
-                value="4 Staff"
-                description="Approved outdoor client travel"
-                icon={<Briefcase className="h-5 w-5 text-purple-700" />}
-                iconBg="bg-purple-100"
-              />
-              <KPICard
-                title="Work From Home"
-                value="8 Staff"
-                description="Approved remote work agreements"
-                icon={<Home className="h-5 w-5 text-sky-700" />}
-                iconBg="bg-sky-100"
-              />
-            </div>
-
-            <Card className="p-6 border-stone-200">
-              <div className="flex items-center justify-between pb-4 border-b border-stone-100">
-                <div>
-                  <h3 className="text-base font-bold text-stone-900">
-                    Live Organization Attendance
-                  </h3>
-                  <p className="text-xs text-stone-500">
-                    Current active attendance sessions across office branches.
-                  </p>
-                </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={async () => {
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    await attendanceApi.reconcileMissing();
-                    await loadTodayStatus();
-                  }}
-                  className="text-xs"
-                >
-                  <RefreshCw className="h-3.5 w-3.5 mr-1" /> Reconcile Cutoff
-                </Button>
-              </div>
-
-              <div className="py-8 text-center text-stone-500 text-xs">
-                To view detailed employee logs, shift scheduling, or manage branch attendance
-                policies, please use the dedicated{' '}
-                <strong>Settings &gt; Attendance Policies</strong> portal.
-              </div>
-            </Card>
-          </div>
+          <HRAttendanceDashboard onRefreshNeeded={loadTodayStatus} />
         )}
       </div>
 

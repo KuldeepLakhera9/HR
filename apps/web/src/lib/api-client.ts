@@ -732,6 +732,61 @@ export const attendanceApi = {
     const res = await fetchWithAuth<any>('/attendance/my-corrections');
     return res.data;
   },
+
+  async getOperationsDashboard(query?: {
+    date?: string;
+    branchId?: string;
+    departmentId?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.date) params.append('date', query.date);
+    if (query?.branchId) params.append('branchId', query.branchId);
+    if (query?.departmentId) params.append('departmentId', query.departmentId);
+    const qs = params.toString();
+    const res = await fetchWithAuth<any>(`/attendance/operations/dashboard${qs ? `?${qs}` : ''}`);
+    return res.data;
+  },
+
+  async getOperationsRecords(query?: {
+    date?: string;
+    search?: string;
+    branchId?: string;
+    departmentId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.date) params.append('date', query.date);
+    if (query?.search) params.append('search', query.search);
+    if (query?.branchId) params.append('branchId', query.branchId);
+    if (query?.departmentId) params.append('departmentId', query.departmentId);
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString();
+    const res = await fetchWithAuth<any>(`/attendance/operations/records${qs ? `?${qs}` : ''}`);
+    return res;
+  },
+
+  async getOperationsEmployeeDetail(employeeId: string, date?: string) {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    const res = await fetchWithAuth<any>(`/attendance/operations/records/${employeeId}${qs}`);
+    return res.data;
+  },
+
+  async recalculate(payload: {
+    startDate: string;
+    endDate?: string;
+    employeeId?: string;
+    force?: boolean;
+  }) {
+    const res = await fetchWithAuth<any>('/attendance/recalculate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
 };
 
 export const attendancePoliciesApi = {

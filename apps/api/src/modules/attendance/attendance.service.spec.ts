@@ -113,15 +113,20 @@ describe('AttendanceService', () => {
       attendanceDailySummary: {
         findFirst: jest.fn().mockResolvedValue(null),
         findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         upsert: jest
           .fn()
           .mockImplementation(({ create }) => Promise.resolve({ id: 'summary-1', ...create })),
       },
       attendanceException: {
         create: jest.fn().mockResolvedValue({ id: 'exc-1' }),
+        count: jest.fn().mockResolvedValue(0),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       employee: {
         findFirst: jest.fn().mockResolvedValue(mockEmployee),
+        findMany: jest.fn().mockResolvedValue([mockEmployee]),
+        count: jest.fn().mockResolvedValue(1),
       },
       officeLocation: {
         findFirst: jest.fn().mockResolvedValue(mockOffice),
@@ -786,6 +791,214 @@ describe('AttendanceService', () => {
       expect(res.skippedCount).toBe(1);
       expect(res.data[0].skipped).toBe(true);
       expect(res.data[0].reason).toContain('Manually corrected summary preserved');
+    });
+  });
+
+  describe('HR Operations Dashboard & GPS Privacy Redaction (Phase 4 Step 9)', () => {
+    it('retrieves operations dashboard with mutually consistent headcount and 7-day trend', async () => {
+      prisma.employee.count.mockResolvedValueOnce(25); // totalActiveEmployees
+      prisma.attendanceDailySummary.findMany.mockResolvedValueOnce([
+        { status: 'PRESENT', lateMinutes: 0 },
+        { status: 'PRESENT', lateMinutes: 20 },
+        { status: 'HALF_DAY', lateMinutes: 0 },
+        { status: 'ABSENT', lateMinutes: 0 },
+        { status: 'INCOMPLETE', lateMinutes: 0 },
+        { status: 'PENDING_REVIEW', lateMinutes: 0 },
+      ]);
+      prisma.attendanceSession.count.mockResolvedValueOnce(8); // checkedInNow
+      prisma.attendanceException.count.mockResolvedValueOnce(3); // unresolvedExceptions
+      prisma.attendanceEvent.findMany.mockResolvedValueOnce([
+        { attendanceMode: 'OFFICE' },
+        { attendanceMode: 'OFFICE' },
+        { attendanceMode: 'WFH' },
+      ]);
+
+      const res = await service.getOperationsDashboard(mockOrgId, { date: '2026-10-09' });
+
+      expect(res.success).toBe(true);
+      expect(res.data.date).toBe('2026-10-09');
+      expect(res.data.timezone).toBe('Asia/Kolkata');
+      expect(res.data.reportingTimestamp).toBeDefined();
+      expect(res.data.headcount.totalActiveEmployees).toBe(25);
+      expect(res.data.headcount.checkedInNow).toBe(8);
+      expect(res.data.headcount.present).toBe(2);
+      expect(res.data.headcount.lateArrivals).toBe(1);
+      expect(res.data.headcount.halfDay).toBe(1);
+      expect(res.data.headcount.absent).toBe(1);
+      expect(res.data.headcount.incomplete).toBe(1);
+      expect(res.data.headcount.pendingReview).toBe(1);
+      expect(res.data.headcount.unresolvedExceptions).toBe(3);
+      expect(res.data.modes.office).toBe(2);
+      expect(res.data.trend.length).toBe(7);
+    });
+
+    it('strictly redacts precise GPS coordinates for standard non-admin users without ATTENDANCE_VIEW_GPS', async () => {
+      const nonAdminUser: AuthenticatedUser = {
+        ...mockUser,
+        roles: ['EMPLOYEE' as any],
+        permissions: ['ATTENDANCE_VIEW'],
+      };
+
+      prisma.employee.count.mockResolvedValueOnce(1);
+      prisma.employee.findMany.mockResolvedValueOnce([mockEmployee]);
+      prisma.attendanceDailySummary.findMany.mockResolvedValueOnce([
+        {
+          employeeId: mockEmployeeId,
+          status: 'PRESENT',
+          firstCheckIn: new Date('2026-10-09T09:05:00.000Z'),
+          lastCheckOut: new Date('2026-10-09T18:00:00.000Z'),
+          totalWorkMinutes: 480,
+          totalBreakMinutes: 55,
+          lateMinutes: 5,
+          earlyExitMinutes: 0,
+          overtimeMinutes: 0,
+          isCorrected: false,
+        },
+      ]);
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([
+        {
+          id: 'sess-open-gps',
+          employeeId: mockEmployeeId,
+          sessionNumber: 1,
+          checkInTime: new Date(),
+          status: 'OPEN',
+          events: [
+            {
+              id: 'evt-gps-1',
+              eventType: 'CHECK_IN',
+              latitude: 12.9716,
+              longitude: 77.5946,
+              distanceFromOfficeMeters: 45,
+              geofenceStatus: 'VERIFIED',
+              officeLocation: { name: 'Bangalore HQ' },
+            },
+          ],
+        },
+      ]);
+      prisma.attendanceException.findMany.mockResolvedValueOnce([]);
+
+      const res = await service.getOperationsRecords(nonAdminUser, { date: '2026-10-09' });
+
+      expect(res.success).toBe(true);
+      expect(res.data.length).toBe(1);
+      const record = res.data[0];
+      expect(record.employee.displayName).toBe('John Doe');
+      expect(record.summary.status).toBe('PRESENT');
+
+      // GPS privacy checks:
+      expect(record.locationVerification).toBeDefined();
+      expect(record.locationVerification!.isGpsRedacted).toBe(true);
+      expect(record.locationVerification!.latitude).toBeNull();
+      expect(record.locationVerification!.longitude).toBeNull();
+      expect(record.locationVerification!.officeName).toBe('Bangalore HQ');
+      expect(record.locationVerification!.distanceMeters).toBe(45);
+      expect(record.locationVerification!.geofenceStatus).toBe('VERIFIED');
+    });
+
+    it('displays precise GPS coordinates when user has ADMIN role or ATTENDANCE_VIEW_GPS permission', async () => {
+      const adminUser: AuthenticatedUser = {
+        ...mockUser,
+        roles: ['ADMIN' as any],
+        permissions: ['ATTENDANCE_VIEW', 'ATTENDANCE_VIEW_GPS'],
+      };
+
+      prisma.employee.count.mockResolvedValueOnce(1);
+      prisma.employee.findMany.mockResolvedValueOnce([mockEmployee]);
+      prisma.attendanceDailySummary.findMany.mockResolvedValueOnce([]);
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([
+        {
+          id: 'sess-open-admin',
+          employeeId: mockEmployeeId,
+          sessionNumber: 1,
+          status: 'OPEN',
+          events: [
+            {
+              id: 'evt-gps-admin',
+              eventType: 'CHECK_IN',
+              latitude: 12.9716,
+              longitude: 77.5946,
+              distanceFromOfficeMeters: 20,
+              geofenceStatus: 'VERIFIED',
+              officeLocation: { name: 'Bangalore HQ' },
+            },
+          ],
+        },
+      ]);
+      prisma.attendanceException.findMany.mockResolvedValueOnce([]);
+
+      const res = await service.getOperationsRecords(adminUser, { date: '2026-10-09' });
+
+      expect(res.success).toBe(true);
+      const record = res.data[0];
+      expect(record.locationVerification!.isGpsRedacted).toBe(false);
+      expect(record.locationVerification!.latitude).toBe(12.9716);
+      expect(record.locationVerification!.longitude).toBe(77.5946);
+    });
+
+    it('retrieves detailed employee timeline for detail drawer with sanitized events', async () => {
+      const nonAdminUser: AuthenticatedUser = {
+        ...mockUser,
+        roles: ['EMPLOYEE' as any],
+      };
+
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        ...mockEmployee,
+        employment: {
+          designation: { name: 'Senior Software Engineer' },
+          department: { name: 'Engineering' },
+          branch: { name: 'Bangalore HQ' },
+        },
+      });
+      prisma.attendanceDailySummary.findUnique.mockResolvedValueOnce({
+        status: 'PRESENT',
+        totalWorkMinutes: 480,
+      });
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([
+        {
+          id: 'sess-drawer-1',
+          sessionNumber: 1,
+          status: 'COMPLETED',
+          events: [
+            {
+              id: 'evt-drawer-ci',
+              eventType: 'CHECK_IN',
+              eventTimestamp: new Date('2026-10-09T09:00:00.000Z'),
+              attendanceMode: 'OFFICE',
+              geofenceStatus: 'VERIFIED',
+              distanceFromOfficeMeters: 30,
+              officeLocation: { name: 'Bangalore HQ' },
+              latitude: 12.9716,
+              longitude: 77.5946,
+            },
+          ],
+        },
+      ]);
+      prisma.attendanceException.findMany.mockResolvedValueOnce([
+        {
+          id: 'exc-drawer-1',
+          exceptionType: 'LATE_ARRIVAL',
+          severity: 'LOW',
+          resolved: false,
+        },
+      ]);
+
+      const res = await service.getOperationsEmployeeDetail(
+        nonAdminUser,
+        mockEmployeeId,
+        '2026-10-09',
+      );
+
+      expect(res.success).toBe(true);
+      expect(res.data.employee.displayName).toBe('John Doe');
+      expect(res.data.employee.designation).toBe('Senior Software Engineer');
+      expect(res.data.sessions.length).toBe(1);
+      const event = res.data.sessions[0].events[0];
+      expect(event.eventType).toBe('CHECK_IN');
+      expect(event.isGpsRedacted).toBe(true);
+      expect(event.latitude).toBeNull();
+      expect(event.longitude).toBeNull();
+      expect(event.distanceFromOfficeMeters).toBe(30);
+      expect(res.data.exceptions.length).toBe(1);
     });
   });
 });
