@@ -13,6 +13,7 @@ import {
   Input,
   Skeleton,
   Drawer,
+  Dialog,
 } from '@hrms/ui';
 import {
   Users,
@@ -40,6 +41,7 @@ import {
   Briefcase,
   Home,
   Check,
+  X,
   XCircle,
   FileText,
   ChevronDown,
@@ -56,12 +58,15 @@ import {
   Legend,
 } from 'recharts';
 import { attendanceApi, organizationApi } from '../../../lib/api-client';
+import { useAuth } from '../../../context/AuthContext';
 
 interface HRAttendanceDashboardProps {
   onRefreshNeeded?: () => void;
 }
 
 export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () => {
+  const { user } = useAuth();
+
   // Query Filter States
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -70,6 +75,17 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+
+  // Corrections State
+  const [corrections, setCorrections] = useState<any[]>([]);
+  const [isLoadingCorrections, setIsLoadingCorrections] = useState(true);
+  const [selectedCorrection, setSelectedCorrection] = useState<any>(null);
+  const [isDecisionModalOpen, setIsDecisionModalOpen] = useState(false);
+  const [decisionAction, setDecisionAction] = useState<'APPROVED' | 'REJECTED'>('APPROVED');
+  const [decisionNotes, setDecisionNotes] = useState('');
+  const [isSubmittingDecision, setIsSubmittingDecision] = useState(false);
+  const [decisionError, setDecisionError] = useState<string | null>(null);
+  const [decisionSuccess, setDecisionSuccess] = useState<string | null>(null);
 
   // Metadata dropdown options
   const [branches, setBranches] = useState<any[]>([]);
@@ -217,6 +233,58 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
       });
     } finally {
       setIsReconciling(false);
+    }
+  };
+
+  // Load Pending Organization Regularizations
+  const loadCorrections = useCallback(async () => {
+    try {
+      setIsLoadingCorrections(true);
+      const data = await attendanceApi.getOperationsCorrections('PENDING');
+      setCorrections(Array.isArray(data) ? data : []);
+    } catch {
+      // Non-fatal
+    } finally {
+      setIsLoadingCorrections(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCorrections();
+  }, [loadCorrections]);
+
+  const handleOpenDecisionModal = (correction: any, action: 'APPROVED' | 'REJECTED') => {
+    setSelectedCorrection(correction);
+    setDecisionAction(action);
+    setDecisionNotes('');
+    setDecisionError(null);
+    setIsDecisionModalOpen(true);
+  };
+
+  const handleConfirmDecision = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedCorrection) return;
+
+    try {
+      setIsSubmittingDecision(true);
+      setDecisionError(null);
+      const res = await attendanceApi.decideCorrectionRequest(selectedCorrection.id, {
+        decision: decisionAction,
+        reviewNotes: decisionNotes.trim() || undefined,
+      });
+
+      if (res.success) {
+        setIsDecisionModalOpen(false);
+        setDecisionSuccess(`Correction request ${decisionAction.toLowerCase()} successfully.`);
+        setTimeout(() => setDecisionSuccess(null), 4000);
+        await Promise.all([loadCorrections(), loadDashboard(), loadRecords()]);
+      } else {
+        setDecisionError(res.message || 'Failed to update correction request.');
+      }
+    } catch (err: any) {
+      setDecisionError(err.message || 'Failed to update correction request.');
+    } finally {
+      setIsSubmittingDecision(false);
     }
   };
 
@@ -630,6 +698,143 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
           </div>
         </Card>
       </div>
+
+      {/* 3.5. Pending Regularization Requests for HR Review */}
+      {corrections.length > 0 && (
+        <Card className="p-5 border-amber-200/70 bg-gradient-to-r from-amber-50/40 via-white to-amber-50/20 shadow-2xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-amber-100">
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
+                <Clock className="h-4 w-4" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-stone-900">
+                  Pending Regularization Approvals ({corrections.length})
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Review employee requests for missing checkout, wrong punches, and emergency
+                  adjustments.
+                </p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={loadCorrections}
+              className="text-xs h-7 px-2.5"
+            >
+              <RefreshCw className="h-3.5 w-3.5 mr-1" /> Refresh
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {corrections.map((req) => {
+              const categoryLabel =
+                req.reasonCategory === 'MISSING_CHECKOUT'
+                  ? 'Missing Check-Out'
+                  : req.reasonCategory === 'WRONG_EVENT'
+                    ? 'Wrong Event'
+                    : req.reasonCategory === 'TECHNICAL_GLITCH'
+                      ? 'Technical Glitch'
+                      : req.reasonCategory === 'EMERGENCY'
+                        ? 'Emergency'
+                        : req.reasonCategory === 'OFFICIAL_DUTY'
+                          ? 'Official Duty'
+                          : req.reasonCategory || 'Discrepancy';
+
+              const isSelfRequest = user?.id === req.employee?.userId;
+
+              return (
+                <div
+                  key={req.id}
+                  className="p-4 bg-white rounded-xl border border-stone-200 shadow-2xs space-y-2.5 text-xs"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-bold text-stone-900">
+                        {req.employee?.displayName || 'Employee'}
+                      </span>
+                      <span className="text-[11px] font-mono text-stone-400">
+                        ({req.employee?.employeeCode})
+                      </span>
+                      <Badge variant="outline" size="sm" className="bg-stone-100 text-stone-700">
+                        {categoryLabel}
+                      </Badge>
+                    </div>
+                    <Badge variant="warning" size="sm">
+                      PENDING
+                    </Badge>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 text-stone-600 bg-stone-50 p-2.5 rounded-lg text-[11px]">
+                    <div>
+                      <span className="text-stone-400 block text-[10px]">DATE</span>
+                      <strong>{req.targetDate ? req.targetDate.split('T')[0] : '—'}</strong>
+                    </div>
+                    <div>
+                      <span className="text-stone-400 block text-[10px]">REQUESTED TIMINGS</span>
+                      <strong className="font-mono">
+                        {req.requestedCheckIn
+                          ? new Date(req.requestedCheckIn).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '09:00'}{' '}
+                        –{' '}
+                        {req.requestedCheckOut
+                          ? new Date(req.requestedCheckOut).toLocaleTimeString([], {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : '18:00'}
+                      </strong>
+                    </div>
+                  </div>
+
+                  <p className="text-stone-600 text-xs">
+                    <strong>Reason:</strong> {req.explanation || req.reason}
+                  </p>
+
+                  {req.evidenceMetadata && (
+                    <p className="text-[11px] text-amber-800 bg-amber-50/60 px-2.5 py-1 rounded border border-amber-200/50">
+                      <strong>Evidence Reference:</strong>{' '}
+                      {typeof req.evidenceMetadata === 'object'
+                        ? req.evidenceMetadata.note || JSON.stringify(req.evidenceMetadata)
+                        : req.evidenceMetadata}
+                    </p>
+                  )}
+
+                  {isSelfRequest ? (
+                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                      <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        Self-Approval Prohibited (Must be reviewed by another admin)
+                      </span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleOpenDecisionModal(req, 'REJECTED')}
+                        className="text-rose-700 hover:bg-rose-50 text-xs h-7 px-2.5"
+                      >
+                        <X className="h-3.5 w-3.5 mr-1" /> Reject
+                      </Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleOpenDecisionModal(req, 'APPROVED')}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 font-semibold"
+                      >
+                        <Check className="h-3.5 w-3.5 mr-1" /> Approve
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* 4. Filter & Search Controls Bar */}
       <Card className="p-4 border-stone-200">
@@ -1327,6 +1532,107 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
           )}
         </div>
       </Drawer>
+
+      {/* Attendance Regularization Review Modal */}
+      <Dialog
+        isOpen={isDecisionModalOpen}
+        onClose={() => setIsDecisionModalOpen(false)}
+        title={
+          decisionAction === 'APPROVED'
+            ? 'Approve Attendance Regularization'
+            : 'Reject Attendance Regularization'
+        }
+        maxWidth="md"
+      >
+        <form onSubmit={handleConfirmDecision} className="space-y-4 text-xs">
+          {decisionError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-700 flex items-center gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              <span>{decisionError}</span>
+            </div>
+          )}
+
+          {selectedCorrection && (
+            <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-1.5 text-stone-700">
+              <div>
+                <strong>Employee:</strong> {selectedCorrection.employee?.displayName} (
+                {selectedCorrection.employee?.employeeCode})
+              </div>
+              <div>
+                <strong>Target Date:</strong> {selectedCorrection.targetDate?.split('T')[0]}
+              </div>
+              <div>
+                <strong>Category:</strong> {selectedCorrection.reasonCategory || 'Discrepancy'}
+              </div>
+              <div>
+                <strong>Explanation:</strong>{' '}
+                {selectedCorrection.explanation || selectedCorrection.reason}
+              </div>
+              {selectedCorrection.evidenceMetadata && (
+                <div>
+                  <strong>Evidence Reference:</strong>{' '}
+                  {typeof selectedCorrection.evidenceMetadata === 'object'
+                    ? selectedCorrection.evidenceMetadata.note ||
+                      JSON.stringify(selectedCorrection.evidenceMetadata)
+                    : selectedCorrection.evidenceMetadata}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div>
+            <label className="font-semibold text-stone-700 block mb-1">
+              Review Notes & Remarks
+            </label>
+            <textarea
+              rows={3}
+              value={decisionNotes}
+              onChange={(e) => setDecisionNotes(e.target.value)}
+              placeholder={
+                decisionAction === 'APPROVED'
+                  ? 'Add approval note (e.g., Verified client visit log)...'
+                  : 'Specify reason for rejection (e.g., Insufficient documentation)...'
+              }
+              className="w-full px-3 py-2 rounded-lg border border-stone-300 text-stone-900 text-xs focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
+
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-stone-100">
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => setIsDecisionModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              size="sm"
+              disabled={isSubmittingDecision}
+              className={
+                decisionAction === 'APPROVED'
+                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white font-semibold'
+                  : 'bg-rose-600 hover:bg-rose-700 text-white font-semibold'
+              }
+            >
+              {isSubmittingDecision ? (
+                <>
+                  <RefreshCw className="h-3.5 w-3.5 mr-1.5 animate-spin" /> Processing...
+                </>
+              ) : decisionAction === 'APPROVED' ? (
+                <>
+                  <Check className="h-3.5 w-3.5 mr-1" /> Confirm Approval
+                </>
+              ) : (
+                <>
+                  <X className="h-3.5 w-3.5 mr-1" /> Confirm Rejection
+                </>
+              )}
+            </Button>
+          </div>
+        </form>
+      </Dialog>
     </div>
   );
 };

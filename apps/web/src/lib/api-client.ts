@@ -719,7 +719,9 @@ export const attendanceApi = {
     targetDate: string;
     requestedCheckIn?: string;
     requestedCheckOut?: string;
+    reasonCategory?: string;
     reason: string;
+    evidenceMetadata?: any;
   }) {
     const res = await fetchWithAuth<any>('/attendance/correction-request', {
       method: 'POST',
@@ -817,11 +819,17 @@ export const attendanceApi = {
     return res.data;
   },
 
+  async getOperationsCorrections(status?: string) {
+    const qs = status && status !== 'ALL' ? `?status=${encodeURIComponent(status)}` : '';
+    const res = await fetchWithAuth<any>(`/attendance/operations/corrections${qs}`);
+    return res.data;
+  },
+
   async decideCorrectionRequest(
     requestId: string,
     payload: { decision: 'APPROVED' | 'REJECTED'; reviewNotes?: string },
   ) {
-    const res = await fetchWithAuth<any>(`/attendance/manager/corrections/${requestId}/decide`, {
+    const res = await fetchWithAuth<any>(`/attendance/corrections/${requestId}/decide`, {
       method: 'POST',
       body: JSON.stringify(payload),
     });

@@ -198,6 +198,31 @@ export class AttendanceController {
     return this.attendanceService.getOperationsEmployeeDetail(user, employeeId, date);
   }
 
+  @Get('operations/corrections')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get all organizational attendance correction requests for HR/Admin review',
+  })
+  async getOperationsCorrections(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('status') status?: string,
+  ) {
+    return this.attendanceService.getOperationsCorrections(user.organizationId, status);
+  }
+
+  @Post('corrections/:requestId/decide')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({
+    summary: 'Approves or rejects an attendance correction request (HR or reporting Manager)',
+  })
+  async decideCorrectionRequestGeneral(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId') requestId: string,
+    @Body() dto: DecideCorrectionRequestDto,
+  ) {
+    return this.attendanceService.decideCorrectionRequest(user, requestId, dto);
+  }
+
   // ===========================================================================
   // MANAGER TEAM ATTENDANCE ENDPOINTS
   // ===========================================================================

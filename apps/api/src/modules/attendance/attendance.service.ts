@@ -28,6 +28,49 @@ import { DecideCorrectionRequestDto } from './dto/decide-correction.dto';
 import { HierarchyService } from '../employees/hierarchy.service';
 import { AttendanceDayStatus } from '@hrms/types';
 
+export function formatCorrectionReason(
+  category: string,
+  explanation: string,
+  evidence?: any,
+): string {
+  return JSON.stringify({
+    category: category || 'MISSING_CHECKOUT',
+    explanation: (explanation || '').trim(),
+    evidence: evidence || null,
+  });
+}
+
+export function parseCorrectionReason(rawReason: string) {
+  if (typeof rawReason === 'string' && rawReason.trim().startsWith('{')) {
+    try {
+      const parsed = JSON.parse(rawReason);
+      return {
+        reasonCategory: parsed.category || 'OTHER',
+        explanation: parsed.explanation || rawReason,
+        evidenceMetadata: parsed.evidence || null,
+      };
+    } catch {
+      // fallback
+    }
+  }
+  return {
+    reasonCategory: 'OTHER',
+    explanation: rawReason || '',
+    evidenceMetadata: null,
+  };
+}
+
+export function enrichCorrectionRequest(req: any) {
+  if (!req) return req;
+  const parsed = parseCorrectionReason(req.reason);
+  return {
+    ...req,
+    reasonCategory: parsed.reasonCategory,
+    explanation: parsed.explanation,
+    evidenceMetadata: parsed.evidenceMetadata,
+  };
+}
+
 @Injectable()
 export class AttendanceService {
   private readonly logger = new Logger(AttendanceService.name);
@@ -1563,8 +1606,40 @@ export class AttendanceService {
       });
     }
 
+    const resolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      employee.id,
+      new Date(),
+      user.organizationId,
+    );
+    const timezone = resolution.policy?.timezone || 'Asia/Kolkata';
+    const cutoffHour = resolution.policy?.workingDayStartHour ?? 5;
+    const todayWorkingDate = resolveWorkingDay(new Date(), cutoffHour, timezone).workingDateStr;
+
+    // 1. Prevent future date correction requests
+    if (dto.targetDate > todayWorkingDate) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Cannot submit attendance correction requests for future dates.',
+        code: 'FUTURE_DATE_NOT_ALLOWED',
+      });
+    }
+
+    // 2. Validate time sequence if both check-in and check-out are provided
+    if (dto.requestedCheckIn && dto.requestedCheckOut) {
+      const inTime = new Date(dto.requestedCheckIn).getTime();
+      const outTime = new Date(dto.requestedCheckOut).getTime();
+      if (outTime <= inTime) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'Requested check-out time must be after requested check-in time.',
+          code: 'INVALID_TIME_SEQUENCE',
+        });
+      }
+    }
+
     const targetDateUtc = new Date(`${dto.targetDate}T00:00:00.000Z`);
 
+    // 3. Duplicate pending request check
     const existing = await this.prisma.attendanceCorrectionRequest.findFirst({
       where: {
         organizationId: user.organizationId,
@@ -1582,6 +1657,12 @@ export class AttendanceService {
       });
     }
 
+    const formattedReason = formatCorrectionReason(
+      dto.reasonCategory || 'MISSING_CHECKOUT',
+      dto.reason,
+      dto.evidenceMetadata,
+    );
+
     const request = await this.prisma.attendanceCorrectionRequest.create({
       data: {
         organizationId: user.organizationId,
@@ -1589,7 +1670,7 @@ export class AttendanceService {
         targetDate: targetDateUtc,
         requestedCheckIn: dto.requestedCheckIn ? new Date(dto.requestedCheckIn) : null,
         requestedCheckOut: dto.requestedCheckOut ? new Date(dto.requestedCheckOut) : null,
-        reason: dto.reason.trim(),
+        reason: formattedReason,
         status: 'PENDING',
       },
     });
@@ -1602,14 +1683,18 @@ export class AttendanceService {
       organizationId: user.organizationId,
       metadata: {
         targetDate: dto.targetDate,
+        reasonCategory: dto.reasonCategory || 'MISSING_CHECKOUT',
         reason: dto.reason,
+        requestedCheckIn: dto.requestedCheckIn,
+        requestedCheckOut: dto.requestedCheckOut,
+        hasEvidence: !!dto.evidenceMetadata,
       },
     });
 
     return {
       success: true,
       message: 'Attendance correction request submitted successfully.',
-      data: request,
+      data: enrichCorrectionRequest(request),
     };
   }
 
@@ -1643,7 +1728,7 @@ export class AttendanceService {
     return {
       success: true,
       message: 'Correction requests retrieved successfully.',
-      data: requests,
+      data: requests.map(enrichCorrectionRequest),
     };
   }
 
@@ -2591,20 +2676,64 @@ export class AttendanceService {
     return {
       success: true,
       message: 'Manager team correction requests retrieved successfully.',
-      data: requests,
+      data: requests.map(enrichCorrectionRequest),
+    };
+  }
+
+  /**
+   * Retrieves all organizational correction requests for HR/Admin review.
+   */
+  async getOperationsCorrections(organizationId: string, status?: string) {
+    const where: any = { organizationId };
+    if (status && status !== 'ALL') {
+      where.status = status;
+    }
+
+    const requests = await this.prisma.attendanceCorrectionRequest.findMany({
+      where,
+      orderBy: { submittedAt: 'desc' },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            userId: true,
+            employeeCode: true,
+            displayName: true,
+            employment: {
+              include: {
+                designation: true,
+                department: true,
+                branch: true,
+              },
+            },
+          },
+        },
+        decision: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Organizational correction requests retrieved successfully.',
+      data: requests.map(enrichCorrectionRequest),
     };
   }
 
   /**
    * Approves or rejects an attendance correction request.
-   * Strictly enforces cross-team hierarchy boundary: caller MUST be an ancestor/manager of the employee.
+   * Strictly enforces:
+   * 1. Self-approval prevention (anti-fraud)
+   * 2. Cross-team hierarchy boundary (managers can only decide direct/indirect reports)
+   * 3. Cross-org tenant boundary
+   * 4. Idempotency / Duplicate decision prevention (request must be in PENDING state)
+   * 5. Raw event immutability (punches are preserved, daily summary projection is safely corrected)
    */
   async decideCorrectionRequest(
     user: AuthenticatedUser,
     requestId: string,
     dto: DecideCorrectionRequestDto,
   ) {
-    // 1. Cross-org check
+    // 1. Cross-org check (Tenant boundary)
     const request = await this.prisma.attendanceCorrectionRequest.findFirst({
       where: {
         id: requestId,
@@ -2623,7 +2752,17 @@ export class AttendanceService {
       });
     }
 
-    // 2. Cross-team & hierarchy validation
+    // 2. Prevent self-approval (crucial compliance & anti-fraud rule)
+    if (request.employee?.userId === user.id) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message:
+          'Self-approval is strictly prohibited. Your correction request must be approved by another manager or HR administrator.',
+        code: 'FORBIDDEN_SELF_APPROVAL',
+      });
+    }
+
+    // 3. Cross-team & hierarchy validation
     const isGlobalOrAdmin =
       user.roles?.includes('ADMIN' as any) || user.roles?.includes('HR' as any);
 
@@ -2644,6 +2783,15 @@ export class AttendanceService {
         });
       }
 
+      if (managerEmployee.id === request.employeeId) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message:
+            'Self-approval is strictly prohibited. Your correction request must be approved by another manager or HR administrator.',
+          code: 'FORBIDDEN_SELF_APPROVAL',
+        });
+      }
+
       const isSubordinate = await this.hierarchyService.isManagerOf(
         managerEmployee.id,
         request.employeeId,
@@ -2660,10 +2808,11 @@ export class AttendanceService {
       }
     }
 
+    // 4. Duplicate decisions & concurrency check
     if (request.status !== 'PENDING') {
       throw new ConflictException({
         statusCode: 409,
-        message: `This correction request has already been ${request.status.toLowerCase()}.`,
+        message: `This correction request has already been ${request.status.toLowerCase()}. Duplicate decisions are not permitted.`,
         code: 'CORRECTION_ALREADY_DECIDED',
       });
     }
@@ -2681,16 +2830,41 @@ export class AttendanceService {
     const originalWorkMinutes = summary?.totalWorkMinutes ?? 0;
     let correctedWorkMinutes = originalWorkMinutes;
 
+    const resolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      request.employeeId,
+      request.targetDate,
+      user.organizationId,
+    );
+    const breakMinutes =
+      resolution.shift?.breakDurationMinutes ?? resolution.policy?.maxDailyBreakMinutes ?? 60;
+    const fullDayThreshold = resolution.policy?.fullDayThresholdMinutes ?? 420;
+    const halfDayThreshold = resolution.policy?.halfDayThresholdMinutes ?? 240;
+
+    let finalStatus: AttendanceDayStatus = summary?.status || 'PRESENT';
+
     if (dto.decision === 'APPROVED') {
       if (request.requestedCheckIn && request.requestedCheckOut) {
         const inMs = new Date(request.requestedCheckIn).getTime();
         const outMs = new Date(request.requestedCheckOut).getTime();
-        correctedWorkMinutes = Math.max(0, Math.round((outMs - inMs) / 60000));
+        const grossMinutes = Math.max(0, Math.round((outMs - inMs) / 60000));
+        correctedWorkMinutes = Math.max(0, grossMinutes - breakMinutes);
       } else if (originalWorkMinutes === 0) {
-        correctedWorkMinutes = 480;
+        correctedWorkMinutes = resolution.policy?.standardWorkMinutes ?? 480;
       }
 
+      finalStatus =
+        correctedWorkMinutes >= fullDayThreshold
+          ? 'PRESENT'
+          : correctedWorkMinutes >= halfDayThreshold
+            ? 'HALF_DAY'
+            : 'PRESENT';
+
       const dateStr = request.targetDate.toISOString().split('T')[0];
+      const reviewerName = user.firstName
+        ? `${user.firstName} ${user.lastName || ''}`.trim()
+        : 'Manager';
+
+      // Safe summary upsert - PRESERVES RAW ATTENDANCE EVENTS INTACT
       await this.prisma.attendanceDailySummary.upsert({
         where: {
           organizationId_employeeId_date: {
@@ -2703,21 +2877,22 @@ export class AttendanceService {
           organizationId: user.organizationId,
           employeeId: request.employeeId,
           date: request.targetDate,
-          status: 'PRESENT',
+          status: finalStatus,
           firstCheckIn: request.requestedCheckIn || new Date(`${dateStr}T09:00:00.000Z`),
           lastCheckOut: request.requestedCheckOut || new Date(`${dateStr}T18:00:00.000Z`),
           totalWorkMinutes: correctedWorkMinutes,
-          totalBreakMinutes: 60,
+          totalBreakMinutes: breakMinutes,
           isCorrected: true,
-          correctionNotes: dto.reviewNotes || 'Approved by manager',
+          correctionNotes: `[Approved by ${reviewerName}]: ${dto.reviewNotes || 'Approved by reviewer'}`,
         },
         update: {
-          status: 'PRESENT',
+          status: finalStatus,
           firstCheckIn: request.requestedCheckIn || undefined,
           lastCheckOut: request.requestedCheckOut || undefined,
           totalWorkMinutes: correctedWorkMinutes,
+          totalBreakMinutes: breakMinutes,
           isCorrected: true,
-          correctionNotes: dto.reviewNotes || 'Approved by manager',
+          correctionNotes: `[Approved by ${reviewerName}]: ${dto.reviewNotes || 'Approved by reviewer'}`,
         },
       });
     }
@@ -2731,14 +2906,14 @@ export class AttendanceService {
         decision: dto.decision as any,
         originalWorkMinutes,
         correctedWorkMinutes: dto.decision === 'APPROVED' ? correctedWorkMinutes : 0,
-        reviewNotes: dto.reviewNotes || `${dto.decision} by manager`,
+        reviewNotes: dto.reviewNotes || `${dto.decision} by reviewer`,
       },
       update: {
         reviewerId: user.id,
         decision: dto.decision as any,
         originalWorkMinutes,
         correctedWorkMinutes: dto.decision === 'APPROVED' ? correctedWorkMinutes : 0,
-        reviewNotes: dto.reviewNotes || `${dto.decision} by manager`,
+        reviewNotes: dto.reviewNotes || `${dto.decision} by reviewer`,
         decidedAt: new Date(),
       },
     });
@@ -2761,14 +2936,17 @@ export class AttendanceService {
       metadata: {
         employeeId: request.employeeId,
         decision: dto.decision,
+        originalWorkMinutes,
+        correctedWorkMinutes: dto.decision === 'APPROVED' ? correctedWorkMinutes : 0,
         reviewNotes: dto.reviewNotes,
+        reviewerId: user.id,
       },
     });
 
     return {
       success: true,
       message: `Correction request ${dto.decision.toLowerCase()} successfully.`,
-      data: updatedRequest,
+      data: enrichCorrectionRequest(updatedRequest),
     };
   }
 

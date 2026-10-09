@@ -137,9 +137,11 @@ export default function AttendancePage() {
   const [correctionTargetDate, setCorrectionTargetDate] = useState(
     new Date().toISOString().split('T')[0],
   );
+  const [correctionCategory, setCorrectionCategory] = useState('MISSING_CHECKOUT');
   const [requestedCheckInTime, setRequestedCheckInTime] = useState('09:00');
   const [requestedCheckOutTime, setRequestedCheckOutTime] = useState('18:00');
   const [correctionReason, setCorrectionReason] = useState('');
+  const [correctionEvidence, setCorrectionEvidence] = useState('');
   const [isSubmittingCorrection, setIsSubmittingCorrection] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
 
@@ -419,12 +421,17 @@ export default function AttendancePage() {
         targetDate: correctionTargetDate,
         requestedCheckIn: checkInIso,
         requestedCheckOut: checkOutIso,
+        reasonCategory: correctionCategory,
         reason: correctionReason.trim(),
+        evidenceMetadata: correctionEvidence.trim()
+          ? { note: correctionEvidence.trim() }
+          : undefined,
       });
 
       if (res.success) {
         setIsCorrectionModalOpen(false);
         setCorrectionReason('');
+        setCorrectionEvidence('');
         setActionSuccess('Correction request submitted for manager review.');
         await loadHistoryAndCorrections();
       } else {
@@ -1065,35 +1072,90 @@ export default function AttendancePage() {
                   Your Recent Regularization Requests
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {correctionsList.map((req: any) => (
-                    <Card key={req.id} className="p-4 border-stone-200 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-stone-900">
-                          Date: {req.targetDate ? req.targetDate.split('T')[0] : '—'}
-                        </span>
-                        <Badge
-                          variant={
-                            req.status === 'APPROVED'
-                              ? 'success'
-                              : req.status === 'REJECTED'
-                                ? 'danger'
-                                : 'warning'
-                          }
-                          size="sm"
-                        >
-                          {req.status}
-                        </Badge>
-                      </div>
-                      <p className="text-stone-600 mt-2 text-xs">
-                        <strong>Reason:</strong> {req.reason}
-                      </p>
-                      {req.decision && (
-                        <div className="mt-2 pt-2 border-t border-stone-100 text-[11px] text-stone-500">
-                          <strong>Decision Notes:</strong> {req.decision.reviewNotes || 'Reviewed'}
+                  {correctionsList.map((req: any) => {
+                    const categoryLabel =
+                      req.reasonCategory === 'MISSING_CHECKOUT'
+                        ? 'Missing Check-Out'
+                        : req.reasonCategory === 'WRONG_EVENT'
+                          ? 'Wrong Event'
+                          : req.reasonCategory === 'TECHNICAL_GLITCH'
+                            ? 'Technical Glitch'
+                            : req.reasonCategory === 'EMERGENCY'
+                              ? 'Emergency'
+                              : req.reasonCategory === 'OFFICIAL_DUTY'
+                                ? 'Official Duty'
+                                : req.reasonCategory || 'Discrepancy';
+
+                    return (
+                      <Card key={req.id} className="p-4 border-stone-200 text-xs space-y-2">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-stone-900">
+                              {req.targetDate ? req.targetDate.split('T')[0] : '—'}
+                            </span>
+                            <Badge
+                              variant="outline"
+                              size="sm"
+                              className="bg-stone-100 text-stone-700"
+                            >
+                              {categoryLabel}
+                            </Badge>
+                          </div>
+                          <Badge
+                            variant={
+                              req.status === 'APPROVED'
+                                ? 'success'
+                                : req.status === 'REJECTED'
+                                  ? 'danger'
+                                  : 'warning'
+                            }
+                            size="sm"
+                          >
+                            {req.status}
+                          </Badge>
                         </div>
-                      )}
-                    </Card>
-                  ))}
+
+                        {(req.requestedCheckIn || req.requestedCheckOut) && (
+                          <div className="text-[11px] font-mono text-stone-600 bg-stone-50 px-2.5 py-1 rounded">
+                            Requested:{' '}
+                            {req.requestedCheckIn
+                              ? new Date(req.requestedCheckIn).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '09:00'}{' '}
+                            –{' '}
+                            {req.requestedCheckOut
+                              ? new Date(req.requestedCheckOut).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '18:00'}
+                          </div>
+                        )}
+
+                        <p className="text-stone-600 text-xs">
+                          <strong>Reason:</strong> {req.explanation || req.reason}
+                        </p>
+
+                        {req.evidenceMetadata && (
+                          <p className="text-[11px] text-amber-800 bg-amber-50/60 px-2 py-1 rounded border border-amber-200/50">
+                            <strong>Evidence Reference:</strong>{' '}
+                            {typeof req.evidenceMetadata === 'object'
+                              ? req.evidenceMetadata.note || JSON.stringify(req.evidenceMetadata)
+                              : req.evidenceMetadata}
+                          </p>
+                        )}
+
+                        {req.decision && (
+                          <div className="mt-2 pt-2 border-t border-stone-100 text-[11px] text-stone-500">
+                            <strong>Reviewer Note:</strong>{' '}
+                            {req.decision.reviewNotes || 'Reviewed by manager'}
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -1171,15 +1233,34 @@ export default function AttendancePage() {
             </div>
           )}
 
-          <div>
-            <label className="font-semibold text-stone-700 block mb-1">Target Working Date</label>
-            <input
-              type="date"
-              required
-              value={correctionTargetDate}
-              onChange={(e) => setCorrectionTargetDate(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-stone-300 text-stone-900 font-mono text-xs focus:ring-1 focus:ring-amber-500"
-            />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="font-semibold text-stone-700 block mb-1">Target Working Date</label>
+              <input
+                type="date"
+                required
+                value={correctionTargetDate}
+                onChange={(e) => setCorrectionTargetDate(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-stone-300 text-stone-900 font-mono text-xs focus:ring-1 focus:ring-amber-500"
+              />
+            </div>
+            <div>
+              <label className="font-semibold text-stone-700 block mb-1">Reason Category</label>
+              <select
+                value={correctionCategory}
+                onChange={(e) => setCorrectionCategory(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg border border-stone-300 text-stone-900 text-xs focus:ring-1 focus:ring-amber-500"
+              >
+                <option value="MISSING_CHECKOUT">
+                  Missing Check-Out (Punch Forgotten/System Error)
+                </option>
+                <option value="WRONG_EVENT">Wrong Event / Mis-punch Sequence</option>
+                <option value="TECHNICAL_GLITCH">App or Biometric Device Technical Glitch</option>
+                <option value="EMERGENCY">Medical or Personal Emergency</option>
+                <option value="OFFICIAL_DUTY">On Official Duty / Client Site Visit</option>
+                <option value="OTHER">Other Circumstances</option>
+              </select>
+            </div>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -1205,7 +1286,7 @@ export default function AttendancePage() {
 
           <div>
             <label className="font-semibold text-stone-700 block mb-1">
-              Justification & Reason <span className="text-rose-500">*</span>
+              Justification & Explanation <span className="text-rose-500">*</span>
             </label>
             <textarea
               required
@@ -1213,6 +1294,22 @@ export default function AttendancePage() {
               value={correctionReason}
               onChange={(e) => setCorrectionReason(e.target.value)}
               placeholder="Explain why punch was missed or discrepancy occurred (e.g., GPS network failure, official site visit, forgot to punch)..."
+              className="w-full px-3 py-2 rounded-lg border border-stone-300 text-stone-900 text-xs focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
+
+          <div>
+            <label className="font-semibold text-stone-700 block mb-1">
+              Evidence Reference{' '}
+              <span className="text-stone-400 font-normal">
+                (Optional ticket #, email ref, or note)
+              </span>
+            </label>
+            <input
+              type="text"
+              value={correctionEvidence}
+              onChange={(e) => setCorrectionEvidence(e.target.value)}
+              placeholder="e.g. IT-Helpdesk #8920, Approved by Team Lead on Slack"
               className="w-full px-3 py-2 rounded-lg border border-stone-300 text-stone-900 text-xs focus:ring-1 focus:ring-amber-500"
             />
           </div>

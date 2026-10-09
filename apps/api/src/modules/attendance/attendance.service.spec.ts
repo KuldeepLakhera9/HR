@@ -1352,4 +1352,348 @@ describe('AttendanceService', () => {
       expect(result.data.employee.id).toBe(mockSubordinateEmpId);
     });
   });
+
+  describe('Attendance Correction Workflow (Phase 4 Step 11)', () => {
+    const mockApplicantUserId = 'user-applicant-1';
+    const mockApplicantEmpId = 'emp-applicant-1';
+
+    const mockApplicantUser: AuthenticatedUser = {
+      id: mockApplicantUserId,
+      email: 'applicant@company.com',
+      organizationId: mockOrgId,
+      branchId: mockBranchId,
+      departmentId: 'dept-eng',
+      firstName: 'Alan',
+      lastName: 'Turing',
+      employeeCode: 'EMP301',
+      status: 'ACTIVE' as any,
+      roles: ['EMPLOYEE' as any],
+      permissions: ['ATTENDANCE_MARK', 'ATTENDANCE_VIEW'],
+      sessionId: 'sess-applicant-1',
+    };
+
+    const mockApplicantProfile = {
+      id: mockApplicantEmpId,
+      userId: mockApplicantUserId,
+      organizationId: mockOrgId,
+      employeeCode: 'EMP301',
+      displayName: 'Alan Turing',
+      status: 'ACTIVE',
+      isActive: true,
+      deletedAt: null,
+    };
+
+    const mockApproverManagerUser: AuthenticatedUser = {
+      id: 'user-approver-mgr',
+      email: 'manager.jones@company.com',
+      organizationId: mockOrgId,
+      branchId: mockBranchId,
+      departmentId: 'dept-eng',
+      firstName: 'Indiana',
+      lastName: 'Jones',
+      employeeCode: 'MGR901',
+      status: 'ACTIVE' as any,
+      roles: ['MANAGER' as any],
+      permissions: ['ATTENDANCE_VIEW', 'ATTENDANCE_UPDATE'],
+      sessionId: 'sess-mgr-901',
+    };
+
+    const mockApproverManagerProfile = {
+      id: 'emp-approver-mgr',
+      userId: mockApproverManagerUser.id,
+      organizationId: mockOrgId,
+      employeeCode: 'MGR901',
+      displayName: 'Indiana Jones',
+      status: 'ACTIVE',
+      isActive: true,
+      deletedAt: null,
+    };
+
+    beforeEach(() => {
+      prisma.employee.findFirst.mockImplementation(({ where }: any) => {
+        if (where.userId === mockApplicantUserId) return Promise.resolve(mockApplicantProfile);
+        if (where.userId === mockApproverManagerUser.id)
+          return Promise.resolve(mockApproverManagerProfile);
+        if (where.id === mockApplicantEmpId) return Promise.resolve(mockApplicantProfile);
+        if (where.id === 'emp-foreign-org') return Promise.resolve(null);
+        return Promise.resolve(null);
+      });
+    });
+
+    it('1. employee submits correction request with reason category and evidence metadata', async () => {
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(null); // No duplicate pending
+      prisma.attendanceCorrectionRequest.create.mockImplementationOnce(({ data }: any) =>
+        Promise.resolve({ id: 'corr-new-1', ...data }),
+      );
+
+      const result = await service.submitCorrectionRequest(mockApplicantUser, {
+        targetDate: '2026-10-08',
+        reasonCategory: 'MISSING_CHECKOUT' as any,
+        reason: 'Network disconnect during checkout at client premises.',
+        requestedCheckIn: '2026-10-08T03:30:00.000Z',
+        requestedCheckOut: '2026-10-08T12:30:00.000Z',
+        evidenceMetadata: { ticketId: 'INC-9021', note: 'Confirmed with supervisor' },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data.id).toBe('corr-new-1');
+      expect(result.data.reasonCategory).toBe('MISSING_CHECKOUT');
+      expect(result.data.evidenceMetadata).toEqual({
+        ticketId: 'INC-9021',
+        note: 'Confirmed with supervisor',
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTENDANCE_CORRECTION_REQUESTED',
+          metadata: expect.objectContaining({
+            targetDate: '2026-10-08',
+            reasonCategory: 'MISSING_CHECKOUT',
+            hasEvidence: true,
+          }),
+        }),
+      );
+    });
+
+    it('2. rejects submission for future dates', async () => {
+      await expect(
+        service.submitCorrectionRequest(mockApplicantUser, {
+          targetDate: '2026-12-31',
+          reason: 'Future punch correction attempt',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('3. rejects invalid time sequence where requested check-out is before check-in', async () => {
+      await expect(
+        service.submitCorrectionRequest(mockApplicantUser, {
+          targetDate: '2026-10-08',
+          requestedCheckIn: '2026-10-08T18:00:00.000Z',
+          requestedCheckOut: '2026-10-08T09:00:00.000Z',
+          reason: 'Typo in times',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('4. rejects duplicate pending request for same employee and target date', async () => {
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce({
+        id: 'corr-pending-existing',
+        status: 'PENDING',
+      });
+
+      await expect(
+        service.submitCorrectionRequest(mockApplicantUser, {
+          targetDate: '2026-10-08',
+          reason: 'Duplicate request',
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('5. APPROVAL: manager approves subordinate request, calculating net hours and preserving raw events', async () => {
+      const mockCorrection = {
+        id: 'corr-valid-1',
+        organizationId: mockOrgId,
+        employeeId: mockApplicantEmpId,
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        requestedCheckIn: new Date('2026-10-08T03:30:00.000Z'), // 09:00 IST
+        requestedCheckOut: new Date('2026-10-08T12:30:00.000Z'), // 18:00 IST (9 gross hrs, 540 min)
+        reason: JSON.stringify({
+          category: 'MISSING_CHECKOUT',
+          explanation: 'Forgot checkout due to fire drill',
+        }),
+        employee: mockApplicantProfile,
+      };
+
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(mockCorrection);
+      hierarchyService.isManagerOf.mockResolvedValueOnce(true);
+      prisma.attendanceDailySummary.findUnique.mockResolvedValueOnce({
+        totalWorkMinutes: 0,
+        status: 'ABSENT',
+      });
+
+      const res = await service.decideCorrectionRequest(mockApproverManagerUser, 'corr-valid-1', {
+        decision: 'APPROVED',
+        reviewNotes: 'Verified drill log and approved full day punch',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data.status).toBe('APPROVED');
+
+      // Verify safe upsert of daily summary with isCorrected: true
+      // Gross 540 min - 60 min break = 480 min net work minutes
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            isCorrected: true,
+            status: 'PRESENT',
+            totalWorkMinutes: 480,
+          }),
+        }),
+      );
+
+      // Verify decision record created
+      expect(prisma.attendanceCorrectionDecision.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            decision: 'APPROVED',
+            reviewerId: mockApproverManagerUser.id,
+            correctedWorkMinutes: 480,
+          }),
+        }),
+      );
+
+      // Verify raw attendance events were NOT deleted or touched
+      expect(prisma.attendanceEvent.create).not.toHaveBeenCalled();
+
+      // Verify audit record
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTENDANCE_CORRECTION_DECIDED',
+          metadata: expect.objectContaining({
+            decision: 'APPROVED',
+            correctedWorkMinutes: 480,
+          }),
+        }),
+      );
+    });
+
+    it('6. REJECTION: manager rejects subordinate request without modifying daily summary', async () => {
+      const mockCorrection = {
+        id: 'corr-valid-2',
+        organizationId: mockOrgId,
+        employeeId: mockApplicantEmpId,
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        reason: 'Unverified punch request',
+        employee: mockApplicantProfile,
+      };
+
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(mockCorrection);
+      hierarchyService.isManagerOf.mockResolvedValueOnce(true);
+      prisma.attendanceDailySummary.findUnique.mockResolvedValueOnce({
+        totalWorkMinutes: 120,
+        status: 'HALF_DAY',
+      });
+
+      const res = await service.decideCorrectionRequest(mockApproverManagerUser, 'corr-valid-2', {
+        decision: 'REJECTED',
+        reviewNotes: 'Cannot verify remote presence without log',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data.status).toBe('REJECTED');
+
+      // Daily summary is NOT marked corrected or updated
+      expect(prisma.attendanceDailySummary.upsert).not.toHaveBeenCalled();
+
+      // Decision is saved with 0 corrected minutes
+      expect(prisma.attendanceCorrectionDecision.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            decision: 'REJECTED',
+            correctedWorkMinutes: 0,
+          }),
+        }),
+      );
+    });
+
+    it('7. ANTI-FRAUD: strictly prevents self-approval when applicant attempts to approve own request', async () => {
+      const mockSelfCorrection = {
+        id: 'corr-self-1',
+        organizationId: mockOrgId,
+        employeeId: mockApproverManagerProfile.id,
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        employee: {
+          id: mockApproverManagerProfile.id,
+          userId: mockApproverManagerUser.id, // SAME USER AS CALLER!
+        },
+      };
+
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(mockSelfCorrection);
+
+      await expect(
+        service.decideCorrectionRequest(mockApproverManagerUser, 'corr-self-1', {
+          decision: 'APPROVED',
+          reviewNotes: 'Self approving my own missed punch',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('8. CONCURRENCY: prevents duplicate decisions on requests that are no longer pending', async () => {
+      const mockAlreadyApprovedCorrection = {
+        id: 'corr-already-done',
+        organizationId: mockOrgId,
+        employeeId: mockApplicantEmpId,
+        status: 'APPROVED', // Already approved!
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        employee: mockApplicantProfile,
+      };
+
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(
+        mockAlreadyApprovedCorrection,
+      );
+
+      await expect(
+        service.decideCorrectionRequest(mockApproverManagerUser, 'corr-already-done', {
+          decision: 'APPROVED',
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('9. IDOR SECURITY: blocks decision on request belonging to another organization', async () => {
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(null); // Cross-org query returns null
+
+      await expect(
+        service.decideCorrectionRequest(mockApproverManagerUser, 'corr-other-tenant', {
+          decision: 'APPROVED',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('10. IDOR SECURITY: blocks manager from deciding request for employee outside their hierarchy', async () => {
+      const mockOutsiderCorrection = {
+        id: 'corr-outsider-report',
+        organizationId: mockOrgId,
+        employeeId: 'emp-other-department',
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        employee: { id: 'emp-other-department', userId: 'user-other' },
+      };
+
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(mockOutsiderCorrection);
+      hierarchyService.isManagerOf.mockResolvedValueOnce(false); // OUTSIDE HIERARCHY!
+
+      await expect(
+        service.decideCorrectionRequest(mockApproverManagerUser, 'corr-outsider-report', {
+          decision: 'APPROVED',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('11. retrieves organizational correction requests for HR operations review', async () => {
+      const mockCorrItem = {
+        id: 'corr-org-1',
+        organizationId: mockOrgId,
+        employeeId: mockApplicantEmpId,
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        reason: JSON.stringify({
+          category: 'TECHNICAL_GLITCH',
+          explanation: 'Biometric device failed',
+        }),
+        employee: mockApplicantProfile,
+        decision: null,
+      };
+
+      prisma.attendanceCorrectionRequest.findMany.mockResolvedValueOnce([mockCorrItem]);
+
+      const res = await service.getOperationsCorrections(mockOrgId, 'PENDING');
+
+      expect(res.success).toBe(true);
+      expect(res.data.length).toBe(1);
+      expect(res.data[0].reasonCategory).toBe('TECHNICAL_GLITCH');
+      expect(res.data[0].explanation).toBe('Biometric device failed');
+    });
+  });
 });
