@@ -271,11 +271,13 @@ export class OrgChartController {
     @Req() req: AuthenticatedRequest,
     @Query('departmentId') departmentId?: string,
     @Query('branchId') branchId?: string,
+    @Query('rootEmployeeId') rootEmployeeId?: string,
   ) {
     const data = await this.employeesService.getOrgChart({
       organizationId: req.user.organizationId,
       departmentId,
       branchId,
+      rootEmployeeId,
     });
 
     return {

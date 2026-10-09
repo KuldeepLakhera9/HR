@@ -513,8 +513,20 @@ export const employeesApi = {
     return res.data;
   },
 
-  async getOrgChart(params?: { departmentId?: string; branchId?: string }) {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
+  async getOrgChart(params?: {
+    departmentId?: string;
+    branchId?: string;
+    rootEmployeeId?: string;
+  }) {
+    const cleanParams: Record<string, string> = {};
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '') {
+          cleanParams[k] = String(v);
+        }
+      });
+    }
+    const query = new URLSearchParams(cleanParams).toString();
     const res = await fetchWithAuth<any[]>(`/org-chart${query ? `?${query}` : ''}`);
     return res.data;
   },

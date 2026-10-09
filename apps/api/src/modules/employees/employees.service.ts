@@ -938,7 +938,12 @@ export class EmployeesService {
   // Interactive Org Chart Hierarchy
   // ---------------------------------------------------------------------------
 
-  async getOrgChart(params: { organizationId: string; departmentId?: string; branchId?: string }) {
+  async getOrgChart(params: {
+    organizationId: string;
+    departmentId?: string;
+    branchId?: string;
+    rootEmployeeId?: string;
+  }) {
     const where: Prisma.EmployeeWhereInput = {
       organizationId: params.organizationId,
       isActive: true,
@@ -954,11 +959,17 @@ export class EmployeesService {
     const employees = await this.prisma.employee.findMany({
       where,
       include: {
+        contact: {
+          select: {
+            workEmail: true,
+            phone: true,
+          },
+        },
         employment: {
           include: {
-            department: { select: { name: true } },
-            designation: { select: { title: true } },
-            branch: { select: { name: true } },
+            department: { select: { id: true, name: true, code: true } },
+            designation: { select: { id: true, title: true, code: true } },
+            branch: { select: { id: true, name: true, code: true } },
           },
         },
       },
@@ -966,39 +977,40 @@ export class EmployeesService {
     });
 
     // Build node lookup map
-    const nodeMap = new Map<
-      string,
-      {
-        id: string;
-        employeeCode: string;
-        name: string;
-        designation: string;
-        department: string;
-        branch: string;
-        avatarUrl: string | null;
-        status: EmploymentStatus;
-        workMode: string;
-        managerId: string | null;
-        directReportsCount: number;
-        subordinates: any[];
-      }
-    >();
+    const nodeMap = new Map<string, any>();
 
     for (const e of employees) {
-      nodeMap.set(e.id, {
+      const managerId = e.managerId || e.employment?.managerId || null;
+      const subordinatesArr: any[] = [];
+      const node = {
         id: e.id,
         employeeCode: e.employeeCode,
         name: e.displayName,
+        displayName: e.displayName,
+        firstName: e.firstName,
+        lastName: e.lastName,
         designation: e.employment?.designation?.title || 'Team Member',
+        designationCode: e.employment?.designation?.code || '',
         department: e.employment?.department?.name || 'General',
+        departmentId: e.employment?.department?.id || e.employment?.departmentId || null,
+        departmentCode: e.employment?.department?.code || '',
         branch: e.employment?.branch?.name || 'Main',
+        branchId: e.employment?.branch?.id || e.employment?.branchId || null,
         avatarUrl: e.profilePhoto,
+        profilePhoto: e.profilePhoto,
         status: e.status,
         workMode: e.employment?.workMode || 'OFFICE',
-        managerId: e.employment?.managerId || null,
+        employmentType: e.employment?.employmentType || 'FULL_TIME',
+        joiningDate: e.joiningDate,
+        workEmail: e.contact?.workEmail || null,
+        phone: e.contact?.phone || null,
+        managerId,
+        managerName: null as string | null,
         directReportsCount: 0,
-        subordinates: [],
-      });
+        subordinates: subordinatesArr,
+        children: subordinatesArr,
+      };
+      nodeMap.set(e.id, node);
     }
 
     // Assemble hierarchical tree
@@ -1007,11 +1019,16 @@ export class EmployeesService {
     for (const node of nodeMap.values()) {
       if (node.managerId && nodeMap.has(node.managerId)) {
         const parent = nodeMap.get(node.managerId)!;
+        node.managerName = parent.name;
         parent.subordinates.push(node);
         parent.directReportsCount += 1;
       } else {
         rootNodes.push(node);
       }
+    }
+
+    if (params.rootEmployeeId && nodeMap.has(params.rootEmployeeId)) {
+      return [nodeMap.get(params.rootEmployeeId)!];
     }
 
     return rootNodes;
