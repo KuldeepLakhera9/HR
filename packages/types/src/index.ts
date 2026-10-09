@@ -749,6 +749,43 @@ export interface PunchRequestDto {
   deviceInfo?: string;
 }
 
+export interface CheckInRequestDto {
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number;
+  timestamp?: string | number;
+  idempotencyKey: string;
+  officeLocationId?: string;
+  attendanceMode?: string;
+  deviceInfo?: string;
+}
+
+export interface TodayAttendanceStatusDto {
+  date: string;
+  workingDateUtc: string;
+  employee: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    branchId?: string | null;
+  };
+  currentStatus: {
+    isCheckedIn: boolean;
+    isOnBreak: boolean;
+    canCheckIn: boolean;
+    canCheckOut: boolean;
+    canStartBreak: boolean;
+    canEndBreak: boolean;
+  };
+  activeSession: AttendanceSessionDto | null;
+  sessions: AttendanceSessionDto[];
+  events: AttendanceEventDto[];
+  summary: AttendanceDailySummaryDto | null;
+  policy: AttendancePolicyDto;
+  shift: ShiftDto | null;
+  office: OfficeLocationDto | null;
+}
+
 export interface PunchResponseDto {
   success: boolean;
   message: string;

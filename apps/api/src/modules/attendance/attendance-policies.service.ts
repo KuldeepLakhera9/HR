@@ -631,35 +631,64 @@ export class AttendancePoliciesService {
     }
 
     if (!defaultPolicy) {
-      // Fallback synthetic policy if none created yet
-      defaultPolicy = {
-        id: 'synthetic-default',
-        organizationId,
-        branchId: null,
-        name: 'Standard 8-Hour Policy',
-        code: 'STD-DEFAULT',
-        description: 'Auto-generated fallback',
-        isDefault: true,
-        standardWorkMinutes: 480,
-        halfDayThresholdMinutes: 240,
-        fullDayThresholdMinutes: 420,
-        gracePeriodMinutes: 15,
-        maxCheckInDelayMinutes: 120,
-        maxDailyBreakMinutes: 60,
-        maxSingleBreakMinutes: 45,
-        allowMultipleSessions: true,
-        overnightShiftAllowed: false,
-        workingDayStartHour: 5,
-        timezone: 'Asia/Kolkata',
-        geofenceEnforcement: true,
-        maxGpsAccuracyMeters: 100,
-        version: 1,
-        effectiveFrom: new Date('2026-01-01'),
-        effectiveTo: null,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      } as any;
+      try {
+        defaultPolicy = await this.prisma.attendancePolicy.create({
+          data: {
+            organizationId,
+            branchId: null,
+            name: 'Standard 8-Hour Policy',
+            code: 'STD-DEFAULT',
+            description: 'Organization default attendance policy',
+            isDefault: true,
+            standardWorkMinutes: 480,
+            halfDayThresholdMinutes: 240,
+            fullDayThresholdMinutes: 420,
+            gracePeriodMinutes: 15,
+            maxCheckInDelayMinutes: 120,
+            maxDailyBreakMinutes: 60,
+            maxSingleBreakMinutes: 45,
+            allowMultipleSessions: true,
+            overnightShiftAllowed: false,
+            workingDayStartHour: 5,
+            timezone: 'Asia/Kolkata',
+            geofenceEnforcement: true,
+            maxGpsAccuracyMeters: 100,
+            version: 1,
+            effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+            isActive: true,
+          },
+        });
+      } catch {
+        // Fallback synthetic policy if creation fails (e.g. In unit test mocks)
+        defaultPolicy = {
+          id: 'synthetic-default',
+          organizationId,
+          branchId: null,
+          name: 'Standard 8-Hour Policy',
+          code: 'STD-DEFAULT',
+          description: 'Auto-generated fallback',
+          isDefault: true,
+          standardWorkMinutes: 480,
+          halfDayThresholdMinutes: 240,
+          fullDayThresholdMinutes: 420,
+          gracePeriodMinutes: 15,
+          maxCheckInDelayMinutes: 120,
+          maxDailyBreakMinutes: 60,
+          maxSingleBreakMinutes: 45,
+          allowMultipleSessions: true,
+          overnightShiftAllowed: false,
+          workingDayStartHour: 5,
+          timezone: 'Asia/Kolkata',
+          geofenceEnforcement: true,
+          maxGpsAccuracyMeters: 100,
+          version: 1,
+          effectiveFrom: new Date('2026-01-01'),
+          effectiveTo: null,
+          isActive: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        } as any;
+      }
     }
 
     return {

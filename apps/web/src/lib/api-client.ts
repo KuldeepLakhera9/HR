@@ -639,6 +639,40 @@ export const officeLocationsApi = {
   },
 };
 
+export const attendanceApi = {
+  async getToday() {
+    const res = await fetchWithAuth<any>('/attendance/today');
+    return res.data;
+  },
+
+  async checkIn(payload: {
+    latitude: number;
+    longitude: number;
+    accuracyMeters?: number;
+    timestamp?: string | number;
+    idempotencyKey: string;
+    officeLocationId?: string;
+    attendanceMode?: string;
+    deviceInfo?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/attendance/check-in', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async getTodaySummary() {
+    const res = await fetchWithAuth<any>('/attendance/summary');
+    return res.data;
+  },
+
+  async getPolicy() {
+    const res = await fetchWithAuth<any>('/attendance/policy');
+    return res.data;
+  },
+};
+
 export const attendancePoliciesApi = {
   async getAll(branchId?: string) {
     const query = branchId ? `?branchId=${branchId}` : '';
