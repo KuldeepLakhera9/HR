@@ -16,3 +16,8 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 export * from '@prisma/client';
+
+// Type aliases for Phase 5 convenience
+export type VisitLocation = import('@prisma/client').VisitDestination;
+export type WFHRequest = import('@prisma/client').WfhRequest;
+export type WFHApproval = import('@prisma/client').WfhApproval;

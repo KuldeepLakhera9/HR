@@ -55,6 +55,8 @@ model Organization {
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
   attendanceExceptions         AttendanceException[]
   officeLocations              OfficeLocation[]
+  officialVisits               OfficialVisit[]
+  wfhRequests                  WfhRequest[]
 
   @@index([code])
   @@index([isActive])
@@ -215,6 +217,10 @@ model User {
   recordedAttendanceEvents AttendanceEvent[]          @relation("AttendanceActor")
   decidedCorrections  AttendanceCorrectionDecision[] @relation("CorrectionReviewer")
   resolvedAttendanceExceptions AttendanceException[]  @relation("ExceptionResolver")
+  decidedVisits       VisitApproval[]                @relation("VisitApprover")
+  cancelledVisits     OfficialVisit[]                @relation("VisitCanceller")
+  decidedWfh          WfhApproval[]                  @relation("WfhApprover")
+  cancelledWfh        WfhRequest[]                   @relation("WfhCanceller")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -474,6 +480,8 @@ model Employee {
   attendanceDailySummaries     AttendanceDailySummary[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
   attendanceExceptions         AttendanceException[]
+  officialVisits               OfficialVisit[]
+  wfhRequests                  WfhRequest[]
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -804,6 +812,12 @@ model AttendanceSession {
   totalWorkMinutes  Int               @default(0)
   totalBreakMinutes Int               @default(0)
   status            SessionStatus     @default(OPEN)
+  attendanceMode    AttendanceMode    @default(OFFICE)
+
+  officialVisitId   String?
+  officialVisit     OfficialVisit?    @relation(fields: [officialVisitId], references: [id], onDelete: SetNull)
+  wfhRequestId      String?
+  wfhRequest        WfhRequest?       @relation(fields: [wfhRequestId], references: [id], onDelete: SetNull)
 
   events            AttendanceEvent[]
 
@@ -814,6 +828,9 @@ model AttendanceSession {
   @@index([organizationId])
   @@index([employeeId, date])
   @@index([status])
+  @@index([officialVisitId])
+  @@index([wfhRequestId])
+  @@index([attendanceMode])
   @@map("attendance_sessions")
 }
 
@@ -849,6 +866,11 @@ model AttendanceEvent {
   actorUser                User                       @relation("AttendanceActor", fields: [actorUserId], references: [id], onDelete: Restrict)
   metadata                 Json?
 
+  officialVisitId          String?
+  officialVisit            OfficialVisit?             @relation(fields: [officialVisitId], references: [id], onDelete: SetNull)
+  wfhRequestId             String?
+  wfhRequest               WfhRequest?                @relation(fields: [wfhRequestId], references: [id], onDelete: SetNull)
+
   createdAt                DateTime                   @default(now()) // Append-only immutable log
 
   @@index([organizationId])
@@ -858,6 +880,8 @@ model AttendanceEvent {
   @@index([officeLocationId])
   @@index([eventTimestamp])
   @@index([idempotencyKey])
+  @@index([officialVisitId])
+  @@index([wfhRequestId])
   @@map("attendance_events")
 }
 
@@ -883,6 +907,12 @@ model AttendanceDailySummary {
   policyId          String?
   policy            AttendancePolicy?   @relation(fields: [policyId], references: [id], onDelete: SetNull)
 
+  primaryAttendanceMode AttendanceMode   @default(OFFICE)
+  officialVisitId       String?
+  officialVisit         OfficialVisit?   @relation(fields: [officialVisitId], references: [id], onDelete: SetNull)
+  wfhRequestId          String?
+  wfhRequest            WfhRequest?      @relation(fields: [wfhRequestId], references: [id], onDelete: SetNull)
+
   isCorrected       Boolean             @default(false)
   correctionNotes   String?
 
@@ -893,6 +923,9 @@ model AttendanceDailySummary {
   @@index([organizationId, date])
   @@index([employeeId, date])
   @@index([status])
+  @@index([officialVisitId])
+  @@index([wfhRequestId])
+  @@index([primaryAttendanceMode])
   @@map("attendance_daily_summaries")
 }
 
@@ -999,4 +1032,161 @@ model OfficeLocation {
   @@index([branchId])
   @@index([isActive])
   @@map("office_locations")
+}
+
+// -----------------------------------------------------------------------------
+// 7. Phase 5: Official Visits (Outdoor Duty) & Work From Home (WFH)
+// -----------------------------------------------------------------------------
+
+enum VisitStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  IN_PROGRESS
+  COMPLETED
+  EXPIRED
+}
+
+enum WfhStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+  COMPLETED
+}
+
+enum WfhDurationType {
+  FULL_DAY
+  FIRST_HALF
+  SECOND_HALF
+  CUSTOM_RANGE
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+}
+
+model OfficialVisit {
+  id                   String             @id @default(uuid())
+  organizationId       String
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  title                String
+  purpose              String
+  startDate            DateTime           // Normalized UTC date (midnight)
+  endDate              DateTime           // Normalized UTC date (midnight)
+  expectedDurationDays Float              @default(1.0)
+  status               VisitStatus        @default(SUBMITTED)
+  
+  cancellationReason   String?
+  cancelledAt          DateTime?
+  cancelledById        String?
+  cancelledBy          User?              @relation("VisitCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+
+  destinations         VisitDestination[]
+  approvals            VisitApproval[]
+  attendanceSessions   AttendanceSession[]
+  attendanceEvents     AttendanceEvent[]
+  attendanceDailySummaries AttendanceDailySummary[]
+
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([organizationId, status])
+  @@index([employeeId, startDate, endDate])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("official_visits")
+}
+
+model VisitDestination {
+  id                 String             @id @default(uuid())
+  visitId            String
+  visit              OfficialVisit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  destinationName    String
+  address            String?
+  city               String?
+  latitude           Float?
+  longitude          Float?
+  radiusMeters       Int                @default(200)
+  isGeofenceRequired Boolean            @default(true)
+
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([visitId])
+  @@map("visit_destinations")
+}
+
+model VisitApproval {
+  id          String           @id @default(uuid())
+  visitId     String
+  visit       OfficialVisit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+
+  approverId  String
+  approver    User             @relation("VisitApprover", fields: [approverId], references: [id], onDelete: Restrict)
+
+  decision    ApprovalDecision
+  comments    String?
+  decidedAt   DateTime         @default(now())
+
+  @@index([visitId])
+  @@index([approverId])
+  @@map("visit_approvals")
+}
+
+model WfhRequest {
+  id                   String             @id @default(uuid())
+  organizationId       String
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  startDate            DateTime           // Normalized UTC date (midnight)
+  endDate              DateTime           // Normalized UTC date (midnight)
+  durationType         WfhDurationType    @default(FULL_DAY)
+  reason               String
+  status               WfhStatus          @default(SUBMITTED)
+  
+  cancellationReason   String?
+  cancelledAt          DateTime?
+  cancelledById        String?
+  cancelledBy          User?              @relation("WfhCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+
+  approvals            WfhApproval[]
+  attendanceSessions   AttendanceSession[]
+  attendanceEvents     AttendanceEvent[]
+  attendanceDailySummaries AttendanceDailySummary[]
+
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
+
+  @@index([organizationId, status])
+  @@index([employeeId, startDate, endDate])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("wfh_requests")
+}
+
+model WfhApproval {
+  id          String           @id @default(uuid())
+  requestId   String
+  request     WfhRequest       @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  approverId  String
+  approver    User             @relation("WfhApprover", fields: [approverId], references: [id], onDelete: Restrict)
+
+  decision    ApprovalDecision
+  comments    String?
+  decidedAt   DateTime         @default(now())
+
+  @@index([requestId])
+  @@index([approverId])
+  @@map("wfh_approvals")
 }
