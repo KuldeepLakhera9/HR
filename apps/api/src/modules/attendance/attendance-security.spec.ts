@@ -4,7 +4,6 @@ import {
   ConflictException,
   ForbiddenException,
   NotFoundException,
-  UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { AttendanceService } from './attendance.service';

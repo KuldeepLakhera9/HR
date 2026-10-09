@@ -1741,7 +1741,7 @@ describe('AttendanceService', () => {
     it('1. recordAttendanceException records exception and strips sensitive lat/long coordinates', async () => {
       prisma.attendanceException.findUnique.mockResolvedValueOnce(null);
 
-      const res = await service.recordAttendanceException({
+      await service.recordAttendanceException({
         organizationId: mockOrgId,
         employeeId: mockEmployeeId,
         date: new Date('2026-10-09'),

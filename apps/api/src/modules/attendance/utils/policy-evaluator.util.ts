@@ -123,7 +123,7 @@ export function calculateShiftWindow(
   shift: ShiftTimingSpec,
   workingDateStr: string,
   graceMinutes: number = 15,
-  timezone: string = 'Asia/Kolkata',
+  _timezone: string = 'Asia/Kolkata',
 ): ShiftWindow {
   const [startHour, startMin] = shift.startTime.split(':').map(Number);
   const [endHour, endMin] = shift.endTime.split(':').map(Number);

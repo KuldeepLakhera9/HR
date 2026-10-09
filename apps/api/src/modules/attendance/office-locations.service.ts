@@ -9,7 +9,6 @@ import { AuditService } from '../audit/audit.service';
 import {
   CreateOfficeLocationDto,
   UpdateOfficeLocationDto,
-  OfficeLocationFilterDto,
   ValidateLocationDto,
 } from './dto/office-location.dto';
 import { evaluateGeofenceLocation, OfficeGeofenceTarget } from './utils/geofence.util';

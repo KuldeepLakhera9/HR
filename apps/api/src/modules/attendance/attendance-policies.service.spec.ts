@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { AttendancePoliciesService } from './attendance-policies.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -86,13 +86,11 @@ describe('AttendancePoliciesService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn(),
         create: jest.fn().mockResolvedValue({ ...mockShift, id: 'assign-1' }),
-        delete: jest
-          .fn()
-          .mockResolvedValue({
-            id: 'assign-1',
-            employee: { displayName: 'John' },
-            shift: { name: 'Day' },
-          }),
+        delete: jest.fn().mockResolvedValue({
+          id: 'assign-1',
+          employee: { displayName: 'John' },
+          shift: { name: 'Day' },
+        }),
         count: jest.fn().mockResolvedValue(0),
       },
       branch: {

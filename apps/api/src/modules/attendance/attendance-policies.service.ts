@@ -14,11 +14,7 @@ import {
   AssignShiftDto,
   SimulatePolicyDto,
 } from './dto/policy-and-shift.dto';
-import {
-  evaluateSessionTiming,
-  calculateShiftWindow,
-  getTimezoneParts,
-} from './utils/policy-evaluator.util';
+import { evaluateSessionTiming, calculateShiftWindow } from './utils/policy-evaluator.util';
 import { PolicyEvaluationResultDto, ResolvedPolicyAndShift } from '@hrms/types';
 
 @Injectable()
