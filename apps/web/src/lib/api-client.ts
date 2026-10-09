@@ -497,6 +497,22 @@ export const employeesApi = {
     return res.data;
   },
 
+  async getManager(id: string) {
+    const res = await fetchWithAuth<any>(`/employees/${id}/manager`);
+    return res.data;
+  },
+
+  async getDirectReports(id: string) {
+    const res = await fetchWithAuth<any[]>(`/employees/${id}/direct-reports`);
+    return res.data;
+  },
+
+  async getTeam(id: string, maxDepth?: number) {
+    const query = maxDepth ? `?maxDepth=${maxDepth}` : '';
+    const res = await fetchWithAuth<any>(`/employees/${id}/team${query}`);
+    return res.data;
+  },
+
   async getOrgChart(params?: { departmentId?: string; branchId?: string }) {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     const res = await fetchWithAuth<any[]>(`/org-chart${query ? `?${query}` : ''}`);

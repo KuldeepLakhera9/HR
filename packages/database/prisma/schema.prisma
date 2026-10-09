@@ -436,10 +436,14 @@ model Employee {
   joiningDate    DateTime         @default(now())
   exitDate       DateTime?
 
-  isActive       Boolean          @default(true)
-  createdAt      DateTime         @default(now())
-  updatedAt      DateTime         @updatedAt
-  deletedAt      DateTime?
+  managerId          String?
+  manager            Employee?                @relation("EmployeeHierarchy", fields: [managerId], references: [id], onDelete: SetNull)
+  directReports      Employee[]               @relation("EmployeeHierarchy")
+
+  isActive           Boolean                  @default(true)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  deletedAt          DateTime?
 
   employment         EmployeeEmployment?
   contact            EmployeeContact?
@@ -452,6 +456,8 @@ model Employee {
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
   @@index([employeeCode])
+  @@index([managerId])
+  @@index([organizationId, managerId])
   @@index([status])
   @@index([isActive])
   @@index([joiningDate])

@@ -5,9 +5,11 @@ import {
   BadRequestException,
   ForbiddenException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { HierarchyService } from './hierarchy.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import {
   CreateEmployeeDto,
@@ -31,6 +33,7 @@ import * as argon2 from 'argon2';
 @Injectable()
 export class EmployeesService {
   private readonly logger = new Logger(EmployeesService.name);
+  private readonly hierarchy: HierarchyService;
 
   // Allowed status lifecycle state transitions
   private static readonly VALID_STATUS_TRANSITIONS: Record<EmploymentStatus, EmploymentStatus[]> = {
@@ -45,7 +48,10 @@ export class EmployeesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
-  ) {}
+    @Optional() hierarchyService?: HierarchyService,
+  ) {
+    this.hierarchy = hierarchyService || new HierarchyService(prisma);
+  }
 
   // ---------------------------------------------------------------------------
   // Data Scope Resolution
@@ -99,85 +105,51 @@ export class EmployeesService {
   }
 
   /**
-   * Recursively finds all subordinate employee IDs reporting to manager
+   * Finds all subordinate employee IDs reporting to manager using controlled batch queries
    */
   async getAllSubordinateEmployeeIds(
     managerEmployeeId: string,
     organizationId: string,
   ): Promise<string[]> {
-    const subordinates = await this.prisma.employeeEmployment.findMany({
-      where: {
-        managerId: managerEmployeeId,
-        employee: { organizationId },
-      },
-      select: { employeeId: true },
-    });
-
-    let allIds: string[] = subordinates.map((s) => s.employeeId);
-
-    for (const sub of subordinates) {
-      const childIds = await this.getAllSubordinateEmployeeIds(sub.employeeId, organizationId);
-      allIds = allIds.concat(childIds);
-    }
-
-    return Array.from(new Set(allIds));
+    return this.hierarchy.getTeamMemberIds(managerEmployeeId, organizationId);
   }
 
   /**
    * Validates manager relationship:
    * 1. Employee cannot be their own manager
-   * 2. Circular relationship detection (A -> B -> A)
+   * 2. Circular relationship detection (A -> B -> A or multi-hop)
    */
   async validateManagerHierarchy(
     employeeId: string | null,
     managerId: string | null | undefined,
     organizationId: string,
   ): Promise<void> {
-    if (!managerId) return;
+    return this.hierarchy.validateManagerHierarchy(employeeId, managerId, organizationId);
+  }
 
-    if (employeeId && employeeId === managerId) {
-      throw new BadRequestException('An employee cannot be their own manager');
-    }
+  /**
+   * Get direct manager for an employee
+   */
+  async getManager(employeeId: string, organizationId?: string) {
+    return this.hierarchy.getManager(employeeId, organizationId);
+  }
 
-    // Verify manager exists in same organization
-    const manager = await this.prisma.employee.findUnique({
-      where: { id: managerId },
-      select: { id: true, organizationId: true, isActive: true },
-    });
+  /**
+   * Get direct reports for a manager (Depth 1)
+   */
+  async getDirectReports(managerId: string, organizationId?: string) {
+    return this.hierarchy.getDirectReports(managerId, organizationId);
+  }
 
-    if (!manager || manager.organizationId !== organizationId) {
-      throw new BadRequestException('Assigned manager does not exist in this organization');
-    }
-
-    if (!manager.isActive) {
-      throw new BadRequestException('Cannot assign an inactive employee as manager');
-    }
-
-    if (!employeeId) return; // New employee creation cannot form a backward cycle yet
-
-    // Follow manager ancestry up to detect cycles
-    let currentAncestorId: string | null = managerId;
-    const visited = new Set<string>();
-
-    while (currentAncestorId) {
-      if (currentAncestorId === employeeId) {
-        throw new BadRequestException(
-          'Circular manager relationship detected: the chosen manager reports directly or indirectly to this employee',
-        );
-      }
-      if (visited.has(currentAncestorId)) {
-        break; // Infinite loop safeguard
-      }
-      visited.add(currentAncestorId);
-
-      const employmentRecord: { managerId: string | null } | null =
-        await this.prisma.employeeEmployment.findUnique({
-          where: { employeeId: currentAncestorId },
-          select: { managerId: true },
-        });
-
-      currentAncestorId = employmentRecord?.managerId || null;
-    }
+  /**
+   * Get full team hierarchy (direct and indirect reports) using iterative BFS batching
+   */
+  async getTeam(
+    managerId: string,
+    organizationId?: string,
+    options?: { maxDepth?: number; includeManager?: boolean },
+  ) {
+    return this.hierarchy.getTeam(managerId, organizationId, options);
   }
 
   // ---------------------------------------------------------------------------
@@ -518,6 +490,7 @@ export class EmployeesService {
           gender: dto.gender || Gender.PREFER_NOT_TO_SAY,
           status: dto.employmentStatus || EmploymentStatus.PROBATION,
           joiningDate: dto.joiningDate ? new Date(dto.joiningDate) : new Date(),
+          managerId: dto.managerId || null,
         },
       });
 
@@ -711,6 +684,7 @@ export class EmployeesService {
           profilePhoto: dto.profilePhoto,
           dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
           gender: dto.gender,
+          managerId: dto.managerId !== undefined ? dto.managerId : undefined,
         },
       });
 

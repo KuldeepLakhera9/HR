@@ -208,6 +208,49 @@ export class EmployeesController {
       meta: { total: data.length },
     };
   }
+
+  @Get(':id/manager')
+  @RequirePermissions('EMPLOYEE_VIEW')
+  @ApiOperation({ summary: 'Get direct manager of an employee' })
+  async getManager(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const data = await this.employeesService.getManager(id, req.user.organizationId);
+    return {
+      success: true,
+      message: 'Manager retrieved successfully',
+      data,
+    };
+  }
+
+  @Get(':id/direct-reports')
+  @RequirePermissions('EMPLOYEE_VIEW')
+  @ApiOperation({ summary: 'Get direct reports (subordinates) for a manager' })
+  async getDirectReports(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const data = await this.employeesService.getDirectReports(id, req.user.organizationId);
+    return {
+      success: true,
+      message: 'Direct reports retrieved successfully',
+      data,
+      meta: { total: data.length },
+    };
+  }
+
+  @Get(':id/team')
+  @RequirePermissions('EMPLOYEE_VIEW')
+  @ApiOperation({ summary: 'Get full team hierarchy (direct and indirect reports) for a manager' })
+  async getTeam(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('maxDepth') maxDepth?: number,
+  ) {
+    const data = await this.employeesService.getTeam(id, req.user.organizationId, {
+      maxDepth: maxDepth ? Number(maxDepth) : undefined,
+    });
+    return {
+      success: true,
+      message: 'Team hierarchy retrieved successfully',
+      data,
+    };
+  }
 }
 
 // -----------------------------------------------------------------------------
