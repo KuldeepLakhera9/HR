@@ -647,6 +647,131 @@ export const officeLocationsApi = {
   },
 };
 
+export const visitsApi = {
+  async getMyVisits(params?: { status?: string; search?: string; page?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/visits/my${qs}`);
+    return res;
+  },
+
+  async getVisitById(id: string) {
+    const res = await fetchWithAuth<any>(`/visits/${id}`);
+    return res.data;
+  },
+
+  async createVisit(payload: {
+    title: string;
+    purpose: string;
+    startDate: string;
+    endDate: string;
+    status?: 'DRAFT' | 'SUBMITTED';
+    destinations: Array<{
+      destinationName: string;
+      address?: string;
+      city?: string;
+      latitude?: number;
+      longitude?: number;
+      radiusMeters?: number;
+      isGeofenceRequired?: boolean;
+    }>;
+  }) {
+    const res = await fetchWithAuth<any>('/visits', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async updateVisit(
+    id: string,
+    payload: {
+      title?: string;
+      purpose?: string;
+      startDate?: string;
+      endDate?: string;
+      status?: 'DRAFT' | 'SUBMITTED';
+      destinations?: Array<{
+        destinationName: string;
+        address?: string;
+        city?: string;
+        latitude?: number;
+        longitude?: number;
+        radiusMeters?: number;
+        isGeofenceRequired?: boolean;
+      }>;
+    },
+  ) {
+    const res = await fetchWithAuth<any>(`/visits/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async cancelVisit(id: string, cancellationReason: string) {
+    const res = await fetchWithAuth<any>(`/visits/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ cancellationReason }),
+    });
+    return res;
+  },
+
+  async verifyLocation(payload: {
+    visitId?: string;
+    destinationId?: string;
+    latitude?: number;
+    longitude?: number;
+    accuracyMeters?: number;
+    clientTimestamp?: string;
+    gpsExceptionReason?: string;
+    deviceInfo?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/visits/verify-location', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  async getManagerPendingVisits(params?: { search?: string; page?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/visits/manager/pending${qs}`);
+    return res;
+  },
+
+  async decideVisit(id: string, payload: { decision: 'APPROVED' | 'REJECTED'; comments?: string }) {
+    const res = await fetchWithAuth<any>(`/visits/${id}/decide`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async getOrganizationVisits(params?: {
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams({ scope: 'organization' });
+    if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const res = await fetchWithAuth<any>(`/visits?${query.toString()}`);
+    return res;
+  },
+};
+
 export const attendanceApi = {
   async getToday() {
     const res = await fetchWithAuth<any>('/attendance/today');
@@ -654,13 +779,16 @@ export const attendanceApi = {
   },
 
   async checkIn(payload: {
-    latitude: number;
-    longitude: number;
+    latitude?: number;
+    longitude?: number;
     accuracyMeters?: number;
     timestamp?: string | number;
     idempotencyKey: string;
     officeLocationId?: string;
     attendanceMode?: string;
+    officialVisitId?: string;
+    destinationId?: string;
+    gpsExceptionReason?: string;
     deviceInfo?: string;
   }) {
     const res = await fetchWithAuth<any>('/attendance/check-in', {
@@ -676,6 +804,8 @@ export const attendanceApi = {
     longitude?: number;
     accuracyMeters?: number;
     timestamp?: string | number;
+    officialVisitId?: string;
+    isVisitConcluded?: boolean;
     deviceInfo?: string;
   }) {
     const res = await fetchWithAuth<any>('/attendance/check-out', {
