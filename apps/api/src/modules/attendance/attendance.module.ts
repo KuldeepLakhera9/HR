@@ -4,6 +4,11 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import {
+  OfficeLocationsController,
+  OfficeLocationsAliasController,
+} from './office-locations.controller';
+import { OfficeLocationsService } from './office-locations.service';
 
 @Injectable()
 export class AttendanceService {
@@ -63,8 +68,8 @@ export class AttendanceController {
 }
 
 @Module({
-  controllers: [AttendanceController],
-  providers: [AttendanceService],
-  exports: [AttendanceService],
+  controllers: [AttendanceController, OfficeLocationsController, OfficeLocationsAliasController],
+  providers: [AttendanceService, OfficeLocationsService],
+  exports: [AttendanceService, OfficeLocationsService],
 })
 export class AttendanceModule {}

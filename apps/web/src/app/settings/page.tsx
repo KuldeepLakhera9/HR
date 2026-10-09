@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import Link from 'next/link';
 import { AppShell } from '../../layouts/AppShell';
 import {
   Input,
@@ -109,6 +110,21 @@ export default function SettingsPage() {
                   defaultValue="15"
                   helperText="Minutes allowed after scheduled shift before flagging late."
                 />
+              </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-stone-100">
+                <div className="text-xs text-stone-500">
+                  Configure physical office locations, GPS coordinates, and test perimeters.
+                </div>
+                <Link href="/settings/office-locations">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    leftIcon={<MapPin className="h-3.5 w-3.5 text-amber-800" />}
+                  >
+                    Manage Office Locations & Geofences
+                  </Button>
+                </Link>
               </div>
             </div>
           </CardContent>

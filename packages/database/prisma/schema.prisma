@@ -54,6 +54,7 @@ model Organization {
   attendanceDailySummaries     AttendanceDailySummary[]
   attendanceCorrectionRequests AttendanceCorrectionRequest[]
   attendanceExceptions         AttendanceException[]
+  officeLocations              OfficeLocation[]
 
   @@index([code])
   @@index([isActive])
@@ -91,6 +92,7 @@ model Branch {
   employments           EmployeeEmployment[]
   attendancePolicies    AttendancePolicy[]
   attendanceEvents      AttendanceEvent[]
+  officeLocations       OfficeLocation[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -825,6 +827,8 @@ model AttendanceEvent {
   accuracyMeters           Float?
   branchId                 String?
   branch                   Branch?                    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  officeLocationId         String?
+  officeLocation           OfficeLocation?            @relation(fields: [officeLocationId], references: [id], onDelete: SetNull)
   distanceFromOfficeMeters  Float?
   geofenceStatus           GeofenceVerificationStatus @default(VERIFIED)
 
@@ -841,6 +845,8 @@ model AttendanceEvent {
   @@index([organizationId])
   @@index([employeeId])
   @@index([sessionId])
+  @@index([branchId])
+  @@index([officeLocationId])
   @@index([eventTimestamp])
   @@index([idempotencyKey])
   @@map("attendance_events")
@@ -949,4 +955,34 @@ model AttendanceException {
   @@index([exceptionType])
   @@index([resolved])
   @@map("attendance_exceptions")
+}
+
+model OfficeLocation {
+  id                   String            @id @default(uuid())
+  organizationId       String
+  organization         Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId             String?
+  branch               Branch?           @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  name                 String
+  code                 String?
+  address              String?
+  latitude             Float
+  longitude            Float
+  geofenceRadiusMeters Int               @default(100)
+  timezone             String            @default("Asia/Kolkata")
+  isActive             Boolean           @default(true)
+  effectiveFrom        DateTime          @default(now())
+  effectiveTo          DateTime?
+
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  attendanceEvents     AttendanceEvent[]
+
+  @@unique([organizationId, name])
+  @@index([organizationId])
+  @@index([branchId])
+  @@index([isActive])
+  @@map("office_locations")
 }

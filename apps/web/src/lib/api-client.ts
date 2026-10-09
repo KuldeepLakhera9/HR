@@ -575,3 +575,66 @@ export const employeesApi = {
     document.body.removeChild(a);
   },
 };
+
+export const officeLocationsApi = {
+  async getAll(params?: {
+    branchId?: string;
+    search?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.branchId) query.append('branchId', params.branchId);
+    if (params?.search) query.append('search', params.search);
+    if (params?.isActive !== undefined) query.append('isActive', String(params.isActive));
+    if (params?.page) query.append('page', String(params.page));
+    if (params?.limit) query.append('limit', String(params.limit));
+    const qs = query.toString();
+    const res = await fetchWithAuth<any>(`/attendance/locations${qs ? `?${qs}` : ''}`);
+    return res;
+  },
+
+  async getById(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/locations/${id}`);
+    return res.data;
+  },
+
+  async create(data: any) {
+    const res = await fetchWithAuth<any>('/attendance/locations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async update(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/attendance/locations/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async delete(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/locations/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async validateLocation(data: {
+    officeLocationId?: string;
+    branchId?: string;
+    latitude: number;
+    longitude: number;
+    accuracyMeters?: number;
+    timestamp?: string | number;
+  }) {
+    const res = await fetchWithAuth<any>('/attendance/locations/validate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+};

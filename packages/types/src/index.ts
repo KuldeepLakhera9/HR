@@ -755,3 +755,84 @@ export interface PunchResponseDto {
   session: AttendanceSessionDto;
   summary?: AttendanceDailySummaryDto | null;
 }
+
+export interface OfficeLocationDto {
+  id: string;
+  organizationId: string;
+  branchId?: string | null;
+  branch?: {
+    id: string;
+    name: string;
+    code: string;
+  } | null;
+  name: string;
+  code?: string | null;
+  address?: string | null;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMeters: number;
+  timezone: string;
+  isActive: boolean;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateOfficeLocationDto {
+  branchId?: string;
+  name: string;
+  code?: string;
+  address?: string;
+  latitude: number;
+  longitude: number;
+  geofenceRadiusMeters?: number;
+  timezone?: string;
+  isActive?: boolean;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+}
+
+export interface UpdateOfficeLocationDto {
+  branchId?: string;
+  name?: string;
+  code?: string;
+  address?: string;
+  latitude?: number;
+  longitude?: number;
+  geofenceRadiusMeters?: number;
+  timezone?: string;
+  isActive?: boolean;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+}
+
+export type LocationValidationOutcome =
+  'VERIFIED' | 'OUTSIDE_GEOFENCE' | 'LOW_ACCURACY' | 'STALE_LOCATION' | 'LOCATION_UNAVAILABLE';
+
+export interface ValidateLocationDto {
+  officeLocationId?: string;
+  branchId?: string;
+  latitude: number;
+  longitude: number;
+  accuracyMeters?: number;
+  timestamp?: string | number; // ISO string or epoch ms
+}
+
+export interface LocationValidationResultDto {
+  outcome: LocationValidationOutcome;
+  isWithinGeofence: boolean;
+  distanceMeters: number | null;
+  allowedRadiusMeters: number;
+  accuracyMeters: number | null;
+  timeSkewSeconds: number | null;
+  office: {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    geofenceRadiusMeters: number;
+    timezone: string;
+  } | null;
+  message: string;
+}
