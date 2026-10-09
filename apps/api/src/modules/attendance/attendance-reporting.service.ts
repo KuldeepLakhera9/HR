@@ -12,6 +12,7 @@ import {
   MonthlyAttendanceReportSummary,
   MonthlyAttendanceReportAggregations,
   AttendanceDayStatus,
+  AttendanceModeCounts,
 } from '@hrms/types';
 import { Prisma } from '@prisma/client';
 
@@ -128,6 +129,7 @@ export class AttendanceReportingService {
           id: true,
           date: true,
           status: true,
+          primaryAttendanceMode: true,
           totalWorkMinutes: true,
           totalBreakMinutes: true,
           lateMinutes: true,
@@ -168,6 +170,13 @@ export class AttendanceReportingService {
     let totalLateMinutes = 0;
     let totalEarlyExitMinutes = 0;
     let totalOvertimeMinutes = 0;
+
+    const byMode: AttendanceModeCounts = {
+      office: 0,
+      officialVisit: 0,
+      workFromHome: 0,
+      total: 0,
+    };
 
     // Aggregation maps
     const dateMap = new Map<
@@ -214,6 +223,16 @@ export class AttendanceReportingService {
     for (const record of aggregateData) {
       const st = record.status;
       statusMap.set(st, (statusMap.get(st) || 0) + 1);
+
+      const mode = (record as any).primaryAttendanceMode;
+      if (mode === 'OFFICIAL_VISIT') {
+        byMode.officialVisit++;
+      } else if (mode === 'WFH') {
+        byMode.workFromHome++;
+      } else {
+        byMode.office++;
+      }
+      byMode.total++;
 
       totalWorkMinutes += record.totalWorkMinutes || 0;
       totalBreakMinutes += record.totalBreakMinutes || 0;
@@ -376,6 +395,7 @@ export class AttendanceReportingService {
         onTimeRate,
         attendanceRate,
       },
+      byMode,
     };
 
     // Build MIS chart aggregations
@@ -466,6 +486,7 @@ export class AttendanceReportingService {
         earlyExitMinutes: r.earlyExitMinutes,
         overtimeMinutes: r.overtimeMinutes,
         status: r.status,
+        attendanceMode: r.primaryAttendanceMode || 'OFFICE',
         isCorrected: r.isCorrected,
       };
     });
@@ -605,6 +626,7 @@ export class AttendanceReportingService {
           employeeId: true,
           date: true,
           status: true,
+          primaryAttendanceMode: true,
           totalWorkMinutes: true,
           lateMinutes: true,
           earlyExitMinutes: true,
@@ -644,6 +666,13 @@ export class AttendanceReportingService {
     let totalWorkMinutes = 0;
     let totalOvertimeMinutes = 0;
 
+    const orgByMode: AttendanceModeCounts = {
+      office: 0,
+      officialVisit: 0,
+      workFromHome: 0,
+      total: 0,
+    };
+
     const deptRollupMap = new Map<
       string,
       {
@@ -675,6 +704,16 @@ export class AttendanceReportingService {
         summariesByEmployee.set(record.employeeId, list);
       }
       list.push(record);
+
+      const m = (record as any).primaryAttendanceMode;
+      if (m === 'OFFICIAL_VISIT') {
+        orgByMode.officialVisit++;
+      } else if (m === 'WFH') {
+        orgByMode.workFromHome++;
+      } else {
+        orgByMode.office++;
+      }
+      orgByMode.total++;
 
       const dayNum = record.date.getUTCDate();
       const trend = dailyTrendMap.get(dayNum);
@@ -779,11 +818,28 @@ export class AttendanceReportingService {
         let workMins = 0;
         let otMins = 0;
 
+        const empByMode: AttendanceModeCounts = {
+          office: 0,
+          officialVisit: 0,
+          workFromHome: 0,
+          total: 0,
+        };
+
         for (const r of empRecords) {
           workMins += r.totalWorkMinutes || 0;
           otMins += r.overtimeMinutes || 0;
           if (r.lateMinutes > 0) lateCount++;
           if (r.earlyExitMinutes > 0) earlyExitCount++;
+
+          const em = (r as any).primaryAttendanceMode;
+          if (em === 'OFFICIAL_VISIT') {
+            empByMode.officialVisit++;
+          } else if (em === 'WFH') {
+            empByMode.workFromHome++;
+          } else {
+            empByMode.office++;
+          }
+          empByMode.total++;
 
           switch (r.status) {
             case 'PRESENT':
@@ -856,6 +912,7 @@ export class AttendanceReportingService {
           totalOvertimeHours,
           avgDailyWorkHours,
           attendancePercentage,
+          byMode: empByMode,
         };
       },
     );
@@ -893,6 +950,7 @@ export class AttendanceReportingService {
       totalOvertimeHours,
       avgAttendanceRate,
       avgWorkHoursPerEmployee,
+      byMode: orgByMode,
     };
 
     // 6. Build MIS Aggregations

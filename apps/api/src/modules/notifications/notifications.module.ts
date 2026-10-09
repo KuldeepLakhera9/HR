@@ -24,6 +24,7 @@ export interface InternalNotification {
   metadata?: any;
   createdAt: Date;
   isRead: boolean;
+  idempotencyKey?: string | null;
 }
 
 @Injectable()
@@ -33,6 +34,7 @@ export class NotificationsService {
 
   /**
    * Internal in-app notification dispatch without paid external services.
+   * Includes duplicate notification prevention via optional idempotencyKey.
    */
   async createNotification(data: {
     userId?: string | null;
@@ -42,7 +44,24 @@ export class NotificationsService {
     type?: string;
     link?: string | null;
     metadata?: any;
+    idempotencyKey?: string | null;
   }): Promise<InternalNotification> {
+    // 1. Duplicate Notification Prevention
+    if (data.idempotencyKey) {
+      const existing = this.notifications.find(
+        (n) =>
+          n.organizationId === data.organizationId &&
+          n.idempotencyKey === data.idempotencyKey &&
+          (data.userId ? n.userId === data.userId : true),
+      );
+      if (existing) {
+        this.logger.debug(
+          `[Duplicate Notification Prevented] IdempotencyKey="${data.idempotencyKey}" already processed.`,
+        );
+        return existing;
+      }
+    }
+
     const notif: InternalNotification = {
       id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       userId: data.userId ?? null,
@@ -54,6 +73,7 @@ export class NotificationsService {
       metadata: data.metadata ?? null,
       createdAt: new Date(),
       isRead: false,
+      idempotencyKey: data.idempotencyKey ?? null,
     };
 
     this.notifications.unshift(notif);

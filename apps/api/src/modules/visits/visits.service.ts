@@ -258,6 +258,33 @@ export class VisitsService {
       },
     });
 
+    // Notify manager if submitted for approval
+    if (createdVisit.status === VisitStatus.SUBMITTED && employee.managerId) {
+      try {
+        const mgr = await this.prisma.employee.findUnique({
+          where: { id: employee.managerId },
+          select: { userId: true },
+        });
+        if (mgr?.userId) {
+          await this.notificationsService.createNotification({
+            userId: mgr.userId,
+            organizationId: user.organizationId,
+            title: `Official Visit Submitted: ${employee.displayName || user.firstName}`,
+            message: `${employee.displayName || user.firstName} submitted an official visit request for "${createdVisit.title}".`,
+            type: 'INFO',
+            link: '/attendance/manager/field-remote',
+            idempotencyKey: `notif:visit_submit:${createdVisit.id}`,
+            metadata: {
+              visitId: createdVisit.id,
+              employeeId: employee.id,
+            },
+          });
+        }
+      } catch (err: any) {
+        // Non-blocking notification failure
+      }
+    }
+
     return {
       message: 'Official visit created successfully',
       data: createdVisit,
@@ -826,6 +853,42 @@ export class VisitsService {
       },
     });
 
+    // Notify employee if cancelled by manager/HR, or notify manager if cancelled by employee
+    try {
+      const isCancelledByOwner = visit.employeeId === employee.id;
+      if (isCancelledByOwner && visit.employee?.managerId) {
+        const mgr = await this.prisma.employee.findUnique({
+          where: { id: visit.employee.managerId },
+          select: { userId: true },
+        });
+        if (mgr?.userId) {
+          await this.notificationsService.createNotification({
+            userId: mgr.userId,
+            organizationId: user.organizationId,
+            title: `Official Visit Cancelled: ${visit.employee.displayName || visit.employee.firstName}`,
+            message: `${visit.employee.displayName || visit.employee.firstName} cancelled their official visit for "${visit.title}". Reason: "${dto.cancellationReason}".`,
+            type: 'INFO',
+            link: '/attendance/manager/field-remote',
+            idempotencyKey: `notif:visit_cancel:${cancelledVisit.id}`,
+            metadata: { visitId: cancelledVisit.id, cancellationReason: dto.cancellationReason },
+          });
+        }
+      } else if (!isCancelledByOwner && visit.employee?.userId) {
+        await this.notificationsService.createNotification({
+          userId: visit.employee.userId,
+          organizationId: user.organizationId,
+          title: 'Official Visit Cancelled by Reviewer',
+          message: `Your official visit "${visit.title}" was cancelled by ${user.firstName} ${user.lastName}. Reason: "${dto.cancellationReason}".`,
+          type: 'WARNING',
+          link: '/visits',
+          idempotencyKey: `notif:visit_cancel:${cancelledVisit.id}`,
+          metadata: { visitId: cancelledVisit.id, cancellationReason: dto.cancellationReason },
+        });
+      }
+    } catch {
+      // Non-blocking notification error
+    }
+
     return {
       message: 'Official visit cancelled successfully',
       data: cancelledVisit,
@@ -1034,6 +1097,7 @@ export class VisitsService {
           message: `Your official visit request "${visit.title}" has been ${dto.decision.toLowerCase()} by ${user.firstName} ${user.lastName}.${dto.comments ? ` Comments: "${dto.comments}"` : ''}`,
           type: dto.decision === ApprovalDecision.APPROVED ? 'SUCCESS' : 'WARNING',
           link: `/visits`,
+          idempotencyKey: `notif:visit_decided:${visit.id}:${dto.decision}`,
           metadata: {
             visitId: visit.id,
             decision: dto.decision,

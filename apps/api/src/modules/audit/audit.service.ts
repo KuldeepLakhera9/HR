@@ -41,6 +41,10 @@ export class AuditService {
     /bearer/i,
     /salt/i,
     /apikey/i,
+    /latitude/i,
+    /longitude/i,
+    /exactCoords/i,
+    /rawCoordinates/i,
   ];
 
   constructor(private readonly prisma: PrismaService) {}

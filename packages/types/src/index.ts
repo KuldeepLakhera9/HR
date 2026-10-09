@@ -1069,6 +1069,13 @@ export interface DailyAttendanceReportFilterDto {
   limit?: number;
 }
 
+export interface AttendanceModeCounts {
+  office: number;
+  officialVisit: number;
+  workFromHome: number;
+  total: number;
+}
+
 export interface DailyAttendanceReportRecord {
   id: string;
   date: string;
@@ -1097,6 +1104,7 @@ export interface DailyAttendanceReportRecord {
   earlyExitMinutes: number;
   overtimeMinutes: number;
   status: AttendanceDayStatus;
+  attendanceMode?: string;
   isCorrected: boolean;
 }
 
@@ -1127,6 +1135,7 @@ export interface DailyAttendanceReportSummary {
     onTimeRate: number;
     attendanceRate: number;
   };
+  byMode?: AttendanceModeCounts;
 }
 
 export interface DailyAttendanceReportAggregations {
@@ -1224,6 +1233,7 @@ export interface MonthlyEmployeeAttendanceSummary {
   totalOvertimeHours: number;
   avgDailyWorkHours: number;
   attendancePercentage: number;
+  byMode?: AttendanceModeCounts;
 }
 
 export interface MonthlyAttendanceReportSummary {
@@ -1239,6 +1249,7 @@ export interface MonthlyAttendanceReportSummary {
   totalOvertimeHours: number;
   avgAttendanceRate: number;
   avgWorkHoursPerEmployee: number;
+  byMode?: AttendanceModeCounts;
 }
 
 export interface MonthlyAttendanceReportAggregations {

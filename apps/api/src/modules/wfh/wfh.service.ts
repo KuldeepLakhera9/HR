@@ -280,6 +280,7 @@ export class WfhService {
           message: `${employee.displayName || user.firstName} requested work from home for ${dto.startDate} to ${dto.endDate} (${durationType}). Reason: "${createdRequest.reason}"`,
           type: 'INFO',
           link: `/wfh`,
+          idempotencyKey: `notif:wfh_submit:${createdRequest.id}`,
           metadata: {
             requestId: createdRequest.id,
             employeeId: employee.id,
@@ -871,6 +872,7 @@ export class WfhService {
           message: `${request.employee.displayName || request.employee.firstName} cancelled their WFH request for ${request.startDate.toISOString().slice(0, 10)} to ${request.endDate.toISOString().slice(0, 10)}. Reason: "${dto.cancellationReason}"`,
           type: 'INFO',
           link: `/wfh`,
+          idempotencyKey: `notif:wfh_cancel:${request.id}`,
           metadata: {
             requestId: request.id,
             cancellationReason: dto.cancellationReason,
@@ -884,6 +886,7 @@ export class WfhService {
           message: `Your WFH request for ${request.startDate.toISOString().slice(0, 10)} to ${request.endDate.toISOString().slice(0, 10)} was cancelled by ${user.firstName} ${user.lastName}. Reason: "${dto.cancellationReason}"`,
           type: 'WARNING',
           link: `/wfh`,
+          idempotencyKey: `notif:wfh_cancel:${request.id}`,
           metadata: {
             requestId: request.id,
             cancellationReason: dto.cancellationReason,
@@ -1107,6 +1110,7 @@ export class WfhService {
           message: `Your WFH request for ${request.startDate.toISOString().slice(0, 10)} to ${request.endDate.toISOString().slice(0, 10)} (${request.durationType}) has been ${dto.decision.toLowerCase()} by ${user.firstName} ${user.lastName}.${dto.comments ? ` Remarks: "${dto.comments}"` : ''}`,
           type: dto.decision === ApprovalDecision.APPROVED ? 'SUCCESS' : 'WARNING',
           link: `/wfh`,
+          idempotencyKey: `notif:wfh_decide:${request.id}:${dto.decision}`,
           metadata: {
             requestId: request.id,
             decision: dto.decision,
