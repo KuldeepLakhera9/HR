@@ -126,6 +126,22 @@ export default function SettingsPage() {
                   </Button>
                 </Link>
               </div>
+
+              <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-stone-100">
+                <div className="text-xs text-stone-500">
+                  Configure working hours, shifts, grace periods, full/half day thresholds &
+                  employee assignments.
+                </div>
+                <Link href="/settings/attendance-policies">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    leftIcon={<Settings className="h-3.5 w-3.5 text-stone-700" />}
+                  >
+                    Manage Attendance Policies & Shifts
+                  </Button>
+                </Link>
+              </div>
             </div>
           </CardContent>
         </Card>

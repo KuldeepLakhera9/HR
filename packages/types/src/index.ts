@@ -648,6 +648,7 @@ export interface ShiftDto {
   id: string;
   organizationId: string;
   policyId?: string | null;
+  policy?: AttendancePolicyDto | null;
   name: string;
   code: string;
   description?: string | null;
@@ -835,4 +836,110 @@ export interface LocationValidationResultDto {
     timezone: string;
   } | null;
   message: string;
+}
+
+export interface CreateAttendancePolicyDto {
+  branchId?: string | null;
+  name: string;
+  code: string;
+  description?: string;
+  isDefault?: boolean;
+  standardWorkMinutes?: number;
+  halfDayThresholdMinutes?: number;
+  fullDayThresholdMinutes?: number;
+  gracePeriodMinutes?: number;
+  maxCheckInDelayMinutes?: number;
+  maxDailyBreakMinutes?: number;
+  maxSingleBreakMinutes?: number;
+  allowMultipleSessions?: boolean;
+  overnightShiftAllowed?: boolean;
+  workingDayStartHour?: number;
+  timezone?: string;
+  geofenceEnforcement?: boolean;
+  maxGpsAccuracyMeters?: number;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateAttendancePolicyDto {
+  branchId?: string | null;
+  name?: string;
+  code?: string;
+  description?: string;
+  isDefault?: boolean;
+  standardWorkMinutes?: number;
+  halfDayThresholdMinutes?: number;
+  fullDayThresholdMinutes?: number;
+  gracePeriodMinutes?: number;
+  maxCheckInDelayMinutes?: number;
+  maxDailyBreakMinutes?: number;
+  maxSingleBreakMinutes?: number;
+  allowMultipleSessions?: boolean;
+  overnightShiftAllowed?: boolean;
+  workingDayStartHour?: number;
+  timezone?: string;
+  geofenceEnforcement?: boolean;
+  maxGpsAccuracyMeters?: number;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  isActive?: boolean;
+}
+
+export interface CreateShiftDto {
+  policyId?: string;
+  name: string;
+  code: string;
+  description?: string;
+  startTime: string; // "HH:mm"
+  endTime: string; // "HH:mm"
+  isOvernight?: boolean;
+  workDays?: number[];
+  breakDurationMinutes?: number;
+  color?: string;
+  isActive?: boolean;
+}
+
+export interface UpdateShiftDto {
+  policyId?: string;
+  name?: string;
+  code?: string;
+  description?: string;
+  startTime?: string;
+  endTime?: string;
+  isOvernight?: boolean;
+  workDays?: number[];
+  breakDurationMinutes?: number;
+  color?: string;
+  isActive?: boolean;
+}
+
+export interface AssignShiftDto {
+  employeeId: string;
+  shiftId: string;
+  effectiveFrom: string;
+  effectiveTo?: string;
+}
+
+export interface ResolvedPolicyAndShift {
+  policy: AttendancePolicyDto;
+  shift: ShiftDto | null;
+  source: 'EMPLOYEE_ASSIGNMENT' | 'BRANCH_OVERRIDE' | 'ORGANIZATION_DEFAULT';
+}
+
+export interface PolicyEvaluationResultDto {
+  workingDate: string;
+  shiftStartLocal: string;
+  shiftEndLocal: string;
+  isOvernight: boolean;
+  graceWindowEndLocal: string;
+  lateArrivalMinutes: number;
+  earlyDepartureMinutes: number;
+  grossMinutes: number;
+  breakDeductionMinutes: number;
+  netWorkMinutes: number;
+  overtimeMinutes: number;
+  status: AttendanceDayStatus;
+  isMissingCheckout: boolean;
+  source: string;
 }

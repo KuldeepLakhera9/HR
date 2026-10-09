@@ -9,6 +9,11 @@ import {
   OfficeLocationsAliasController,
 } from './office-locations.controller';
 import { OfficeLocationsService } from './office-locations.service';
+import {
+  AttendancePoliciesController,
+  AttendanceShiftsController,
+} from './attendance-policies.controller';
+import { AttendancePoliciesService } from './attendance-policies.service';
 
 @Injectable()
 export class AttendanceService {
@@ -68,8 +73,14 @@ export class AttendanceController {
 }
 
 @Module({
-  controllers: [AttendanceController, OfficeLocationsController, OfficeLocationsAliasController],
-  providers: [AttendanceService, OfficeLocationsService],
-  exports: [AttendanceService, OfficeLocationsService],
+  controllers: [
+    AttendanceController,
+    OfficeLocationsController,
+    OfficeLocationsAliasController,
+    AttendancePoliciesController,
+    AttendanceShiftsController,
+  ],
+  providers: [AttendanceService, OfficeLocationsService, AttendancePoliciesService],
+  exports: [AttendanceService, OfficeLocationsService, AttendancePoliciesService],
 })
 export class AttendanceModule {}

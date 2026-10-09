@@ -638,3 +638,108 @@ export const officeLocationsApi = {
     return res.data;
   },
 };
+
+export const attendancePoliciesApi = {
+  async getAll(branchId?: string) {
+    const query = branchId ? `?branchId=${branchId}` : '';
+    const res = await fetchWithAuth<any[]>(`/attendance/policies${query}`);
+    return res.data;
+  },
+
+  async getById(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/policies/${id}`);
+    return res.data;
+  },
+
+  async create(data: any) {
+    const res = await fetchWithAuth<any>('/attendance/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async update(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/attendance/policies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async delete(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/policies/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async simulate(data: any) {
+    const res = await fetchWithAuth<any>('/attendance/policies/simulate', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+};
+
+export const shiftsApi = {
+  async getAll() {
+    const res = await fetchWithAuth<any[]>('/attendance/shifts');
+    return res.data;
+  },
+
+  async getById(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/shifts/${id}`);
+    return res.data;
+  },
+
+  async create(data: any) {
+    const res = await fetchWithAuth<any>('/attendance/shifts', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async update(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/attendance/shifts/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async delete(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/shifts/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async getAssignments(employeeId?: string) {
+    const query = employeeId ? `?employeeId=${employeeId}` : '';
+    const res = await fetchWithAuth<any[]>(`/attendance/shifts/assignments/list${query}`);
+    return res.data;
+  },
+
+  async assign(data: {
+    employeeId: string;
+    shiftId: string;
+    effectiveFrom: string;
+    effectiveTo?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/attendance/shifts/assignments', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deleteAssignment(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/shifts/assignments/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+};
