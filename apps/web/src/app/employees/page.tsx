@@ -9,13 +9,17 @@ import {
   Download,
   Upload,
   Filter,
-  RefreshCw,
+  X,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Building2,
-  Mail,
-  Phone,
+  Briefcase,
+  MapPin,
+  UserCheck,
+  RotateCcw,
   FileSpreadsheet,
   AlertTriangle,
-  CheckCircle2,
   XCircle,
 } from 'lucide-react';
 import { employeesApi, organizationApi } from '../../lib/api-client';
@@ -39,18 +43,29 @@ export default function EmployeesPage() {
     totalPages: 1,
   });
 
-  // Filter dropdown data
+  // Filter dropdown lookups
   const [departments, setDepartments] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
   const [designations, setDesignations] = useState<any[]>([]);
+  const [managers, setManagers] = useState<any[]>([]);
 
-  // Search & Filters state
+  // Search, Filters & Sorting state
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('');
+  const [selectedDesig, setSelectedDesig] = useState('');
   const [selectedBranch, setSelectedBranch] = useState('');
+  const [selectedManager, setSelectedManager] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedEmpType, setSelectedEmpType] = useState('');
   const [selectedWorkMode, setSelectedWorkMode] = useState('');
+
+  // Sorting
+  const [sortBy, setSortBy] = useState<string>('displayName');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Import Modal state
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -59,18 +74,43 @@ export default function EmployeesPage() {
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState<string | null>(null);
 
-  // Load filter options
+  // Count active filters
+  const activeFilterCount = [
+    selectedDept,
+    selectedDesig,
+    selectedBranch,
+    selectedManager,
+    selectedStatus,
+    selectedEmpType,
+    selectedWorkMode,
+  ].filter(Boolean).length;
+
+  const resetAllFilters = () => {
+    setSelectedDept('');
+    setSelectedDesig('');
+    setSelectedBranch('');
+    setSelectedManager('');
+    setSelectedStatus('');
+    setSelectedEmpType('');
+    setSelectedWorkMode('');
+    setSearchTerm('');
+    setCurrentPage(1);
+  };
+
+  // Load filter options on mount
   useEffect(() => {
     async function loadLookups() {
       try {
-        const [depts, brs, desigs] = await Promise.all([
+        const [depts, brs, desigs, emps] = await Promise.all([
           organizationApi.getDepartments({ status: 'active' }),
           organizationApi.getBranches({ status: 'active' }),
           organizationApi.getDesignations({ status: 'active' }),
+          employeesApi.findAll({ limit: 100 }),
         ]);
         setDepartments(depts || []);
         setBranches(brs || []);
         setDesignations(desigs || []);
+        setManagers(emps?.items || []);
       } catch (err) {
         console.error('Failed to load filter lookups:', err);
       }
@@ -78,25 +118,30 @@ export default function EmployeesPage() {
     loadLookups();
   }, []);
 
-  // Fetch employees
+  // Fetch employees with all query parameters
   const fetchEmployees = useCallback(async () => {
     setLoading(true);
     try {
       const result = await employeesApi.findAll({
-        search: searchTerm,
+        search: searchTerm || undefined,
         departmentId: selectedDept || undefined,
+        designationId: selectedDesig || undefined,
         branchId: selectedBranch || undefined,
+        managerId: selectedManager || undefined,
         status: selectedStatus || undefined,
+        employmentType: selectedEmpType || undefined,
         workMode: selectedWorkMode || undefined,
+        sortBy,
+        sortOrder,
         page: currentPage,
-        limit: 10,
+        limit: pageSize,
       });
 
       setEmployees(result.items || []);
       if (result.meta) {
         setMeta({
           page: result.meta.page || 1,
-          limit: result.meta.limit || 10,
+          limit: result.meta.limit || pageSize,
           total: result.meta.total || 0,
           totalPages: result.meta.totalPages || 1,
         });
@@ -106,11 +151,35 @@ export default function EmployeesPage() {
     } finally {
       setLoading(false);
     }
-  }, [searchTerm, selectedDept, selectedBranch, selectedStatus, selectedWorkMode, currentPage]);
+  }, [
+    searchTerm,
+    selectedDept,
+    selectedDesig,
+    selectedBranch,
+    selectedManager,
+    selectedStatus,
+    selectedEmpType,
+    selectedWorkMode,
+    sortBy,
+    sortOrder,
+    currentPage,
+    pageSize,
+  ]);
 
   useEffect(() => {
     fetchEmployees();
   }, [fetchEmployees]);
+
+  // Handle column header sort toggle
+  const handleSortToggle = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(field);
+      setSortOrder('asc');
+    }
+    setCurrentPage(1);
+  };
 
   // Export handler
   const handleExport = async (format: 'csv' | 'xlsx') => {
@@ -118,8 +187,11 @@ export default function EmployeesPage() {
       await employeesApi.export(format, {
         search: searchTerm,
         departmentId: selectedDept,
+        designationId: selectedDesig,
         branchId: selectedBranch,
+        managerId: selectedManager,
         status: selectedStatus,
+        employmentType: selectedEmpType,
         workMode: selectedWorkMode,
       });
     } catch (err: any) {
@@ -187,12 +259,31 @@ export default function EmployeesPage() {
           </Badge>
         );
       case 'TERMINATED':
+        return <Badge variant="danger">TERMINATED</Badge>;
       case 'EXITED':
-        return <Badge variant="danger">{status}</Badge>;
+        return (
+          <Badge variant="default" className="bg-stone-200 text-stone-700 border-stone-300">
+            EXITED
+          </Badge>
+        );
       default:
         return <Badge variant="default">{status}</Badge>;
     }
   };
+
+  const renderSortIndicator = (field: string) => {
+    if (sortBy !== field) {
+      return <ArrowUpDown className="h-3 w-3 text-stone-400 opacity-60 group-hover:opacity-100" />;
+    }
+    return sortOrder === 'asc' ? (
+      <ArrowUp className="h-3.5 w-3.5 text-amber-800" />
+    ) : (
+      <ArrowDown className="h-3.5 w-3.5 text-amber-800" />
+    );
+  };
+
+  const startRecord = meta.total === 0 ? 0 : (meta.page - 1) * meta.limit + 1;
+  const endRecord = Math.min(meta.page * meta.limit, meta.total);
 
   return (
     <AppShell>
@@ -202,22 +293,20 @@ export default function EmployeesPage() {
           <div>
             <h1 className="text-xl md:text-2xl font-bold text-stone-900">Employee Directory</h1>
             <p className="text-xs md:text-sm text-stone-500 mt-1">
-              Search, filter, view profiles, and manage employee records.
+              Search, filter, view profiles, and manage employee records across your organization.
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
             {hasPermission('EMPLOYEE_EXPORT') && (
-              <div className="relative group">
-                <Button
-                  variant="outline"
-                  className="border-stone-200 text-stone-700 hover:bg-stone-50"
-                  onClick={() => handleExport('csv')}
-                >
-                  <Download className="h-4 w-4 mr-2 text-stone-500" />
-                  Export CSV
-                </Button>
-              </div>
+              <Button
+                variant="outline"
+                className="border-stone-200 text-stone-700 hover:bg-stone-50"
+                onClick={() => handleExport('csv')}
+              >
+                <Download className="h-4 w-4 mr-2 text-stone-500" />
+                Export CSV
+              </Button>
             )}
 
             {hasPermission('EMPLOYEE_IMPORT') && (
@@ -248,12 +337,13 @@ export default function EmployeesPage() {
           </div>
         </div>
 
-        {/* Filter Toolbar */}
-        <div className="bg-white p-4 rounded-xl border border-stone-200/80 shadow-xs space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
-            <div className="md:col-span-2">
+        {/* Search, Sorting, and Filter Toolbar */}
+        <div className="bg-white p-4 rounded-xl border border-stone-200/80 shadow-xs space-y-3.5">
+          {/* Top row: Search & Quick Sorting */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <div className="flex-1 max-w-md">
               <Search
-                placeholder="Search name, code, email, or phone..."
+                placeholder="Search name, employee code, email, phone..."
                 value={searchTerm}
                 onChange={(val) => {
                   setSearchTerm(val);
@@ -262,59 +352,200 @@ export default function EmployeesPage() {
               />
             </div>
 
-            <div>
+            <div className="flex items-center gap-2 self-end sm:self-auto">
+              <span className="text-xs font-medium text-stone-500 whitespace-nowrap">Sort by:</span>
               <select
-                value={selectedDept}
+                value={`${sortBy}:${sortOrder}`}
                 onChange={(e) => {
-                  setSelectedDept(e.target.value);
+                  const [field, order] = e.target.value.split(':');
+                  setSortBy(field);
+                  setSortOrder(order as 'asc' | 'desc');
                   setCurrentPage(1);
                 }}
-                className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
+                className="text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-700"
               >
-                <option value="">All Departments</option>
-                {departments.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
+                <option value="displayName:asc">Name (A-Z)</option>
+                <option value="displayName:desc">Name (Z-A)</option>
+                <option value="employeeCode:asc">Code (A-Z)</option>
+                <option value="employeeCode:desc">Code (Z-A)</option>
+                <option value="joiningDate:desc">Joining Date (Newest)</option>
+                <option value="joiningDate:asc">Joining Date (Oldest)</option>
+                <option value="status:asc">Status (Ascending)</option>
               </select>
+
+              {activeFilterCount > 0 && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={resetAllFilters}
+                  className="text-stone-600 border-stone-200 hover:bg-stone-50 text-xs h-8 px-2.5"
+                >
+                  <RotateCcw className="h-3 w-3 mr-1 text-stone-400" />
+                  Clear ({activeFilterCount})
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Filter Grid: 7 Required Filters */}
+          <div className="pt-2 border-t border-stone-100">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-stone-600 uppercase tracking-wider mb-2.5">
+              <Filter className="h-3.5 w-3.5 text-amber-700" />
+              <span>Filter Directory</span>
+              {activeFilterCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.2 bg-amber-100 text-amber-900 rounded-full text-[10px] font-bold">
+                  {activeFilterCount}
+                </span>
+              )}
             </div>
 
-            <div>
-              <select
-                value={selectedBranch}
-                onChange={(e) => {
-                  setSelectedBranch(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
-              >
-                <option value="">All Branches</option>
-                {branches.map((b) => (
-                  <option key={b.id} value={b.id}>
-                    {b.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2.5">
+              {/* 1. Department */}
+              <div>
+                <label className="block text-[11px] font-medium text-stone-500 mb-1">
+                  Department
+                </label>
+                <select
+                  value={selectedDept}
+                  onChange={(e) => {
+                    setSelectedDept(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-800"
+                >
+                  <option value="">All Departments</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div>
-              <select
-                value={selectedStatus}
-                onChange={(e) => {
-                  setSelectedStatus(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
-              >
-                <option value="">All Statuses</option>
-                <option value="ACTIVE">Active</option>
-                <option value="PROBATION">Probation</option>
-                <option value="ON_NOTICE">On Notice</option>
-                <option value="RESIGNED">Resigned</option>
-                <option value="TERMINATED">Terminated</option>
-                <option value="EXITED">Exited</option>
-              </select>
+              {/* 2. Designation */}
+              <div>
+                <label className="block text-[11px] font-medium text-stone-500 mb-1">
+                  Designation
+                </label>
+                <select
+                  value={selectedDesig}
+                  onChange={(e) => {
+                    setSelectedDesig(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-800"
+                >
+                  <option value="">All Designations</option>
+                  {designations.map((desig) => (
+                    <option key={desig.id} value={desig.id}>
+                      {desig.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 3. Branch */}
+              <div>
+                <label className="block text-[11px] font-medium text-stone-500 mb-1">Branch</label>
+                <select
+                  value={selectedBranch}
+                  onChange={(e) => {
+                    setSelectedBranch(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-800"
+                >
+                  <option value="">All Branches</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Manager */}
+              <div>
+                <label className="block text-[11px] font-medium text-stone-500 mb-1">Manager</label>
+                <select
+                  value={selectedManager}
+                  onChange={(e) => {
+                    setSelectedManager(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-800"
+                >
+                  <option value="">All Managers</option>
+                  {managers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.displayName} ({m.employeeCode})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Status */}
+              <div>
+                <label className="block text-[11px] font-medium text-stone-500 mb-1">Status</label>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => {
+                    setSelectedStatus(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-800 font-medium"
+                >
+                  <option value="">All Statuses</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="PROBATION">Probation</option>
+                  <option value="ON_NOTICE">On Notice</option>
+                  <option value="RESIGNED">Resigned</option>
+                  <option value="TERMINATED">Terminated</option>
+                  <option value="EXITED">Exited</option>
+                </select>
+              </div>
+
+              {/* 6. Employment Type */}
+              <div>
+                <label className="block text-[11px] font-medium text-stone-500 mb-1">
+                  Employment Type
+                </label>
+                <select
+                  value={selectedEmpType}
+                  onChange={(e) => {
+                    setSelectedEmpType(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-800"
+                >
+                  <option value="">All Types</option>
+                  <option value="FULL_TIME">Full Time</option>
+                  <option value="PART_TIME">Part Time</option>
+                  <option value="CONTRACT">Contract</option>
+                  <option value="INTERN">Intern</option>
+                  <option value="CONSULTANT">Consultant</option>
+                </select>
+              </div>
+
+              {/* 7. Work Mode */}
+              <div>
+                <label className="block text-[11px] font-medium text-stone-500 mb-1">
+                  Work Mode
+                </label>
+                <select
+                  value={selectedWorkMode}
+                  onChange={(e) => {
+                    setSelectedWorkMode(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full text-xs px-2.5 py-1.5 border border-stone-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-800"
+                >
+                  <option value="">All Modes</option>
+                  <option value="OFFICE">Onsite / Office</option>
+                  <option value="HYBRID">Hybrid</option>
+                  <option value="REMOTE">Remote</option>
+                </select>
+              </div>
             </div>
           </div>
         </div>
@@ -322,40 +553,77 @@ export default function EmployeesPage() {
         {/* Directory Table */}
         <DataTable
           data={employees}
+          isLoading={loading}
+          emptyMessage="No employees found matching current search and filter criteria."
           onRowClick={(item) => router.push(`/employees/${item.id}`)}
           columns={[
             {
-              key: 'employee',
-              header: 'Employee',
+              key: 'avatar_name',
+              header: (
+                <button
+                  type="button"
+                  onClick={() => handleSortToggle('displayName')}
+                  className="group flex items-center gap-1.5 hover:text-stone-900 transition-colors cursor-pointer text-left font-semibold text-xs text-stone-600 uppercase tracking-wider"
+                >
+                  <span>Name</span>
+                  {renderSortIndicator('displayName')}
+                </button>
+              ),
               render: (item: any) => (
                 <div className="flex items-center gap-3">
-                  <Avatar name={item.displayName} size="sm" />
+                  <Avatar name={item.displayName} src={item.profilePhoto} size="md" />
                   <div>
                     <div className="font-semibold text-stone-900 hover:text-amber-800 transition-colors">
                       {item.displayName}
                     </div>
-                    <div className="text-xs text-stone-500 font-mono">{item.employeeCode}</div>
+                    {item.workEmail && (
+                      <div className="text-[11px] text-stone-500 truncate max-w-[170px]">
+                        {item.workEmail}
+                      </div>
+                    )}
                   </div>
                 </div>
               ),
             },
             {
-              key: 'role',
-              header: 'Department & Role',
+              key: 'employeeCode',
+              header: (
+                <button
+                  type="button"
+                  onClick={() => handleSortToggle('employeeCode')}
+                  className="group flex items-center gap-1.5 hover:text-stone-900 transition-colors cursor-pointer text-left font-semibold text-xs text-stone-600 uppercase tracking-wider"
+                >
+                  <span>Employee Code</span>
+                  {renderSortIndicator('employeeCode')}
+                </button>
+              ),
               render: (item: any) => (
-                <div>
-                  <div className="text-stone-900 font-medium">
-                    {item.departmentName || 'General'}
-                  </div>
-                  <div className="text-xs text-stone-500">
-                    {item.designationTitle || 'Staff Member'}
-                  </div>
+                <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded bg-stone-100 text-stone-700 border border-stone-200">
+                  {item.employeeCode}
+                </span>
+              ),
+            },
+            {
+              key: 'department',
+              header: 'Department',
+              render: (item: any) => (
+                <div className="text-stone-800 font-medium text-xs">
+                  {item.departmentName || <span className="text-stone-400 italic">—</span>}
+                </div>
+              ),
+            },
+            {
+              key: 'designation',
+              header: 'Designation',
+              render: (item: any) => (
+                <div className="text-stone-700 text-xs">
+                  {item.designationTitle || <span className="text-stone-400 italic">—</span>}
                 </div>
               ),
             },
             {
               key: 'manager',
-              header: 'Reporting Manager',
+              header: 'Manager',
               render: (item: any) => (
                 <span className="text-xs text-stone-700">
                   {item.managerName || (
@@ -366,74 +634,70 @@ export default function EmployeesPage() {
             },
             {
               key: 'branch',
-              header: 'Branch & Mode',
+              header: 'Branch',
               render: (item: any) => (
-                <div>
+                <div className="space-y-0.5">
                   <div className="text-xs font-medium text-stone-900">
                     {item.branchName || 'HQ'}
                   </div>
-                  <Badge
-                    variant="outline"
-                    className="text-[10px] py-0 px-1 mt-0.5 border-stone-300 text-stone-600"
-                  >
-                    {item.workMode || 'OFFICE'}
-                  </Badge>
+                  {item.workMode && (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] py-0 px-1 border-stone-300 text-stone-600"
+                    >
+                      {item.workMode}
+                    </Badge>
+                  )}
                 </div>
               ),
             },
             {
               key: 'status',
-              header: 'Status',
-              render: (item: any) => getStatusBadge(item.status),
-            },
-            {
-              key: 'contact',
-              header: 'Contact',
-              render: (item: any) => (
-                <div className="text-xs text-stone-600 space-y-0.5">
-                  {item.workEmail && (
-                    <div className="flex items-center gap-1.5 truncate max-w-[160px]">
-                      <Mail className="h-3 w-3 text-stone-400" />
-                      <span className="truncate">{item.workEmail}</span>
-                    </div>
-                  )}
-                  {item.phone && (
-                    <div className="flex items-center gap-1.5 text-stone-500">
-                      <Phone className="h-3 w-3 text-stone-400" />
-                      <span>{item.phone}</span>
-                    </div>
-                  )}
-                </div>
+              header: (
+                <button
+                  type="button"
+                  onClick={() => handleSortToggle('status')}
+                  className="group flex items-center gap-1.5 hover:text-stone-900 transition-colors cursor-pointer text-left font-semibold text-xs text-stone-600 uppercase tracking-wider"
+                >
+                  <span>Status</span>
+                  {renderSortIndicator('status')}
+                </button>
               ),
+              render: (item: any) => getStatusBadge(item.status),
             },
           ]}
         />
 
-        {/* Pagination */}
-        <div className="flex flex-col sm:flex-row justify-between items-center gap-3 pt-2 text-xs text-stone-500">
-          <div>
-            Showing {employees.length} of {meta.total} employee records
+        {/* Pagination & Results Summary using existing Pagination component */}
+        <div className="bg-white px-4 py-3 rounded-xl border border-stone-200/80 shadow-xs flex flex-col sm:flex-row justify-between items-center gap-3">
+          <div className="text-xs text-stone-500">
+            Showing <span className="font-semibold text-stone-800">{startRecord}</span> to{' '}
+            <span className="font-semibold text-stone-800">{endRecord}</span> of{' '}
+            <span className="font-semibold text-stone-800">{meta.total}</span> employees
           </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage <= 1 || loading}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            >
-              Previous
-            </Button>
-            <span className="font-semibold text-stone-800">
-              Page {meta.page} of {meta.totalPages || 1}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={currentPage >= meta.totalPages || loading}
-              onClick={() => setCurrentPage((p) => p + 1)}
-            >
-              Next
-            </Button>
+
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-1.5 text-xs text-stone-500">
+              <span>Per page:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setCurrentPage(1);
+                }}
+                className="text-xs px-2 py-1 border border-stone-200 rounded-md bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-700"
+              >
+                <option value={10}>10</option>
+                <option value={20}>20</option>
+                <option value={50}>50</option>
+              </select>
+            </div>
+
+            <Pagination
+              currentPage={currentPage}
+              totalPages={meta.totalPages || 1}
+              onPageChange={(page) => setCurrentPage(page)}
+            />
           </div>
         </div>
 
