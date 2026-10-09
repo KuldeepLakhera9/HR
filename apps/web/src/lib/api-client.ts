@@ -1,4 +1,12 @@
-import { AuthUser, LoginCredentials, ApiResponse } from '@hrms/types';
+import {
+  AuthUser,
+  LoginCredentials,
+  ApiResponse,
+  DailyAttendanceReportFilterDto,
+  DailyAttendanceReportResponse,
+  MonthlyAttendanceReportFilterDto,
+  MonthlyAttendanceReportResponse,
+} from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
 
@@ -890,6 +898,48 @@ export const attendanceApi = {
     });
     return res.data;
   },
+
+  async getDailyReport(
+    query?: DailyAttendanceReportFilterDto,
+  ): Promise<DailyAttendanceReportResponse> {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.branchId) params.append('branchId', query.branchId);
+    if (query?.departmentId) params.append('departmentId', query.departmentId);
+    if (query?.employeeId) params.append('employeeId', query.employeeId);
+    if (query?.shiftId) params.append('shiftId', query.shiftId);
+    if (query?.status) params.append('status', query.status);
+    if (query?.search) params.append('search', query.search);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString();
+    const res = await fetchWithAuth<DailyAttendanceReportResponse>(
+      `/attendance/reports/daily${qs ? `?${qs}` : ''}`,
+    );
+    return res.data;
+  },
+
+  async getMonthlyReport(
+    query: MonthlyAttendanceReportFilterDto,
+  ): Promise<MonthlyAttendanceReportResponse> {
+    const params = new URLSearchParams();
+    if (query.month) params.append('month', String(query.month));
+    if (query.year) params.append('year', String(query.year));
+    if (query.branchId) params.append('branchId', query.branchId);
+    if (query.departmentId) params.append('departmentId', query.departmentId);
+    if (query.employeeId) params.append('employeeId', query.employeeId);
+    if (query.shiftId) params.append('shiftId', query.shiftId);
+    if (query.status) params.append('status', query.status);
+    if (query.search) params.append('search', query.search);
+    if (query.page) params.append('page', String(query.page));
+    if (query.limit) params.append('limit', String(query.limit));
+    const qs = params.toString();
+    const res = await fetchWithAuth<MonthlyAttendanceReportResponse>(
+      `/attendance/reports/monthly${qs ? `?${qs}` : ''}`,
+    );
+    return res.data;
+  },
 };
 
 export const notificationsApi = {
@@ -1008,4 +1058,9 @@ export const shiftsApi = {
     });
     return res;
   },
+};
+
+export const reportsApi = {
+  getDailyAttendance: attendanceApi.getDailyReport,
+  getMonthlyAttendance: attendanceApi.getMonthlyReport,
 };

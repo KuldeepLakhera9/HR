@@ -27,6 +27,9 @@ import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.
 import { DecideCorrectionRequestDto } from './dto/decide-correction.dto';
 import { AttendanceExceptionQueryDto } from './dto/attendance-exception-query.dto';
 import { ResolveExceptionDto } from './dto/resolve-exception.dto';
+import { DailyAttendanceReportQueryDto } from './dto/daily-attendance-report-query.dto';
+import { MonthlyAttendanceReportQueryDto } from './dto/monthly-attendance-report-query.dto';
+import { AttendanceReportingService } from './attendance-reporting.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { EmployeesModule } from '../employees/employees.module';
 import {
@@ -45,7 +48,10 @@ import { AttendancePoliciesService } from './attendance-policies.service';
 @UseGuards(JwtAuthGuard, RolesGuard, PermissionsGuard)
 @Controller('attendance')
 export class AttendanceController {
-  constructor(private readonly attendanceService: AttendanceService) {}
+  constructor(
+    private readonly attendanceService: AttendanceService,
+    private readonly attendanceReportingService: AttendanceReportingService,
+  ) {}
 
   @Post('check-in')
   @RequirePermissions('ATTENDANCE_MARK')
@@ -279,6 +285,36 @@ export class AttendanceController {
   }
 
   // ===========================================================================
+  // ATTENDANCE REPORTING FOUNDATION ENDPOINTS (Phase 4 Step 13)
+  // ===========================================================================
+
+  @Get('reports/daily')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary:
+      'Scoped Daily Attendance Report with working-hour summaries, headcount metrics, MIS aggregations, and paginated records',
+  })
+  async getDailyAttendanceReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: DailyAttendanceReportQueryDto,
+  ) {
+    return this.attendanceReportingService.getDailyReport(user.organizationId, query);
+  }
+
+  @Get('reports/monthly')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary:
+      'Scoped Monthly Attendance Report with monthly employee rollups, working day calculations, and department/branch breakdowns',
+  })
+  async getMonthlyAttendanceReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: MonthlyAttendanceReportQueryDto,
+  ) {
+    return this.attendanceReportingService.getMonthlyReport(user.organizationId, query);
+  }
+
+  // ===========================================================================
   // MANAGER TEAM ATTENDANCE ENDPOINTS
   // ===========================================================================
 
@@ -375,7 +411,17 @@ export class AttendanceController {
     AttendancePoliciesController,
     AttendanceShiftsController,
   ],
-  providers: [AttendanceService, OfficeLocationsService, AttendancePoliciesService],
-  exports: [AttendanceService, OfficeLocationsService, AttendancePoliciesService],
+  providers: [
+    AttendanceService,
+    AttendanceReportingService,
+    OfficeLocationsService,
+    AttendancePoliciesService,
+  ],
+  exports: [
+    AttendanceService,
+    AttendanceReportingService,
+    OfficeLocationsService,
+    AttendancePoliciesService,
+  ],
 })
 export class AttendanceModule {}

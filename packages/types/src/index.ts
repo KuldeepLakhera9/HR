@@ -1050,3 +1050,237 @@ export interface PolicyEvaluationResultDto {
   isMissingCheckout: boolean;
   source: string;
 }
+
+// =============================================================================
+// Attendance Reporting Contracts (Phase 4 Step 13)
+// =============================================================================
+
+export interface DailyAttendanceReportFilterDto {
+  startDate?: string;
+  endDate?: string;
+  branchId?: string;
+  departmentId?: string;
+  employeeId?: string;
+  shiftId?: string;
+  status?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface DailyAttendanceReportRecord {
+  id: string;
+  date: string;
+  employee: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    email?: string | null;
+    department?: string | null;
+    designation?: string | null;
+    branch?: string | null;
+  };
+  shift?: {
+    id: string;
+    name: string;
+    code: string;
+    startTime: string;
+    endTime: string;
+  } | null;
+  firstCheckIn: string | null;
+  lastCheckOut: string | null;
+  totalWorkMinutes: number;
+  workHoursFormatted: string;
+  totalBreakMinutes: number;
+  lateMinutes: number;
+  earlyExitMinutes: number;
+  overtimeMinutes: number;
+  status: AttendanceDayStatus;
+  isCorrected: boolean;
+}
+
+export interface DailyAttendanceReportSummary {
+  totalRecords: number;
+  headcount: {
+    present: number;
+    late: number;
+    halfDay: number;
+    absent: number;
+    onLeave: number;
+    holiday: number;
+    weekOff: number;
+    incomplete: number;
+    pendingReview: number;
+    notScheduled: number;
+  };
+  workingHours: {
+    totalWorkHours: number;
+    totalWorkMinutes: number;
+    totalBreakMinutes: number;
+    totalOvertimeMinutes: number;
+    totalOvertimeHours: number;
+    totalLateMinutes: number;
+    totalEarlyExitMinutes: number;
+    avgWorkHours: number;
+    avgLateMinutes: number;
+    onTimeRate: number;
+    attendanceRate: number;
+  };
+}
+
+export interface DailyAttendanceReportAggregations {
+  byDate: Array<{
+    date: string;
+    present: number;
+    late: number;
+    halfDay: number;
+    absent: number;
+    onLeave: number;
+    incomplete: number;
+    totalWorkHours: number;
+    avgWorkHours: number;
+  }>;
+  byDepartment: Array<{
+    departmentId: string;
+    departmentName: string;
+    totalRecords: number;
+    present: number;
+    absent: number;
+    late: number;
+    attendanceRate: number;
+    totalWorkHours: number;
+  }>;
+  byBranch: Array<{
+    branchId: string;
+    branchName: string;
+    totalRecords: number;
+    present: number;
+    absent: number;
+    late: number;
+    attendanceRate: number;
+    totalWorkHours: number;
+  }>;
+  byStatus: Array<{
+    status: string;
+    count: number;
+    percentage: number;
+  }>;
+}
+
+export interface DailyAttendanceReportResponse {
+  period: {
+    startDate: string;
+    endDate: string;
+    totalDays: number;
+  };
+  summary: DailyAttendanceReportSummary;
+  aggregations: DailyAttendanceReportAggregations;
+  records: DailyAttendanceReportRecord[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface MonthlyAttendanceReportFilterDto {
+  year?: number;
+  month?: number;
+  branchId?: string;
+  departmentId?: string;
+  employeeId?: string;
+  shiftId?: string;
+  status?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface MonthlyEmployeeAttendanceSummary {
+  employee: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    email?: string | null;
+    department?: string | null;
+    designation?: string | null;
+    branch?: string | null;
+  };
+  scheduledDays: number;
+  presentDays: number;
+  halfDays: number;
+  absentDays: number;
+  leaveDays: number;
+  weekOffDays: number;
+  holidayDays: number;
+  incompleteDays: number;
+  lateArrivalsCount: number;
+  earlyDeparturesCount: number;
+  totalWorkMinutes: number;
+  totalWorkHours: number;
+  totalOvertimeMinutes: number;
+  totalOvertimeHours: number;
+  avgDailyWorkHours: number;
+  attendancePercentage: number;
+}
+
+export interface MonthlyAttendanceReportSummary {
+  totalEmployees: number;
+  totalScheduledDays: number;
+  totalPresentDays: number;
+  totalAbsentDays: number;
+  totalHalfDays: number;
+  totalLeaveDays: number;
+  totalLateCount: number;
+  totalEarlyExitCount: number;
+  totalWorkHours: number;
+  totalOvertimeHours: number;
+  avgAttendanceRate: number;
+  avgWorkHoursPerEmployee: number;
+}
+
+export interface MonthlyAttendanceReportAggregations {
+  byDepartment: Array<{
+    departmentId: string;
+    departmentName: string;
+    employeeCount: number;
+    avgAttendancePercentage: number;
+    totalWorkHours: number;
+  }>;
+  byBranch: Array<{
+    branchId: string;
+    branchName: string;
+    employeeCount: number;
+    avgAttendancePercentage: number;
+    totalWorkHours: number;
+  }>;
+  dailyTrend: Array<{
+    date: string;
+    dayNumber: number;
+    presentCount: number;
+    absentCount: number;
+    lateCount: number;
+  }>;
+}
+
+export interface MonthlyAttendanceReportResponse {
+  period: {
+    year: number;
+    month: number;
+    monthName: string;
+    daysInMonth: number;
+    workingDaysCount: number;
+    startDate: string;
+    endDate: string;
+  };
+  summary: MonthlyAttendanceReportSummary;
+  aggregations: MonthlyAttendanceReportAggregations;
+  employeeSummaries: MonthlyEmployeeAttendanceSummary[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
