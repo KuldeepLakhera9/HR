@@ -11,6 +11,7 @@ import { CheckInDto } from './dto/check-in.dto';
 import { CheckOutDto } from './dto/check-out.dto';
 import { BreakDto } from './dto/break.dto';
 import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
+import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
 import {
   OfficeLocationsController,
   OfficeLocationsAliasController,
@@ -114,6 +115,36 @@ export class AttendanceController {
   })
   async getToday(@CurrentUser() user: AuthenticatedUser) {
     return this.attendanceService.getToday(user);
+  }
+
+  @Get('my-history')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get current employee attendance daily history and recent sessions',
+  })
+  async getMyHistory(@CurrentUser() user: AuthenticatedUser) {
+    return this.attendanceService.getMyHistory(user);
+  }
+
+  @Post('correction-request')
+  @RequirePermissions('ATTENDANCE_MARK')
+  @ApiOperation({
+    summary: 'Submit an attendance correction request for past or missed punches',
+  })
+  async submitCorrectionRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: SubmitCorrectionRequestDto,
+  ) {
+    return this.attendanceService.submitCorrectionRequest(user, dto);
+  }
+
+  @Get('my-corrections')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get all correction requests submitted by current employee',
+  })
+  async getMyCorrections(@CurrentUser() user: AuthenticatedUser) {
+    return this.attendanceService.getMyCorrections(user);
   }
 
   @Get('summary')

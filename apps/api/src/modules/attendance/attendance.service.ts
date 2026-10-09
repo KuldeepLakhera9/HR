@@ -22,6 +22,7 @@ import {
 import { resolveWorkingDay, calculateShiftWindow } from './utils/policy-evaluator.util';
 import { calculateDailyAttendance } from './utils/daily-attendance-calculator.util';
 import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
+import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
 import { AttendanceDayStatus } from '@hrms/types';
 
 @Injectable()
@@ -1482,6 +1483,164 @@ export class AttendanceService {
       });
     }
     return office;
+  }
+
+  /**
+   * Retrieves past attendance daily summaries and sessions for current employee
+   */
+  async getMyHistory(user: AuthenticatedUser, limit: number = 30) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId: user.id, organizationId: user.organizationId, deletedAt: null },
+    });
+
+    if (!employee) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'No employee record found for current user.',
+        code: 'EMPLOYEE_NOT_FOUND',
+      });
+    }
+
+    const summaries = await this.prisma.attendanceDailySummary.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employeeId: employee.id,
+      },
+      orderBy: { date: 'desc' },
+      take: limit,
+      include: {
+        shift: true,
+      },
+    });
+
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employeeId: employee.id,
+      },
+      orderBy: { date: 'desc' },
+      take: limit * 2,
+      include: {
+        events: {
+          orderBy: { eventTimestamp: 'asc' },
+        },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Attendance history retrieved successfully.',
+      data: {
+        summaries: summaries.map((s) => ({
+          ...s,
+          dateStr: s.date.toISOString().split('T')[0],
+          grossHours: Math.round(((s.totalWorkMinutes + s.totalBreakMinutes) / 60) * 100) / 100,
+          netHours: Math.round((s.totalWorkMinutes / 60) * 100) / 100,
+          breakHours: Math.round((s.totalBreakMinutes / 60) * 100) / 100,
+        })),
+        sessions,
+      },
+    };
+  }
+
+  /**
+   * Submits an attendance correction request for review
+   */
+  async submitCorrectionRequest(user: AuthenticatedUser, dto: SubmitCorrectionRequestDto) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId: user.id, organizationId: user.organizationId, deletedAt: null },
+    });
+
+    if (!employee) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'No employee record found for current user.',
+        code: 'EMPLOYEE_NOT_FOUND',
+      });
+    }
+
+    const targetDateUtc = new Date(`${dto.targetDate}T00:00:00.000Z`);
+
+    const existing = await this.prisma.attendanceCorrectionRequest.findFirst({
+      where: {
+        organizationId: user.organizationId,
+        employeeId: employee.id,
+        targetDate: targetDateUtc,
+        status: 'PENDING',
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: `A pending correction request already exists for date ${dto.targetDate}.`,
+        code: 'DUPLICATE_CORRECTION_REQUEST',
+      });
+    }
+
+    const request = await this.prisma.attendanceCorrectionRequest.create({
+      data: {
+        organizationId: user.organizationId,
+        employeeId: employee.id,
+        targetDate: targetDateUtc,
+        requestedCheckIn: dto.requestedCheckIn ? new Date(dto.requestedCheckIn) : null,
+        requestedCheckOut: dto.requestedCheckOut ? new Date(dto.requestedCheckOut) : null,
+        reason: dto.reason.trim(),
+        status: 'PENDING',
+      },
+    });
+
+    await this.auditService.record({
+      action: 'ATTENDANCE_CORRECTION_REQUESTED',
+      entity: 'AttendanceCorrectionRequest',
+      entityId: request.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        targetDate: dto.targetDate,
+        reason: dto.reason,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Attendance correction request submitted successfully.',
+      data: request,
+    };
+  }
+
+  /**
+   * Retrieves all correction requests submitted by current user
+   */
+  async getMyCorrections(user: AuthenticatedUser) {
+    const employee = await this.prisma.employee.findFirst({
+      where: { userId: user.id, organizationId: user.organizationId, deletedAt: null },
+    });
+
+    if (!employee) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'No employee record found for current user.',
+        code: 'EMPLOYEE_NOT_FOUND',
+      });
+    }
+
+    const requests = await this.prisma.attendanceCorrectionRequest.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employeeId: employee.id,
+      },
+      orderBy: { submittedAt: 'desc' },
+      include: {
+        decision: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Correction requests retrieved successfully.',
+      data: requests,
+    };
   }
 
   async getTodaySummary() {

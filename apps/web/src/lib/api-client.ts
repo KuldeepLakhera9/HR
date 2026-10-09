@@ -709,6 +709,29 @@ export const attendanceApi = {
     const res = await fetchWithAuth<any>('/attendance/policy');
     return res.data;
   },
+
+  async getMyHistory(limit = 30) {
+    const res = await fetchWithAuth<any>(`/attendance/my-history?limit=${limit}`);
+    return res.data;
+  },
+
+  async submitCorrectionRequest(payload: {
+    targetDate: string;
+    requestedCheckIn?: string;
+    requestedCheckOut?: string;
+    reason: string;
+  }) {
+    const res = await fetchWithAuth<any>('/attendance/correction-request', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async getMyCorrections() {
+    const res = await fetchWithAuth<any>('/attendance/my-corrections');
+    return res.data;
+  },
 };
 
 export const attendancePoliciesApi = {
