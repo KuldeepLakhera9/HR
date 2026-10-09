@@ -24,9 +24,11 @@ import {
   FileEdit,
   RotateCcw,
   UserCheck,
+  Compass,
 } from 'lucide-react';
 import { attendanceApi } from '../../../lib/api-client';
 import { useAuth } from '../../../context/AuthContext';
+import { FieldAndRemoteOverviewDashboard } from './FieldAndRemoteOverviewDashboard';
 
 interface ManagerTeamAttendanceProps {
   onRefreshNeeded?: () => void;
@@ -34,6 +36,9 @@ interface ManagerTeamAttendanceProps {
 
 export const ManagerTeamAttendance: React.FC<ManagerTeamAttendanceProps> = () => {
   const { user } = useAuth();
+
+  // Sub-navigation state: 'roster' | 'field-remote'
+  const [managerSubTab, setManagerSubTab] = useState<'roster' | 'field-remote'>('roster');
 
   // Query Filter States
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -334,506 +339,550 @@ export const ManagerTeamAttendance: React.FC<ManagerTeamAttendanceProps> = () =>
         </div>
       )}
 
-      {/* 2. Team Attendance KPI Summary Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {isLoadingDashboard ? (
-          Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} className="p-4 border-stone-200">
-              <Skeleton className="h-4 w-20 mb-2" />
-              <Skeleton className="h-7 w-12" />
-            </Card>
-          ))
-        ) : (
-          <>
-            <KPICard
-              title="Team Size"
-              value={headcount.totalTeamMembers}
-              description="Direct & team reports"
-              icon={<Users className="h-4 w-4 text-stone-700" />}
-              iconBg="bg-stone-100"
-            />
-            <KPICard
-              title="Checked-In Now"
-              value={headcount.checkedInNow}
-              description="Working actively"
-              icon={
-                <span className="relative flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
-                </span>
-              }
-              iconBg="bg-emerald-50"
-            />
-            <KPICard
-              title="Present Today"
-              value={headcount.present}
-              description="Valid work summary"
-              icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
-              iconBg="bg-emerald-50"
-            />
-            <KPICard
-              title="Late Arrivals"
-              value={headcount.lateArrivals}
-              description="Past grace period"
-              icon={<Clock className="h-4 w-4 text-amber-700" />}
-              iconBg="bg-amber-50"
-            />
-            <KPICard
-              title="Incomplete"
-              value={headcount.incomplete}
-              description="Missing check-out"
-              icon={<AlertTriangle className="h-4 w-4 text-amber-700" />}
-              iconBg="bg-amber-100/60"
-            />
-            <KPICard
-              title="Pending Reviews"
-              value={pendingCorrectionsList.length}
-              description="Correction requests"
-              icon={<FileEdit className="h-4 w-4 text-purple-700" />}
-              iconBg="bg-purple-50"
-            />
-          </>
-        )}
+      {/* 1.5 Sub-Navigation Tab Bar */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 pb-2">
+        <button
+          onClick={() => setManagerSubTab('roster')}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+            managerSubTab === 'roster'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+          }`}
+        >
+          <Users className="h-3.5 w-3.5" />
+          <span>Team Roster & Regularization</span>
+        </button>
+
+        <button
+          onClick={() => setManagerSubTab('field-remote')}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+            managerSubTab === 'field-remote'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+          }`}
+        >
+          <Compass className="h-3.5 w-3.5" />
+          <span>Field & Remote Work Overview</span>
+        </button>
       </div>
 
-      {/* 3. Pending Correction Requests for Manager Review */}
-      {pendingCorrectionsList.length > 0 && (
-        <Card className="p-5 border-amber-200/80 bg-amber-50/20 shadow-xs">
-          <div className="flex items-center justify-between pb-3 border-b border-amber-200/50 mb-3">
-            <div className="flex items-center gap-2">
-              <FileCheck2 className="h-5 w-5 text-amber-700" />
-              <h3 className="text-sm font-bold text-stone-900">
-                Pending Team Attendance Regularizations ({pendingCorrectionsList.length})
-              </h3>
-            </div>
-            <span className="text-xs text-amber-800 font-medium">Requires manager action</span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-            {pendingCorrectionsList.map((req) => {
-              const categoryLabel =
-                req.reasonCategory === 'MISSING_CHECKOUT'
-                  ? 'Missing Check-Out'
-                  : req.reasonCategory === 'WRONG_EVENT'
-                    ? 'Wrong Event'
-                    : req.reasonCategory === 'TECHNICAL_GLITCH'
-                      ? 'Technical Glitch'
-                      : req.reasonCategory === 'EMERGENCY'
-                        ? 'Emergency'
-                        : req.reasonCategory === 'OFFICIAL_DUTY'
-                          ? 'Official Duty'
-                          : req.reasonCategory || 'Discrepancy';
-
-              const isSelfRequest = user?.id === req.employee?.userId;
-
-              return (
-                <div
-                  key={req.id}
-                  className="p-4 bg-white rounded-xl border border-stone-200 shadow-2xs space-y-2.5 text-xs"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-stone-900">
-                        {req.employee?.displayName || 'Team Member'}
-                      </span>
-                      <span className="text-[11px] font-mono text-stone-400">
-                        ({req.employee?.employeeCode})
-                      </span>
-                      <Badge variant="outline" size="sm" className="bg-stone-100 text-stone-700">
-                        {categoryLabel}
-                      </Badge>
-                    </div>
-                    <Badge variant="warning" size="sm">
-                      PENDING
-                    </Badge>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-2 text-stone-600 bg-stone-50 p-2.5 rounded-lg text-[11px]">
-                    <div>
-                      <span className="text-stone-400 block text-[10px]">DATE</span>
-                      <strong>{req.targetDate ? req.targetDate.split('T')[0] : '—'}</strong>
-                    </div>
-                    <div>
-                      <span className="text-stone-400 block text-[10px]">REQUESTED TIMINGS</span>
-                      <strong className="font-mono">
-                        {req.requestedCheckIn
-                          ? new Date(req.requestedCheckIn).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '09:00'}{' '}
-                        –{' '}
-                        {req.requestedCheckOut
-                          ? new Date(req.requestedCheckOut).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '18:00'}
-                      </strong>
-                    </div>
-                  </div>
-
-                  <p className="text-stone-600 text-xs">
-                    <strong>Reason:</strong> {req.explanation || req.reason}
-                  </p>
-
-                  {req.evidenceMetadata && (
-                    <p className="text-[11px] text-amber-800 bg-amber-50/60 px-2.5 py-1 rounded border border-amber-200/50">
-                      <strong>Evidence Reference:</strong>{' '}
-                      {typeof req.evidenceMetadata === 'object'
-                        ? req.evidenceMetadata.note || JSON.stringify(req.evidenceMetadata)
-                        : req.evidenceMetadata}
-                    </p>
-                  )}
-
-                  {isSelfRequest ? (
-                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-                      <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                        Self-Approval Prohibited (Pending HR/Skip-level Review)
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleOpenDecisionModal(req, 'REJECTED')}
-                        className="text-rose-700 hover:bg-rose-50 text-xs h-7 px-2.5"
-                      >
-                        <X className="h-3.5 w-3.5 mr-1" /> Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleOpenDecisionModal(req, 'APPROVED')}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 font-semibold"
-                      >
-                        <Check className="h-3.5 w-3.5 mr-1" /> Approve
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-      )}
-
-      {/* 4. Search & Status Filter Bar */}
-      <Card className="p-4 border-stone-200">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
-            <input
-              type="text"
-              placeholder="Search team member by name or employee code..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-stone-200 bg-white placeholder-stone-400 text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            />
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <select
-              value={selectedStatus}
-              onChange={(e) => {
-                setSelectedStatus(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="PRESENT">Present</option>
-              <option value="LATE">Late Arrivals</option>
-              <option value="HALF_DAY">Half Day</option>
-              <option value="INCOMPLETE">Incomplete</option>
-              <option value="PENDING_REVIEW">Pending Review</option>
-              <option value="ABSENT">Absent</option>
-              <option value="ON_LEAVE">On Leave</option>
-            </select>
-
-            {(searchQuery || selectedStatus !== 'ALL') && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setSearchQuery('');
-                  setSelectedStatus('ALL');
-                  setCurrentPage(1);
-                }}
-                className="text-stone-500 hover:text-stone-900 text-xs px-2.5"
-              >
-                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
-              </Button>
+      {managerSubTab === 'field-remote' ? (
+        <FieldAndRemoteOverviewDashboard isManagerView={true} initialDate={selectedDate} />
+      ) : (
+        <>
+          {/* 2. Team Attendance KPI Summary Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+            {isLoadingDashboard ? (
+              Array.from({ length: 6 }).map((_, i) => (
+                <Card key={i} className="p-4 border-stone-200">
+                  <Skeleton className="h-4 w-20 mb-2" />
+                  <Skeleton className="h-7 w-12" />
+                </Card>
+              ))
+            ) : (
+              <>
+                <KPICard
+                  title="Team Size"
+                  value={headcount.totalTeamMembers}
+                  description="Direct & team reports"
+                  icon={<Users className="h-4 w-4 text-stone-700" />}
+                  iconBg="bg-stone-100"
+                />
+                <KPICard
+                  title="Checked-In Now"
+                  value={headcount.checkedInNow}
+                  description="Working actively"
+                  icon={
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                    </span>
+                  }
+                  iconBg="bg-emerald-50"
+                />
+                <KPICard
+                  title="Present Today"
+                  value={headcount.present}
+                  description="Valid work summary"
+                  icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
+                  iconBg="bg-emerald-50"
+                />
+                <KPICard
+                  title="Late Arrivals"
+                  value={headcount.lateArrivals}
+                  description="Past grace period"
+                  icon={<Clock className="h-4 w-4 text-amber-700" />}
+                  iconBg="bg-amber-50"
+                />
+                <KPICard
+                  title="Incomplete"
+                  value={headcount.incomplete}
+                  description="Missing check-out"
+                  icon={<AlertTriangle className="h-4 w-4 text-amber-700" />}
+                  iconBg="bg-amber-100/60"
+                />
+                <KPICard
+                  title="Pending Reviews"
+                  value={pendingCorrectionsList.length}
+                  description="Correction requests"
+                  icon={<FileEdit className="h-4 w-4 text-purple-700" />}
+                  iconBg="bg-purple-50"
+                />
+              </>
             )}
           </div>
-        </div>
-      </Card>
 
-      {/* 5. Team Attendance Records Table */}
-      <Card className="border-stone-200 overflow-hidden shadow-2xs">
-        <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-stone-900">Team Attendance Table</h3>
-            <span className="text-xs text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full font-mono">
-              {paginationMeta.total} Members
-            </span>
-          </div>
-
-          <div className="text-xs text-stone-500 flex items-center gap-2">
-            <span>Per page:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="border border-stone-200 rounded px-1.5 py-0.5 text-xs bg-white"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-            </select>
-          </div>
-        </div>
-
-        {recordsError && (
-          <div className="p-6 text-center">
-            <div className="inline-flex p-3 bg-rose-50 text-rose-600 rounded-full mb-2">
-              <AlertCircle className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-semibold text-rose-900">{recordsError}</p>
-            <Button size="sm" variant="secondary" onClick={loadRecords} className="mt-3 text-xs">
-              Retry
-            </Button>
-          </div>
-        )}
-
-        {isLoadingRecords && !recordsError && (
-          <div className="p-6 space-y-3">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4">
-                <Skeleton className="h-9 w-9 rounded-full" />
-                <div className="space-y-1.5 flex-1">
-                  <Skeleton className="h-4 w-40" />
-                  <Skeleton className="h-3 w-28" />
+          {/* 3. Pending Correction Requests for Manager Review */}
+          {pendingCorrectionsList.length > 0 && (
+            <Card className="p-5 border-amber-200/80 bg-amber-50/20 shadow-xs">
+              <div className="flex items-center justify-between pb-3 border-b border-amber-200/50 mb-3">
+                <div className="flex items-center gap-2">
+                  <FileCheck2 className="h-5 w-5 text-amber-700" />
+                  <h3 className="text-sm font-bold text-stone-900">
+                    Pending Team Attendance Regularizations ({pendingCorrectionsList.length})
+                  </h3>
                 </div>
-                <Skeleton className="h-6 w-20" />
-                <Skeleton className="h-4 w-24" />
+                <span className="text-xs text-amber-800 font-medium">Requires manager action</span>
               </div>
-            ))}
-          </div>
-        )}
 
-        {!isLoadingRecords && !recordsError && records.length === 0 && (
-          <div className="p-12 text-center space-y-3">
-            <div className="inline-flex p-3 bg-stone-100 text-stone-400 rounded-full">
-              <Users className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-semibold text-stone-800">No team reports found</p>
-            <p className="text-xs text-stone-500 max-w-sm mx-auto">
-              No subordinate employees reporting to your profile matched the criteria for{' '}
-              {selectedDate}.
-            </p>
-          </div>
-        )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                {pendingCorrectionsList.map((req) => {
+                  const categoryLabel =
+                    req.reasonCategory === 'MISSING_CHECKOUT'
+                      ? 'Missing Check-Out'
+                      : req.reasonCategory === 'WRONG_EVENT'
+                        ? 'Wrong Event'
+                        : req.reasonCategory === 'TECHNICAL_GLITCH'
+                          ? 'Technical Glitch'
+                          : req.reasonCategory === 'EMERGENCY'
+                            ? 'Emergency'
+                            : req.reasonCategory === 'OFFICIAL_DUTY'
+                              ? 'Official Duty'
+                              : req.reasonCategory || 'Discrepancy';
 
-        {!isLoadingRecords && !recordsError && records.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-stone-700">
-              <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wider text-stone-500 border-b border-stone-200">
-                <tr>
-                  <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Designation & Dept</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">First Punch</th>
-                  <th className="py-3 px-4">Last Punch</th>
-                  <th className="py-3 px-4">Net Hours</th>
-                  <th className="py-3 px-4">Alerts</th>
-                  <th className="py-3 px-4">Verification</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 font-medium">
-                {records.map((row: any) => {
-                  const emp = row.employee;
-                  const sum = row.summary;
-                  const loc = row.locationVerification;
-                  const active = row.activeSession;
-                  const excCount = row.exceptionCount || 0;
+                  const isSelfRequest = user?.id === req.employee?.userId;
 
                   return (
-                    <tr
-                      key={emp.id}
-                      className="hover:bg-stone-50/80 transition-colors cursor-pointer"
-                      onClick={() => handleOpenDetail(emp.id)}
+                    <div
+                      key={req.id}
+                      className="p-4 bg-white rounded-xl border border-stone-200 shadow-2xs space-y-2.5 text-xs"
                     >
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-amber-600 to-amber-800 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
-                            {emp.displayName ? emp.displayName.charAt(0).toUpperCase() : 'M'}
-                          </div>
-                          <div>
-                            <span className="font-bold text-stone-900 block hover:text-amber-700">
-                              {emp.displayName}
-                            </span>
-                            <span className="text-[11px] font-mono text-stone-400">
-                              {emp.employeeCode}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
-
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="text-stone-800 text-xs font-semibold">
-                          {emp.designation}
-                        </div>
-                        <div className="text-[11px] text-stone-400">{emp.department}</div>
-                      </td>
-
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          {getStatusBadge(sum.status)}
-                          {active && (
-                            <span
-                              className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"
-                              title="Active open session"
-                            />
-                          )}
-                        </div>
-                      </td>
-
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
-                        {sum.firstCheckIn
-                          ? new Date(sum.firstCheckIn).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '—'}
-                      </td>
-
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
-                        {sum.lastCheckOut ? (
-                          new Date(sum.lastCheckOut).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        ) : active ? (
-                          <span className="text-emerald-700 text-[11px] font-sans">Open</span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-900 font-semibold">
-                        {sum.netHours > 0 ? `${sum.netHours} hrs` : '0 hrs'}
-                        {sum.lateMinutes > 0 && (
-                          <span className="text-amber-700 text-[11px] block font-sans">
-                            +{sum.lateMinutes}m late
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-stone-900">
+                            {req.employee?.displayName || 'Team Member'}
                           </span>
-                        )}
-                      </td>
-
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {excCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                            <ShieldAlert className="h-3 w-3" /> {excCount} Alert
-                            {excCount > 1 ? 's' : ''}
+                          <span className="text-[11px] font-mono text-stone-400">
+                            ({req.employee?.employeeCode})
                           </span>
-                        ) : (
-                          <span className="text-stone-400 text-[11px]">Normal</span>
-                        )}
-                      </td>
+                          <Badge
+                            variant="outline"
+                            size="sm"
+                            className="bg-stone-100 text-stone-700"
+                          >
+                            {categoryLabel}
+                          </Badge>
+                        </div>
+                        <Badge variant="warning" size="sm">
+                          PENDING
+                        </Badge>
+                      </div>
 
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {loc ? (
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1">
-                              {loc.geofenceStatus === 'VERIFIED' ? (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
-                                  <ShieldCheck className="h-3.5 w-3.5" /> Inside (
-                                  {loc.distanceMeters}m)
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700">
-                                  <ShieldAlert className="h-3.5 w-3.5" /> Outside (
-                                  {loc.distanceMeters}m)
-                                </span>
-                              )}
-                            </div>
-                            {loc.isGpsRedacted && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-stone-400">
-                                <Lock className="h-2.5 w-2.5" /> GPS Redacted
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-stone-400 text-[11px]">—</span>
-                        )}
-                      </td>
+                      <div className="grid grid-cols-2 gap-2 text-stone-600 bg-stone-50 p-2.5 rounded-lg text-[11px]">
+                        <div>
+                          <span className="text-stone-400 block text-[10px]">DATE</span>
+                          <strong>{req.targetDate ? req.targetDate.split('T')[0] : '—'}</strong>
+                        </div>
+                        <div>
+                          <span className="text-stone-400 block text-[10px]">
+                            REQUESTED TIMINGS
+                          </span>
+                          <strong className="font-mono">
+                            {req.requestedCheckIn
+                              ? new Date(req.requestedCheckIn).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '09:00'}{' '}
+                            –{' '}
+                            {req.requestedCheckOut
+                              ? new Date(req.requestedCheckOut).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '18:00'}
+                          </strong>
+                        </div>
+                      </div>
 
-                      <td
-                        className="py-3 px-4 text-right whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() => handleOpenDetail(emp.id)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/70 px-2.5 py-1 rounded-lg transition-colors"
-                        >
-                          <Eye className="h-3.5 w-3.5" /> View
-                        </button>
-                      </td>
-                    </tr>
+                      <p className="text-stone-600 text-xs">
+                        <strong>Reason:</strong> {req.explanation || req.reason}
+                      </p>
+
+                      {req.evidenceMetadata && (
+                        <p className="text-[11px] text-amber-800 bg-amber-50/60 px-2.5 py-1 rounded border border-amber-200/50">
+                          <strong>Evidence Reference:</strong>{' '}
+                          {typeof req.evidenceMetadata === 'object'
+                            ? req.evidenceMetadata.note || JSON.stringify(req.evidenceMetadata)
+                            : req.evidenceMetadata}
+                        </p>
+                      )}
+
+                      {isSelfRequest ? (
+                        <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                          <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                            Self-Approval Prohibited (Pending HR/Skip-level Review)
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleOpenDecisionModal(req, 'REJECTED')}
+                            className="text-rose-700 hover:bg-rose-50 text-xs h-7 px-2.5"
+                          >
+                            <X className="h-3.5 w-3.5 mr-1" /> Reject
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleOpenDecisionModal(req, 'APPROVED')}
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 font-semibold"
+                          >
+                            <Check className="h-3.5 w-3.5 mr-1" /> Approve
+                          </Button>
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
-              </tbody>
-            </table>
-          </div>
-        )}
+              </div>
+            </Card>
+          )}
 
-        {/* Pagination Footer */}
-        <div className="p-4 border-t border-stone-100 bg-stone-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-500">
-          <div>
-            Showing{' '}
-            <strong className="text-stone-800">
-              {paginationMeta.total === 0
-                ? 0
-                : (paginationMeta.page - 1) * paginationMeta.limit + 1}
-            </strong>{' '}
-            to{' '}
-            <strong className="text-stone-800">
-              {Math.min(paginationMeta.page * paginationMeta.limit, paginationMeta.total)}
-            </strong>{' '}
-            of <strong className="text-stone-800">{paginationMeta.total}</strong> team members
-          </div>
+          {/* 4. Search & Status Filter Bar */}
+          <Card className="p-4 border-stone-200">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Search team member by name or employee code..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-stone-200 bg-white placeholder-stone-400 text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
+              </div>
 
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={paginationMeta.page <= 1 || isLoadingRecords}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="h-8 px-2.5 text-xs border-stone-200"
-            >
-              <ChevronLeft className="h-4 w-4 mr-0.5" /> Previous
-            </Button>
-            <span className="px-2 font-semibold text-stone-700">
-              Page {paginationMeta.page} of {paginationMeta.totalPages}
-            </span>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={paginationMeta.page >= paginationMeta.totalPages || isLoadingRecords}
-              onClick={() => setCurrentPage((p) => Math.min(paginationMeta.totalPages, p + 1))}
-              className="h-8 px-2.5 text-xs border-stone-200"
-            >
-              Next <ChevronRight className="h-4 w-4 ml-0.5" />
-            </Button>
-          </div>
-        </div>
-      </Card>
+              <div className="flex items-center gap-2.5">
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => {
+                    setSelectedStatus(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="PRESENT">Present</option>
+                  <option value="LATE">Late Arrivals</option>
+                  <option value="HALF_DAY">Half Day</option>
+                  <option value="INCOMPLETE">Incomplete</option>
+                  <option value="PENDING_REVIEW">Pending Review</option>
+                  <option value="ABSENT">Absent</option>
+                  <option value="ON_LEAVE">On Leave</option>
+                </select>
+
+                {(searchQuery || selectedStatus !== 'ALL') && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setSearchQuery('');
+                      setSelectedStatus('ALL');
+                      setCurrentPage(1);
+                    }}
+                    className="text-stone-500 hover:text-stone-900 text-xs px-2.5"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+
+          {/* 5. Team Attendance Records Table */}
+          <Card className="border-stone-200 overflow-hidden shadow-2xs">
+            <div className="p-4 border-b border-stone-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-stone-900">Team Attendance Table</h3>
+                <span className="text-xs text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full font-mono">
+                  {paginationMeta.total} Members
+                </span>
+              </div>
+
+              <div className="text-xs text-stone-500 flex items-center gap-2">
+                <span>Per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="border border-stone-200 rounded px-1.5 py-0.5 text-xs bg-white"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
+
+            {recordsError && (
+              <div className="p-6 text-center">
+                <div className="inline-flex p-3 bg-rose-50 text-rose-600 rounded-full mb-2">
+                  <AlertCircle className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-semibold text-rose-900">{recordsError}</p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={loadRecords}
+                  className="mt-3 text-xs"
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
+
+            {isLoadingRecords && !recordsError && (
+              <div className="p-6 space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <div className="space-y-1.5 flex-1">
+                      <Skeleton className="h-4 w-40" />
+                      <Skeleton className="h-3 w-28" />
+                    </div>
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-4 w-24" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {!isLoadingRecords && !recordsError && records.length === 0 && (
+              <div className="p-12 text-center space-y-3">
+                <div className="inline-flex p-3 bg-stone-100 text-stone-400 rounded-full">
+                  <Users className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-semibold text-stone-800">No team reports found</p>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                  No subordinate employees reporting to your profile matched the criteria for{' '}
+                  {selectedDate}.
+                </p>
+              </div>
+            )}
+
+            {!isLoadingRecords && !recordsError && records.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-stone-700">
+                  <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wider text-stone-500 border-b border-stone-200">
+                    <tr>
+                      <th className="py-3 px-4">Employee</th>
+                      <th className="py-3 px-4">Designation & Dept</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">First Punch</th>
+                      <th className="py-3 px-4">Last Punch</th>
+                      <th className="py-3 px-4">Net Hours</th>
+                      <th className="py-3 px-4">Alerts</th>
+                      <th className="py-3 px-4">Verification</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-medium">
+                    {records.map((row: any) => {
+                      const emp = row.employee;
+                      const sum = row.summary;
+                      const loc = row.locationVerification;
+                      const active = row.activeSession;
+                      const excCount = row.exceptionCount || 0;
+
+                      return (
+                        <tr
+                          key={emp.id}
+                          className="hover:bg-stone-50/80 transition-colors cursor-pointer"
+                          onClick={() => handleOpenDetail(emp.id)}
+                        >
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-amber-600 to-amber-800 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                {emp.displayName ? emp.displayName.charAt(0).toUpperCase() : 'M'}
+                              </div>
+                              <div>
+                                <span className="font-bold text-stone-900 block hover:text-amber-700">
+                                  {emp.displayName}
+                                </span>
+                                <span className="text-[11px] font-mono text-stone-400">
+                                  {emp.employeeCode}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="text-stone-800 text-xs font-semibold">
+                              {emp.designation}
+                            </div>
+                            <div className="text-[11px] text-stone-400">{emp.department}</div>
+                          </td>
+
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              {getStatusBadge(sum.status)}
+                              {active && (
+                                <span
+                                  className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                                  title="Active open session"
+                                />
+                              )}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
+                            {sum.firstCheckIn
+                              ? new Date(sum.firstCheckIn).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '—'}
+                          </td>
+
+                          <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
+                            {sum.lastCheckOut ? (
+                              new Date(sum.lastCheckOut).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            ) : active ? (
+                              <span className="text-emerald-700 text-[11px] font-sans">Open</span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-900 font-semibold">
+                            {sum.netHours > 0 ? `${sum.netHours} hrs` : '0 hrs'}
+                            {sum.lateMinutes > 0 && (
+                              <span className="text-amber-700 text-[11px] block font-sans">
+                                +{sum.lateMinutes}m late
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {excCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                                <ShieldAlert className="h-3 w-3" /> {excCount} Alert
+                                {excCount > 1 ? 's' : ''}
+                              </span>
+                            ) : (
+                              <span className="text-stone-400 text-[11px]">Normal</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {loc ? (
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1">
+                                  {loc.geofenceStatus === 'VERIFIED' ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                                      <ShieldCheck className="h-3.5 w-3.5" /> Inside (
+                                      {loc.distanceMeters}m)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700">
+                                      <ShieldAlert className="h-3.5 w-3.5" /> Outside (
+                                      {loc.distanceMeters}m)
+                                    </span>
+                                  )}
+                                </div>
+                                {loc.isGpsRedacted && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] text-stone-400">
+                                    <Lock className="h-2.5 w-2.5" /> GPS Redacted
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-stone-400 text-[11px]">—</span>
+                            )}
+                          </td>
+
+                          <td
+                            className="py-3 px-4 text-right whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => handleOpenDetail(emp.id)}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/70 px-2.5 py-1 rounded-lg transition-colors"
+                            >
+                              <Eye className="h-3.5 w-3.5" /> View
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination Footer */}
+            <div className="p-4 border-t border-stone-100 bg-stone-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-500">
+              <div>
+                Showing{' '}
+                <strong className="text-stone-800">
+                  {paginationMeta.total === 0
+                    ? 0
+                    : (paginationMeta.page - 1) * paginationMeta.limit + 1}
+                </strong>{' '}
+                to{' '}
+                <strong className="text-stone-800">
+                  {Math.min(paginationMeta.page * paginationMeta.limit, paginationMeta.total)}
+                </strong>{' '}
+                of <strong className="text-stone-800">{paginationMeta.total}</strong> team members
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={paginationMeta.page <= 1 || isLoadingRecords}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="h-8 px-2.5 text-xs border-stone-200"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-0.5" /> Previous
+                </Button>
+                <span className="px-2 font-semibold text-stone-700">
+                  Page {paginationMeta.page} of {paginationMeta.totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={paginationMeta.page >= paginationMeta.totalPages || isLoadingRecords}
+                  onClick={() => setCurrentPage((p) => Math.min(paginationMeta.totalPages, p + 1))}
+                  className="h-8 px-2.5 text-xs border-stone-200"
+                >
+                  Next <ChevronRight className="h-4 w-4 ml-0.5" />
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </>
+      )}
 
       {/* 6. Review & Decision Modal */}
       <Dialog

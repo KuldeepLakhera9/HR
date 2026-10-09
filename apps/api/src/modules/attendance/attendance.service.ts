@@ -32,6 +32,7 @@ import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.
 import { DecideCorrectionRequestDto } from './dto/decide-correction.dto';
 import { AttendanceExceptionQueryDto } from './dto/attendance-exception-query.dto';
 import { ResolveExceptionDto } from './dto/resolve-exception.dto';
+import { RemoteFieldOverviewQueryDto } from './dto/remote-field-overview-query.dto';
 import { HierarchyService } from '../employees/hierarchy.service';
 import { NotificationsService } from '../notifications/notifications.module';
 import { AttendanceDayStatus, AttendanceExceptionType } from '@hrms/types';
@@ -4389,6 +4390,645 @@ export class AttendanceService {
       message: `Exception scan completed for date ${dateStr}. Detected ${detectedCount} potential exception instances.`,
       scannedSummariesCount: summaries.length,
       detectedCount,
+    };
+  }
+
+  /**
+   * Retrieves aggregated data-backed overview of official visits, field activity, WFH requests,
+   * pending approvals, exceptions, completed visits, and attendance modes.
+   * Strictly enforces caller scope (managers see only their reporting tree, HR/Admin can query org or filter).
+   * Distinguishes approved requests from actual checked-in sessions.
+   */
+  async getRemoteAndFieldOverview(user: AuthenticatedUser, query: RemoteFieldOverviewQueryDto) {
+    const isManagerOnly =
+      user.roles.includes('MANAGER' as any) &&
+      !user.roles.includes('ADMIN' as any) &&
+      !user.roles.includes('HR' as any);
+
+    let scopedEmployeeIds: string[] | null = null;
+    let managerEmployee: any = null;
+
+    if (isManagerOnly) {
+      const teamRes = await this.resolveManagerTeam(user);
+      managerEmployee = teamRes.managerEmployee;
+      scopedEmployeeIds = teamRes.teamMemberIds;
+    } else if (query.managerId) {
+      const team = await this.hierarchyService.getTeam(query.managerId, user.organizationId);
+      scopedEmployeeIds = team.allMemberIds;
+    }
+
+    const defaultResolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      managerEmployee?.id || 'default',
+      new Date(),
+      user.organizationId,
+    );
+    const timezone = defaultResolution.policy?.timezone || 'Asia/Kolkata';
+    const cutoffHour = defaultResolution.policy?.workingDayStartHour ?? 5;
+
+    const workingDateStr =
+      query.date || resolveWorkingDay(new Date(), cutoffHour, timezone).workingDateStr;
+    const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
+    const endOfDayUtc = new Date(`${workingDateStr}T23:59:59.999Z`);
+
+    // Handle optional date range
+    let rangeFilter: any = null;
+    if (query.startDate && query.endDate) {
+      rangeFilter = {
+        gte: new Date(`${query.startDate}T00:00:00.000Z`),
+        lte: new Date(`${query.endDate}T23:59:59.999Z`),
+      };
+    }
+
+    // Build base employee filter
+    const baseEmployeeWhere: any = {
+      organizationId: user.organizationId,
+      deletedAt: null,
+      isActive: true,
+    };
+    if (scopedEmployeeIds !== null) {
+      baseEmployeeWhere.id = { in: scopedEmployeeIds };
+    }
+    if (query.branchId) {
+      baseEmployeeWhere.employment = { ...baseEmployeeWhere.employment, branchId: query.branchId };
+    }
+    if (query.departmentId) {
+      baseEmployeeWhere.employment = {
+        ...baseEmployeeWhere.employment,
+        departmentId: query.departmentId,
+      };
+    }
+    if (query.search?.trim()) {
+      const term = query.search.trim();
+      baseEmployeeWhere.OR = [
+        { displayName: { contains: term, mode: 'insensitive' } },
+        { employeeCode: { contains: term, mode: 'insensitive' } },
+        { firstName: { contains: term, mode: 'insensitive' } },
+        { lastName: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    // If manager has 0 subordinates, return structured empty payload
+    if (isManagerOnly && (!scopedEmployeeIds || scopedEmployeeIds.length === 0)) {
+      return {
+        success: true,
+        message: 'Remote and field overview retrieved (no subordinates assigned).',
+        data: this.buildEmptyOverviewData(workingDateStr, timezone),
+      };
+    }
+
+    // 1. OFFICIAL VISITS BY STATUS
+    const visitWhere: any = {
+      organizationId: user.organizationId,
+      employee: baseEmployeeWhere,
+    };
+    if (query.status && query.status !== 'ALL') {
+      visitWhere.status = query.status as any;
+    }
+    if (rangeFilter) {
+      visitWhere.startDate = { lte: rangeFilter.lte };
+      visitWhere.endDate = { gte: rangeFilter.gte };
+    }
+
+    const visitStatusCountsRaw = await this.prisma.officialVisit.groupBy({
+      by: ['status'],
+      where: visitWhere,
+      _count: { id: true },
+    });
+
+    const visitsByStatus: Record<string, number> = {
+      DRAFT: 0,
+      SUBMITTED: 0,
+      APPROVED: 0,
+      IN_PROGRESS: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+      REJECTED: 0,
+      EXPIRED: 0,
+      total: 0,
+    };
+    for (const item of visitStatusCountsRaw) {
+      if (visitsByStatus[item.status] !== undefined) {
+        visitsByStatus[item.status] = item._count.id;
+      }
+      visitsByStatus.total += item._count.id;
+    }
+
+    // 2. TODAY'S FIELD ACTIVITY
+    // A: Approved/In-Progress visits scheduled for workingDateUtc
+    const approvedVisitsTodayList = await this.prisma.officialVisit.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employee: baseEmployeeWhere,
+        status: { in: [VisitStatus.APPROVED, VisitStatus.IN_PROGRESS] },
+        startDate: { lte: endOfDayUtc },
+        endDate: { gte: workingDateUtc },
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+        destinations: true,
+      },
+    });
+
+    // B: Actual sessions punched with mode OFFICIAL_VISIT today
+    const fieldSessionsToday = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        attendanceMode: AttendanceMode.OFFICIAL_VISIT,
+        employee: baseEmployeeWhere,
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+        officialVisit: {
+          include: { destinations: true },
+        },
+        events: {
+          where: { eventType: 'CHECK_IN' },
+          take: 1,
+        },
+      },
+    });
+
+    const fieldCheckedInEmployeeIds = new Set(fieldSessionsToday.map((s) => s.employeeId));
+    const approvedVisitsTodayCount = approvedVisitsTodayList.length;
+    const fieldCheckedInTodayCount = fieldCheckedInEmployeeIds.size;
+    const activeFieldSessionsNow = fieldSessionsToday.filter((s) => s.status === 'OPEN').length;
+    const fieldNotCheckedInTodayCount = Math.max(
+      0,
+      approvedVisitsTodayCount - fieldCheckedInTodayCount,
+    );
+
+    // Detail items for field activity table
+    const todayFieldDuties = approvedVisitsTodayList.map((visit) => {
+      const activeSession = fieldSessionsToday.find((s) => s.employeeId === visit.employeeId);
+      const isCheckedIn = !!activeSession;
+      return {
+        id: visit.id,
+        employee: visit.employee,
+        title: visit.title,
+        purpose: visit.purpose,
+        status: visit.status,
+        startDate: visit.startDate,
+        endDate: visit.endDate,
+        expectedDurationDays: visit.expectedDurationDays,
+        destinations: visit.destinations,
+        attendanceStatus: isCheckedIn ? 'CHECKED_IN' : 'AUTHORIZED_NOT_CHECKED_IN',
+        session: activeSession
+          ? {
+              id: activeSession.id,
+              status: activeSession.status,
+              checkInTime: activeSession.checkInTime,
+              checkOutTime: activeSession.checkOutTime,
+              totalWorkMinutes: activeSession.totalWorkMinutes,
+              firstEvent: activeSession.events[0] || null,
+            }
+          : null,
+      };
+    });
+
+    // 3. WFH REQUESTS (STATUS & DURATION BREAKDOWN)
+    const wfhWhere: any = {
+      organizationId: user.organizationId,
+      employee: baseEmployeeWhere,
+    };
+    if (query.status && query.status !== 'ALL') {
+      wfhWhere.status = query.status as any;
+    }
+    if (rangeFilter) {
+      wfhWhere.startDate = { lte: rangeFilter.lte };
+      wfhWhere.endDate = { gte: rangeFilter.gte };
+    }
+
+    const wfhStatusCountsRaw = await this.prisma.wfhRequest.groupBy({
+      by: ['status'],
+      where: wfhWhere,
+      _count: { id: true },
+    });
+
+    const wfhDurationCountsRaw = await this.prisma.wfhRequest.groupBy({
+      by: ['durationType'],
+      where: wfhWhere,
+      _count: { id: true },
+    });
+
+    const wfhByStatus: Record<string, number> = {
+      SUBMITTED: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+      CANCELLED: 0,
+      COMPLETED: 0,
+      total: 0,
+    };
+    for (const item of wfhStatusCountsRaw) {
+      if (wfhByStatus[item.status] !== undefined) {
+        wfhByStatus[item.status] = item._count.id;
+      }
+      wfhByStatus.total += item._count.id;
+    }
+
+    const wfhByDuration: Record<string, number> = {
+      FULL_DAY: 0,
+      FIRST_HALF: 0,
+      SECOND_HALF: 0,
+      CUSTOM_RANGE: 0,
+    };
+    for (const item of wfhDurationCountsRaw) {
+      if (wfhByDuration[item.durationType] !== undefined) {
+        wfhByDuration[item.durationType] = item._count.id;
+      }
+    }
+
+    // Approved WFH requests active today
+    const approvedWfhTodayList = await this.prisma.wfhRequest.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employee: baseEmployeeWhere,
+        status: WfhStatus.APPROVED,
+        startDate: { lte: endOfDayUtc },
+        endDate: { gte: workingDateUtc },
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+      },
+    });
+
+    // Actual sessions punched with mode WFH today
+    const wfhSessionsToday = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        attendanceMode: AttendanceMode.WFH,
+        employee: baseEmployeeWhere,
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+      },
+    });
+
+    const wfhCheckedInEmployeeIds = new Set(wfhSessionsToday.map((s) => s.employeeId));
+    const approvedWfhTodayCount = approvedWfhTodayList.length;
+    const wfhCheckedInTodayCount = wfhCheckedInEmployeeIds.size;
+    const activeWfhSessionsNow = wfhSessionsToday.filter((s) => s.status === 'OPEN').length;
+    const wfhNotCheckedInTodayCount = Math.max(0, approvedWfhTodayCount - wfhCheckedInTodayCount);
+
+    const todayWfhDuties = approvedWfhTodayList.map((req) => {
+      const activeSession = wfhSessionsToday.find((s) => s.employeeId === req.employeeId);
+      const isCheckedIn = !!activeSession;
+      return {
+        id: req.id,
+        employee: req.employee,
+        startDate: req.startDate,
+        endDate: req.endDate,
+        durationType: req.durationType,
+        reason: req.reason,
+        status: req.status,
+        attendanceStatus: isCheckedIn ? 'CHECKED_IN' : 'AUTHORIZED_NOT_CHECKED_IN',
+        session: activeSession
+          ? {
+              id: activeSession.id,
+              status: activeSession.status,
+              checkInTime: activeSession.checkInTime,
+              checkOutTime: activeSession.checkOutTime,
+              totalWorkMinutes: activeSession.totalWorkMinutes,
+            }
+          : null,
+      };
+    });
+
+    // 4. PENDING APPROVALS QUEUE
+    const pendingVisitsList = await this.prisma.officialVisit.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employee: baseEmployeeWhere,
+        status: VisitStatus.SUBMITTED,
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+        destinations: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+    const pendingVisitsCount = await this.prisma.officialVisit.count({
+      where: {
+        organizationId: user.organizationId,
+        employee: baseEmployeeWhere,
+        status: VisitStatus.SUBMITTED,
+      },
+    });
+
+    const pendingWfhList = await this.prisma.wfhRequest.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employee: baseEmployeeWhere,
+        status: WfhStatus.SUBMITTED,
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 10,
+    });
+    const pendingWfhCount = await this.prisma.wfhRequest.count({
+      where: {
+        organizationId: user.organizationId,
+        employee: baseEmployeeWhere,
+        status: WfhStatus.SUBMITTED,
+      },
+    });
+
+    const pendingCorrectionsCount = await this.prisma.attendanceCorrectionRequest.count({
+      where: {
+        organizationId: user.organizationId,
+        employee: baseEmployeeWhere,
+        status: 'PENDING',
+      },
+    });
+
+    // 5. ATTENDANCE EXCEPTIONS
+    const exceptionsWhere: any = {
+      organizationId: user.organizationId,
+      employee: baseEmployeeWhere,
+      date: rangeFilter ? rangeFilter : workingDateUtc,
+    };
+
+    const exceptionsList = await this.prisma.attendanceException.findMany({
+      where: exceptionsWhere,
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 15,
+    });
+
+    const totalExceptionsCount = await this.prisma.attendanceException.count({
+      where: exceptionsWhere,
+    });
+    const unresolvedExceptionsCount = await this.prisma.attendanceException.count({
+      where: { ...exceptionsWhere, resolved: false },
+    });
+
+    const exceptionsByTypeRaw = await this.prisma.attendanceException.groupBy({
+      by: ['exceptionType'],
+      where: exceptionsWhere,
+      _count: { id: true },
+    });
+    const exceptionsByType: Record<string, number> = {};
+    for (const ex of exceptionsByTypeRaw) {
+      exceptionsByType[ex.exceptionType] = ex._count.id;
+    }
+
+    // 6. COMPLETED VISITS
+    const completedVisitsWhere: any = {
+      organizationId: user.organizationId,
+      employee: baseEmployeeWhere,
+      status: VisitStatus.COMPLETED,
+    };
+    if (rangeFilter) {
+      completedVisitsWhere.startDate = { lte: rangeFilter.lte };
+      completedVisitsWhere.endDate = { gte: rangeFilter.gte };
+    }
+
+    const completedVisitsCount = await this.prisma.officialVisit.count({
+      where: completedVisitsWhere,
+    });
+
+    const completedVisitsList = await this.prisma.officialVisit.findMany({
+      where: completedVisitsWhere,
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+        destinations: true,
+      },
+      orderBy: { updatedAt: 'desc' },
+      take: 10,
+    });
+
+    // 7. ACTUAL ATTENDANCE MODES BREAKDOWN
+    const attendanceEventsToday = await this.prisma.attendanceEvent.findMany({
+      where: {
+        organizationId: user.organizationId,
+        session: { date: workingDateUtc },
+        eventType: 'CHECK_IN',
+        employee: baseEmployeeWhere,
+      },
+      select: { attendanceMode: true, employeeId: true },
+    });
+
+    const attendanceModes = {
+      office: attendanceEventsToday.filter((e) => e.attendanceMode === AttendanceMode.OFFICE)
+        .length,
+      officialVisit: attendanceEventsToday.filter(
+        (e) => e.attendanceMode === AttendanceMode.OFFICIAL_VISIT,
+      ).length,
+      workFromHome: attendanceEventsToday.filter((e) => e.attendanceMode === AttendanceMode.WFH)
+        .length,
+      total: attendanceEventsToday.length,
+    };
+
+    // 8. REQUESTS VS ATTENDANCE RECONCILIATION
+    const requestsVsAttendance = {
+      fieldDuty: {
+        authorizedRequests: approvedVisitsTodayCount,
+        actualCheckedInAttendance: fieldCheckedInTodayCount,
+        activeNow: activeFieldSessionsNow,
+        notCheckedInYet: fieldNotCheckedInTodayCount,
+      },
+      workFromHome: {
+        authorizedRequests: approvedWfhTodayCount,
+        actualCheckedInAttendance: wfhCheckedInTodayCount,
+        activeNow: activeWfhSessionsNow,
+        notCheckedInYet: wfhNotCheckedInTodayCount,
+      },
+      reconciliationMessage:
+        'Approved requests represent administrative duty authorizations. Actual attendance is accredited strictly upon recorded punch events.',
+    };
+
+    return {
+      success: true,
+      message: 'Remote and field overview retrieved successfully.',
+      data: {
+        date: workingDateStr,
+        reportingTimestamp: new Date().toISOString(),
+        timezone,
+        cutoffHour,
+        visitsByStatus,
+        todayFieldActivity: {
+          approvedVisitsToday: approvedVisitsTodayCount,
+          fieldCheckedInToday: fieldCheckedInTodayCount,
+          activeFieldSessionsNow,
+          fieldNotCheckedInToday: fieldNotCheckedInTodayCount,
+          duties: todayFieldDuties,
+        },
+        wfhRequests: {
+          byStatus: wfhByStatus,
+          byDuration: wfhByDuration,
+          approvedWfhToday: approvedWfhTodayCount,
+          wfhCheckedInToday: wfhCheckedInTodayCount,
+          activeWfhSessionsNow,
+          wfhNotCheckedInToday: wfhNotCheckedInTodayCount,
+          duties: todayWfhDuties,
+        },
+        pendingApprovals: {
+          visits: pendingVisitsList,
+          visitsCount: pendingVisitsCount,
+          wfh: pendingWfhList,
+          wfhCount: pendingWfhCount,
+          correctionsCount: pendingCorrectionsCount,
+          totalPending: pendingVisitsCount + pendingWfhCount + pendingCorrectionsCount,
+        },
+        exceptions: {
+          total: totalExceptionsCount,
+          unresolved: unresolvedExceptionsCount,
+          byType: exceptionsByType,
+          recent: exceptionsList,
+        },
+        completedVisits: {
+          total: completedVisitsCount,
+          recent: completedVisitsList,
+        },
+        attendanceModes,
+        requestsVsAttendance,
+      },
+    };
+  }
+
+  private buildEmptyOverviewData(workingDateStr: string, timezone: string) {
+    return {
+      date: workingDateStr,
+      reportingTimestamp: new Date().toISOString(),
+      timezone,
+      cutoffHour: 5,
+      visitsByStatus: {
+        DRAFT: 0,
+        SUBMITTED: 0,
+        APPROVED: 0,
+        IN_PROGRESS: 0,
+        COMPLETED: 0,
+        CANCELLED: 0,
+        REJECTED: 0,
+        EXPIRED: 0,
+        total: 0,
+      },
+      todayFieldActivity: {
+        approvedVisitsToday: 0,
+        fieldCheckedInToday: 0,
+        activeFieldSessionsNow: 0,
+        fieldNotCheckedInToday: 0,
+        duties: [],
+      },
+      wfhRequests: {
+        byStatus: { SUBMITTED: 0, APPROVED: 0, REJECTED: 0, CANCELLED: 0, COMPLETED: 0, total: 0 },
+        byDuration: { FULL_DAY: 0, FIRST_HALF: 0, SECOND_HALF: 0, CUSTOM_RANGE: 0 },
+        approvedWfhToday: 0,
+        wfhCheckedInToday: 0,
+        activeWfhSessionsNow: 0,
+        wfhNotCheckedInToday: 0,
+        duties: [],
+      },
+      pendingApprovals: {
+        visits: [],
+        visitsCount: 0,
+        wfh: [],
+        wfhCount: 0,
+        correctionsCount: 0,
+        totalPending: 0,
+      },
+      exceptions: {
+        total: 0,
+        unresolved: 0,
+        byType: {},
+        recent: [],
+      },
+      completedVisits: {
+        total: 0,
+        recent: [],
+      },
+      attendanceModes: {
+        office: 0,
+        officialVisit: 0,
+        workFromHome: 0,
+        total: 0,
+      },
+      requestsVsAttendance: {
+        fieldDuty: {
+          authorizedRequests: 0,
+          actualCheckedInAttendance: 0,
+          activeNow: 0,
+          notCheckedInYet: 0,
+        },
+        workFromHome: {
+          authorizedRequests: 0,
+          actualCheckedInAttendance: 0,
+          activeNow: 0,
+          notCheckedInYet: 0,
+        },
+        reconciliationMessage:
+          'Approved requests represent administrative duty authorizations. Actual attendance is accredited strictly upon recorded punch events.',
+      },
     };
   }
 }

@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { VisitsService } from './visits.service';
@@ -80,6 +81,19 @@ export class VisitsController {
     @Body() dto: VerifyVisitLocationDto,
   ) {
     return this.visitsService.verifyVisitLocation(user, dto);
+  }
+
+  @Get('operations/overview')
+  @Roles('ADMIN', 'HR', 'MANAGER')
+  @RequirePermissions('VISIT_VIEW')
+  @ApiOperation({
+    summary: 'Get official visits operations, status breakdown, and today field duty activity',
+  })
+  async getOperationsOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryOfficialVisitsDto,
+  ) {
+    return this.visitsService.getOperationsOverview(user, query);
   }
 
   @Get()

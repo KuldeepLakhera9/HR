@@ -1655,4 +1655,112 @@ export class VisitsService {
       data: sanitized,
     };
   }
+
+  /**
+   * Retrieves official visits operations overview, status breakdown, and today's field activity
+   */
+  async getOperationsOverview(user: AuthenticatedUser, query: QueryOfficialVisitsDto) {
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    let scopedEmployeeIds: string[] | null = null;
+
+    if (!isAdminOrHr) {
+      const reviewer = await this.resolveEmployee(user);
+      const team = await this.hierarchyService.getTeam(reviewer.id, user.organizationId);
+      scopedEmployeeIds = team.allMemberIds;
+    }
+
+    const todayUtc = this.normalizeDateToUtc(new Date());
+
+    const baseWhere: Prisma.OfficialVisitWhereInput = {
+      organizationId: user.organizationId,
+    };
+
+    if (scopedEmployeeIds !== null) {
+      baseWhere.employeeId = { in: scopedEmployeeIds };
+    }
+
+    if (query.status) {
+      baseWhere.status = query.status;
+    }
+
+    if (query.startDate && query.endDate) {
+      const s = this.normalizeDateToUtc(query.startDate);
+      const e = this.normalizeDateToUtc(query.endDate);
+      baseWhere.startDate = { lte: e };
+      baseWhere.endDate = { gte: s };
+    }
+
+    const countsRaw = await this.prisma.officialVisit.groupBy({
+      by: ['status'],
+      where: baseWhere,
+      _count: { id: true },
+    });
+
+    const statusCounts: Record<string, number> = {
+      DRAFT: 0,
+      SUBMITTED: 0,
+      APPROVED: 0,
+      IN_PROGRESS: 0,
+      COMPLETED: 0,
+      CANCELLED: 0,
+      REJECTED: 0,
+      EXPIRED: 0,
+      total: 0,
+    };
+    for (const c of countsRaw) {
+      if (statusCounts[c.status] !== undefined) {
+        statusCounts[c.status] = c._count.id;
+      }
+      statusCounts.total += c._count.id;
+    }
+
+    // Today's approved/in-progress visits
+    const endOfTodayUtc = new Date(todayUtc);
+    endOfTodayUtc.setUTCHours(23, 59, 59, 999);
+
+    const todayVisits = await this.prisma.officialVisit.findMany({
+      where: {
+        organizationId: user.organizationId,
+        ...(scopedEmployeeIds !== null ? { employeeId: { in: scopedEmployeeIds } } : {}),
+        status: { in: [VisitStatus.APPROVED, VisitStatus.IN_PROGRESS] },
+        startDate: { lte: endOfTodayUtc },
+        endDate: { gte: todayUtc },
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+        destinations: true,
+        attendanceSessions: {
+          where: { date: todayUtc },
+          select: { id: true, status: true, checkInTime: true, checkOutTime: true },
+        },
+      },
+    });
+
+    const approvedToday = todayVisits.length;
+    const checkedInToday = todayVisits.filter(
+      (v) => v.attendanceSessions && v.attendanceSessions.length > 0,
+    ).length;
+    const notCheckedIn = Math.max(0, approvedToday - checkedInToday);
+
+    return {
+      message: 'Official visits operations overview retrieved successfully',
+      data: {
+        statusCounts,
+        todayActivity: {
+          approvedToday,
+          checkedInToday,
+          notCheckedIn,
+          visits: todayVisits,
+        },
+      },
+    };
+  }
 }

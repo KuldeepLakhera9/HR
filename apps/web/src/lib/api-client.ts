@@ -785,6 +785,22 @@ export const visitsApi = {
     const res = await fetchWithAuth<any>(`/visits?${query.toString()}`);
     return res;
   },
+
+  async getOperationsOverview(params?: {
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/visits/operations/overview${qs}`);
+    return res.data;
+  },
 };
 
 export const attendanceApi = {
@@ -948,6 +964,36 @@ export const attendanceApi = {
   async getManagerDashboard(date?: string) {
     const qs = date ? `?date=${encodeURIComponent(date)}` : '';
     const res = await fetchWithAuth<any>(`/attendance/manager/dashboard${qs}`);
+    return res.data;
+  },
+
+  async getRemoteFieldOverview(query?: {
+    date?: string;
+    startDate?: string;
+    endDate?: string;
+    branchId?: string;
+    departmentId?: string;
+    managerId?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.date) params.append('date', query.date);
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.branchId) params.append('branchId', query.branchId);
+    if (query?.departmentId) params.append('departmentId', query.departmentId);
+    if (query?.managerId) params.append('managerId', query.managerId);
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.search) params.append('search', query.search);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString();
+    const res = await fetchWithAuth<any>(
+      `/attendance/overview/remote-and-field${qs ? `?${qs}` : ''}`,
+    );
     return res.data;
   },
 
@@ -1285,6 +1331,22 @@ export const wfhApi = {
     const qs = query.toString() ? `?${query.toString()}` : '';
     const res = await fetchWithAuth<any>(`/wfh/manager/pending${qs}`);
     return res;
+  },
+
+  async getOperationsOverview(params?: {
+    status?: string;
+    startDate?: string;
+    endDate?: string;
+    search?: string;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.search) query.set('search', params.search);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/wfh/operations/overview${qs}`);
+    return res.data;
   },
 };
 

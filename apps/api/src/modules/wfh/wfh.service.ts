@@ -1203,4 +1203,126 @@ export class WfhService {
       },
     };
   }
+
+  /**
+   * Retrieves WFH operations overview, status breakdown, duration breakdown, and today's activity
+   */
+  async getOperationsOverview(user: AuthenticatedUser, query: QueryWfhRequestsDto) {
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    let scopedEmployeeIds: string[] | null = null;
+
+    if (!isAdminOrHr) {
+      const reviewer = await this.resolveEmployee(user);
+      const team = await this.hierarchyService.getTeam(reviewer.id, user.organizationId);
+      scopedEmployeeIds = team.allMemberIds;
+    }
+
+    const todayUtc = this.normalizeDateToUtc(new Date());
+
+    const baseWhere: Prisma.WfhRequestWhereInput = {
+      organizationId: user.organizationId,
+    };
+
+    if (scopedEmployeeIds !== null) {
+      baseWhere.employeeId = { in: scopedEmployeeIds };
+    }
+
+    if (query.status) {
+      baseWhere.status = query.status;
+    }
+
+    if (query.startDate && query.endDate) {
+      const s = this.normalizeDateToUtc(query.startDate);
+      const e = this.normalizeDateToUtc(query.endDate);
+      baseWhere.startDate = { lte: e };
+      baseWhere.endDate = { gte: s };
+    }
+
+    const statusCountsRaw = await this.prisma.wfhRequest.groupBy({
+      by: ['status'],
+      where: baseWhere,
+      _count: { id: true },
+    });
+
+    const statusCounts: Record<string, number> = {
+      SUBMITTED: 0,
+      APPROVED: 0,
+      REJECTED: 0,
+      CANCELLED: 0,
+      COMPLETED: 0,
+      total: 0,
+    };
+    for (const c of statusCountsRaw) {
+      if (statusCounts[c.status] !== undefined) {
+        statusCounts[c.status] = c._count.id;
+      }
+      statusCounts.total += c._count.id;
+    }
+
+    const durationCountsRaw = await this.prisma.wfhRequest.groupBy({
+      by: ['durationType'],
+      where: baseWhere,
+      _count: { id: true },
+    });
+
+    const durationCounts: Record<string, number> = {
+      FULL_DAY: 0,
+      FIRST_HALF: 0,
+      SECOND_HALF: 0,
+      CUSTOM_RANGE: 0,
+    };
+    for (const c of durationCountsRaw) {
+      if (durationCounts[c.durationType] !== undefined) {
+        durationCounts[c.durationType] = c._count.id;
+      }
+    }
+
+    const endOfTodayUtc = new Date(todayUtc);
+    endOfTodayUtc.setUTCHours(23, 59, 59, 999);
+
+    const todayWfh = await this.prisma.wfhRequest.findMany({
+      where: {
+        organizationId: user.organizationId,
+        ...(scopedEmployeeIds !== null ? { employeeId: { in: scopedEmployeeIds } } : {}),
+        status: WfhStatus.APPROVED,
+        startDate: { lte: endOfTodayUtc },
+        endDate: { gte: todayUtc },
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            employeeCode: true,
+          },
+        },
+        attendanceSessions: {
+          where: { date: todayUtc },
+          select: { id: true, status: true, checkInTime: true, checkOutTime: true },
+        },
+      },
+    });
+
+    const approvedToday = todayWfh.length;
+    const checkedInToday = todayWfh.filter(
+      (w) => w.attendanceSessions && w.attendanceSessions.length > 0,
+    ).length;
+    const notCheckedIn = Math.max(0, approvedToday - checkedInToday);
+
+    return {
+      message: 'WFH operations overview retrieved successfully',
+      data: {
+        statusCounts,
+        durationCounts,
+        todayActivity: {
+          approvedToday,
+          checkedInToday,
+          notCheckedIn,
+          requests: todayWfh,
+        },
+      },
+    };
+  }
 }

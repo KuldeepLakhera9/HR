@@ -46,6 +46,7 @@ import {
   FileText,
   ChevronDown,
   RotateCcw,
+  Compass,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -60,6 +61,7 @@ import {
 import { attendanceApi, organizationApi } from '../../../lib/api-client';
 import { useAuth } from '../../../context/AuthContext';
 import { HRAttendanceExceptionsQueue } from './HRAttendanceExceptionsQueue';
+import { FieldAndRemoteOverviewDashboard } from './FieldAndRemoteOverviewDashboard';
 
 interface HRAttendanceDashboardProps {
   onRefreshNeeded?: () => void;
@@ -68,8 +70,10 @@ interface HRAttendanceDashboardProps {
 export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () => {
   const { user } = useAuth();
 
-  // Sub-navigation state: 'roster' | 'exceptions' | 'corrections'
-  const [hrSubTab, setHrSubTab] = useState<'roster' | 'exceptions' | 'corrections'>('roster');
+  // Sub-navigation state: 'roster' | 'exceptions' | 'corrections' | 'field-remote'
+  const [hrSubTab, setHrSubTab] = useState<
+    'roster' | 'exceptions' | 'corrections' | 'field-remote'
+  >('roster');
 
   // Query Filter States
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -482,75 +486,77 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
       )}
 
       {/* 2. Reusable Headcount KPI Cards Grid */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
-        {isLoadingDashboard ? (
-          Array.from({ length: 6 }).map((_, i) => (
-            <Card key={i} className="p-4 border-stone-200">
-              <Skeleton className="h-4 w-20 mb-2" />
-              <Skeleton className="h-7 w-12" />
-            </Card>
-          ))
-        ) : (
-          <>
-            <KPICard
-              title="Active Headcount"
-              value={headcount.totalActiveEmployees}
-              description="Assigned employees"
-              icon={<Users className="h-4 w-4 text-stone-700" />}
-              iconBg="bg-stone-100"
-            />
-            <KPICard
-              title="Checked-In Now"
-              value={headcount.checkedInNow}
-              description="Open active sessions"
-              icon={
-                <span className="relative flex h-3 w-3">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
-                </span>
-              }
-              iconBg="bg-emerald-50"
-            />
-            <KPICard
-              title="Present Today"
-              value={headcount.present}
-              description="Valid day summary"
-              icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
-              iconBg="bg-emerald-50"
-            />
-            <KPICard
-              title="Late Arrivals"
-              value={headcount.lateArrivals}
-              description="Past grace window"
-              icon={<Clock className="h-4 w-4 text-amber-700" />}
-              iconBg="bg-amber-50"
-            />
-            <KPICard
-              title="Incomplete"
-              value={headcount.incomplete}
-              description="Missing checkout / open"
-              icon={<AlertTriangle className="h-4 w-4 text-amber-700" />}
-              iconBg="bg-amber-100/60"
-            />
-            <div
-              onClick={() => setHrSubTab('exceptions')}
-              className="cursor-pointer transition-transform hover:scale-[1.02]"
-              title="Click to view Attendance Exceptions Queue"
-            >
+      {hrSubTab !== 'field-remote' && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3.5">
+          {isLoadingDashboard ? (
+            Array.from({ length: 6 }).map((_, i) => (
+              <Card key={i} className="p-4 border-stone-200">
+                <Skeleton className="h-4 w-20 mb-2" />
+                <Skeleton className="h-7 w-12" />
+              </Card>
+            ))
+          ) : (
+            <>
               <KPICard
-                title="Unresolved Exceptions"
-                value={headcount.unresolvedExceptions}
-                description="Geofence / delay alerts"
-                icon={<ShieldAlert className="h-4 w-4 text-rose-700" />}
-                iconBg="bg-rose-50"
+                title="Active Headcount"
+                value={headcount.totalActiveEmployees}
+                description="Assigned employees"
+                icon={<Users className="h-4 w-4 text-stone-700" />}
+                iconBg="bg-stone-100"
               />
-            </div>
-          </>
-        )}
-      </div>
+              <KPICard
+                title="Checked-In Now"
+                value={headcount.checkedInNow}
+                description="Open active sessions"
+                icon={
+                  <span className="relative flex h-3 w-3">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500" />
+                  </span>
+                }
+                iconBg="bg-emerald-50"
+              />
+              <KPICard
+                title="Present Today"
+                value={headcount.present}
+                description="Valid day summary"
+                icon={<CheckCircle2 className="h-4 w-4 text-emerald-700" />}
+                iconBg="bg-emerald-50"
+              />
+              <KPICard
+                title="Late Arrivals"
+                value={headcount.lateArrivals}
+                description="Past grace window"
+                icon={<Clock className="h-4 w-4 text-amber-700" />}
+                iconBg="bg-amber-50"
+              />
+              <KPICard
+                title="Incomplete"
+                value={headcount.incomplete}
+                description="Missing checkout / open"
+                icon={<AlertTriangle className="h-4 w-4 text-amber-700" />}
+                iconBg="bg-amber-100/60"
+              />
+              <div
+                onClick={() => setHrSubTab('exceptions')}
+                className="cursor-pointer transition-transform hover:scale-[1.02]"
+                title="Click to view Attendance Exceptions Queue"
+              >
+                <KPICard
+                  title="Unresolved Exceptions"
+                  value={headcount.unresolvedExceptions}
+                  description="Geofence / delay alerts"
+                  icon={<ShieldAlert className="h-4 w-4 text-rose-700" />}
+                  iconBg="bg-rose-50"
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {/* 2.5 Sub-Navigation Tab Bar */}
-      <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+      <div className="flex flex-wrap items-center gap-2 border-b border-stone-200 pb-2">
         <button
           onClick={() => setHrSubTab('roster')}
           className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all ${
@@ -561,6 +567,18 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
         >
           <Users className="h-3.5 w-3.5" />
           <span>Attendance Roster & Analytics</span>
+        </button>
+
+        <button
+          onClick={() => setHrSubTab('field-remote')}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+            hrSubTab === 'field-remote'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+          }`}
+        >
+          <Compass className="h-3.5 w-3.5" />
+          <span>Field & Remote Work</span>
         </button>
 
         <button
@@ -607,6 +625,11 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
           )}
         </button>
       </div>
+
+      {/* Field & Remote Work Operations Overview Sub-View */}
+      {hrSubTab === 'field-remote' && (
+        <FieldAndRemoteOverviewDashboard initialDate={selectedDate} />
+      )}
 
       {/* Exceptions Queue Sub-View */}
       {hrSubTab === 'exceptions' && (

@@ -30,6 +30,7 @@ import { AttendanceExceptionQueryDto } from './dto/attendance-exception-query.dt
 import { ResolveExceptionDto } from './dto/resolve-exception.dto';
 import { DailyAttendanceReportQueryDto } from './dto/daily-attendance-report-query.dto';
 import { MonthlyAttendanceReportQueryDto } from './dto/monthly-attendance-report-query.dto';
+import { RemoteFieldOverviewQueryDto } from './dto/remote-field-overview-query.dto';
 import { AttendanceReportingService } from './attendance-reporting.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { EmployeesModule } from '../employees/employees.module';
@@ -186,6 +187,20 @@ export class AttendanceController {
     return this.attendanceService.getOperationsDashboard(user.organizationId, query);
   }
 
+  @Get('operations/field-wfh-overview')
+  @Roles('ADMIN', 'HR')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary:
+      'Get organizational field visits and remote work overview, metrics, and reconciliation',
+  })
+  async getOperationsFieldWfhOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RemoteFieldOverviewQueryDto,
+  ) {
+    return this.attendanceService.getRemoteAndFieldOverview(user, query);
+  }
+
   @Get('operations/records')
   @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_VIEW')
@@ -339,6 +354,32 @@ export class AttendanceController {
   })
   async getManagerDashboard(@CurrentUser() user: AuthenticatedUser, @Query('date') date?: string) {
     return this.attendanceService.getManagerTeamDashboard(user, date);
+  }
+
+  @Get('manager/field-wfh-overview')
+  @Roles('ADMIN', 'HR', 'MANAGER')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get scoped manager team field visits and remote work overview and reconciliation',
+  })
+  async getManagerFieldWfhOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RemoteFieldOverviewQueryDto,
+  ) {
+    return this.attendanceService.getRemoteAndFieldOverview(user, query);
+  }
+
+  @Get('overview/remote-and-field')
+  @Roles('ADMIN', 'HR', 'MANAGER')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get field visits and remote work overview with automatic role scoping',
+  })
+  async getRemoteAndFieldOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RemoteFieldOverviewQueryDto,
+  ) {
+    return this.attendanceService.getRemoteAndFieldOverview(user, query);
   }
 
   @Get('manager/records')

@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { WfhService } from './wfh.service';
@@ -64,6 +65,19 @@ export class WfhController {
     @Query() query: QueryWfhRequestsDto,
   ) {
     return this.wfhService.getManagerPendingWfh(user, query);
+  }
+
+  @Get('operations/overview')
+  @Roles('ADMIN', 'HR', 'MANAGER')
+  @RequirePermissions('WFH_VIEW')
+  @ApiOperation({
+    summary: 'Get WFH operations overview, status breakdown, and today remote activity',
+  })
+  async getOperationsOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryWfhRequestsDto,
+  ) {
+    return this.wfhService.getOperationsOverview(user, query);
   }
 
   @Get()
