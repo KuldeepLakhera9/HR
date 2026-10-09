@@ -5,6 +5,7 @@ import {
   ConflictException,
   ForbiddenException,
   Logger,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -25,8 +26,11 @@ import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
 import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.dto';
 import { DecideCorrectionRequestDto } from './dto/decide-correction.dto';
+import { AttendanceExceptionQueryDto } from './dto/attendance-exception-query.dto';
+import { ResolveExceptionDto } from './dto/resolve-exception.dto';
 import { HierarchyService } from '../employees/hierarchy.service';
-import { AttendanceDayStatus } from '@hrms/types';
+import { NotificationsService } from '../notifications/notifications.module';
+import { AttendanceDayStatus, AttendanceExceptionType } from '@hrms/types';
 
 export function formatCorrectionReason(
   category: string,
@@ -80,7 +84,146 @@ export class AttendanceService {
     private readonly auditService: AuditService,
     private readonly policiesService: AttendancePoliciesService,
     private readonly hierarchyService: HierarchyService,
+    @Optional() private readonly notificationsService?: NotificationsService,
   ) {}
+
+  /**
+   * Idempotent Attendance Exception Recorder
+   * Automatically sanitizes credentials, tokens, and precise GPS coordinates.
+   * Dispatches internal in-app notifications and records audit events.
+   */
+  async recordAttendanceException(params: {
+    organizationId: string;
+    employeeId: string;
+    date: Date;
+    exceptionType: AttendanceExceptionType;
+    severity?: 'LOW' | 'MEDIUM' | 'HIGH';
+    details: Record<string, any>;
+    idempotencyKey?: string;
+    actorUserId?: string;
+    notify?: boolean;
+  }) {
+    const dateOnly = params.date.toISOString().split('T')[0];
+    const dateUtc = new Date(`${dateOnly}T00:00:00.000Z`);
+    const idempotencyKey =
+      params.idempotencyKey || `ex:${params.exceptionType}:${params.employeeId}:${dateOnly}`;
+
+    try {
+      // 1. Idempotency Check
+      const existing = await this.prisma.attendanceException.findUnique({
+        where: { idempotencyKey },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+        },
+      });
+
+      if (existing) {
+        return existing;
+      }
+
+      // 2. Redact sensitive coordinates & credentials
+      const sanitizedDetails: Record<string, any> = { ...params.details };
+      delete sanitizedDetails.password;
+      delete sanitizedDetails.token;
+      delete sanitizedDetails.accessToken;
+      delete sanitizedDetails.latitude;
+      delete sanitizedDetails.longitude;
+
+      const created = await this.prisma.attendanceException.create({
+        data: {
+          organizationId: params.organizationId,
+          employeeId: params.employeeId,
+          date: dateUtc,
+          exceptionType: params.exceptionType,
+          severity: params.severity || 'MEDIUM',
+          details: sanitizedDetails,
+          status: 'OPEN',
+          resolved: false,
+          idempotencyKey,
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+        },
+      });
+
+      // 3. Dispatch internal in-app notification without paid services
+      const emp = (created as any)?.employee;
+      const empName = emp ? `${emp.firstName} ${emp.lastName}` : 'Employee';
+      const empCode = emp?.employeeCode ? ` (${emp.employeeCode})` : '';
+
+      if (params.notify !== false && this.notificationsService) {
+        await this.notificationsService
+          .createNotification({
+            organizationId: params.organizationId,
+            title: `Attendance Exception: ${params.exceptionType.replace(/_/g, ' ')}`,
+            message: `${empName}${empCode} flagged for ${params.exceptionType.replace(/_/g, ' ').toLowerCase()} on ${dateOnly}.`,
+            type: 'EXCEPTION_ALERT',
+            metadata: {
+              exceptionId: created.id,
+              employeeId: params.employeeId,
+              exceptionType: params.exceptionType,
+            },
+          })
+          .catch((err) =>
+            this.logger.warn(`Failed to dispatch in-app notification: ${err.message}`),
+          );
+      }
+
+      // 4. Audit Log (without credentials or raw coordinates)
+      await this.auditService
+        .record({
+          organizationId: params.organizationId,
+          userId: params.actorUserId || 'SYSTEM',
+          action: 'ATTENDANCE_EXCEPTION_FLAGGED',
+          entity: 'AttendanceException',
+          entityId: created.id,
+          metadata: {
+            employeeId: params.employeeId,
+            exceptionType: params.exceptionType,
+            severity: params.severity || 'MEDIUM',
+            idempotencyKey,
+          },
+        })
+        .catch((err) => this.logger.warn(`Failed to record audit log: ${err.message}`));
+
+      return created;
+    } catch (err: any) {
+      if (err.code === 'P2002') {
+        const found = await this.prisma.attendanceException.findUnique({
+          where: { idempotencyKey },
+          include: {
+            employee: {
+              select: {
+                id: true,
+                employeeCode: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        });
+        if (found) return found;
+      }
+      this.logger.warn(`Exception recording error: ${err.message}`);
+      return null;
+    }
+  }
 
   // ===========================================================================
   // 1. OFFICE CHECK-IN
@@ -217,6 +360,32 @@ export class AttendanceService {
     const workingDateStr = workingDayResult.workingDateStr;
     const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
 
+    // 5b. Detect suspicious rapid punch attempts (< 45s ago)
+    const recentPunch = await this.prisma.attendanceEvent.findFirst({
+      where: {
+        employeeId: employee.id,
+        eventTimestamp: { gte: new Date(now.getTime() - 45 * 1000) },
+      },
+      orderBy: { eventTimestamp: 'desc' },
+    });
+    if (recentPunch) {
+      this.recordAttendanceException({
+        organizationId: employee.organizationId,
+        employeeId: employee.id,
+        date: workingDateUtc,
+        exceptionType: 'SUSPICIOUS_REPEATED_ATTEMPTS',
+        severity: 'HIGH',
+        details: {
+          recentEventType: recentPunch.eventType,
+          timeDeltaSeconds: Math.floor(
+            (now.getTime() - recentPunch.eventTimestamp.getTime()) / 1000,
+          ),
+          action: 'CHECK_IN',
+        },
+        idempotencyKey: `ex:suspicious_attempts:${employee.id}:${workingDateStr}:${Math.floor(now.getTime() / 60000)}`,
+      }).catch(() => null);
+    }
+
     const resolved = await this.policiesService.resolveEffectivePolicyAndShift(
       employee.id,
       workingDateUtc,
@@ -230,6 +399,20 @@ export class AttendanceService {
     if (dto.accuracyMeters !== undefined && dto.accuracyMeters !== null) {
       const accuracyCheck = validateGpsAccuracy(dto.accuracyMeters, maxAccuracyMeters);
       if (!accuracyCheck.valid) {
+        this.recordAttendanceException({
+          organizationId: employee.organizationId,
+          employeeId: employee.id,
+          date: workingDateUtc,
+          exceptionType: 'LOW_GPS_ACCURACY',
+          severity: 'HIGH',
+          details: {
+            reportedAccuracy: dto.accuracyMeters,
+            maxAllowedAccuracy: maxAccuracyMeters,
+            action: 'CHECK_IN',
+          },
+          idempotencyKey: `ex:low_accuracy:${employee.id}:${workingDateStr}:CHECK_IN`,
+        }).catch(() => null);
+
         throw new BadRequestException({
           statusCode: 400,
           message:
@@ -288,24 +471,20 @@ export class AttendanceService {
     const isWithinGeofence = distanceMeters <= office.geofenceRadiusMeters;
 
     if (policy.geofenceEnforcement && !isWithinGeofence) {
-      await this.prisma.attendanceException
-        .create({
-          data: {
-            organizationId: employee.organizationId,
-            employeeId: employee.id,
-            date: workingDateUtc,
-            exceptionType: 'OUTSIDE_GEOFENCE',
-            severity: 'HIGH',
-            details: {
-              distanceMeters: Math.round(distanceMeters),
-              allowedRadiusMeters: office.geofenceRadiusMeters,
-              officeName: office.name,
-              latitude: dto.latitude,
-              longitude: dto.longitude,
-            },
-          },
-        })
-        .catch(() => null);
+      await this.recordAttendanceException({
+        organizationId: employee.organizationId,
+        employeeId: employee.id,
+        date: workingDateUtc,
+        exceptionType: 'OUTSIDE_GEOFENCE',
+        severity: 'HIGH',
+        details: {
+          distanceMeters: Math.round(distanceMeters),
+          allowedRadiusMeters: office.geofenceRadiusMeters,
+          officeName: office.name,
+          action: 'CHECK_IN',
+        },
+        idempotencyKey: `ex:outside_geofence:${employee.id}:${workingDateStr}:CHECK_IN`,
+      });
 
       throw new BadRequestException({
         statusCode: 400,
@@ -329,6 +508,20 @@ export class AttendanceService {
         });
 
         if (openSession) {
+          this.recordAttendanceException({
+            organizationId: employee.organizationId,
+            employeeId: employee.id,
+            date: workingDateUtc,
+            exceptionType: 'INVALID_STATE',
+            severity: 'MEDIUM',
+            details: {
+              attemptedAction: 'CHECK_IN',
+              conflict: 'SESSION_ALREADY_OPEN',
+              activeSessionId: openSession.id,
+            },
+            idempotencyKey: `ex:invalid_state:${employee.id}:${workingDateStr}:CHECK_IN_ALREADY_OPEN`,
+          }).catch(() => null);
+
           throw new ConflictException({
             statusCode: 409,
             message:
@@ -424,6 +617,20 @@ export class AttendanceService {
               0,
               Math.floor((now.getTime() - shiftWindow.shiftStartDate.getTime()) / 60000),
             );
+            this.recordAttendanceException({
+              organizationId: employee.organizationId,
+              employeeId: employee.id,
+              date: workingDateUtc,
+              exceptionType: 'LATE_ARRIVAL',
+              severity: lateMinutes > 60 ? 'MEDIUM' : 'LOW',
+              details: {
+                lateMinutes,
+                shiftStartTime: shift.startTime,
+                firstCheckIn: now.toISOString(),
+                gracePeriodMinutes: policy.gracePeriodMinutes || 0,
+              },
+              idempotencyKey: `ex:late_arrival:${employee.id}:${workingDateStr}`,
+            }).catch(() => null);
           }
         }
 
@@ -551,6 +758,19 @@ export class AttendanceService {
       });
 
       if (!activeSession) {
+        this.recordAttendanceException({
+          organizationId: employee.organizationId,
+          employeeId: employee.id,
+          date: serverNow,
+          exceptionType: 'INVALID_STATE',
+          severity: 'MEDIUM',
+          details: {
+            attemptedAction: 'BREAK_START',
+            conflict: 'NO_ACTIVE_SESSION',
+          },
+          idempotencyKey: `ex:invalid_state:${employee.id}:${serverNow.toISOString().split('T')[0]}:BREAK_START_NO_SESSION`,
+        }).catch(() => null);
+
         throw new BadRequestException({
           statusCode: 400,
           message: 'No active attendance session found. You must check in before taking a break.',
@@ -566,6 +786,19 @@ export class AttendanceService {
       }
 
       if (isOnBreak) {
+        this.recordAttendanceException({
+          organizationId: employee.organizationId,
+          employeeId: employee.id,
+          date: serverNow,
+          exceptionType: 'INVALID_STATE',
+          severity: 'MEDIUM',
+          details: {
+            attemptedAction: 'BREAK_START',
+            conflict: 'BREAK_ALREADY_ACTIVE',
+          },
+          idempotencyKey: `ex:invalid_state:${employee.id}:${serverNow.toISOString().split('T')[0]}:BREAK_ALREADY_ACTIVE`,
+        }).catch(() => null);
+
         throw new BadRequestException({
           statusCode: 400,
           message:
@@ -655,6 +888,19 @@ export class AttendanceService {
         });
 
         if (!activeSession) {
+          this.recordAttendanceException({
+            organizationId: employee.organizationId,
+            employeeId: employee.id,
+            date: serverNow,
+            exceptionType: 'INVALID_STATE',
+            severity: 'MEDIUM',
+            details: {
+              attemptedAction: 'BREAK_END',
+              conflict: 'NO_ACTIVE_SESSION',
+            },
+            idempotencyKey: `ex:invalid_state:${employee.id}:${serverNow.toISOString().split('T')[0]}:BREAK_END_NO_SESSION`,
+          }).catch(() => null);
+
           throw new BadRequestException({
             statusCode: 400,
             message: 'No active attendance session found to end break.',
@@ -670,6 +916,19 @@ export class AttendanceService {
         }
 
         if (!isOnBreak) {
+          this.recordAttendanceException({
+            organizationId: employee.organizationId,
+            employeeId: employee.id,
+            date: serverNow,
+            exceptionType: 'INVALID_STATE',
+            severity: 'MEDIUM',
+            details: {
+              attemptedAction: 'BREAK_END',
+              conflict: 'NO_ACTIVE_BREAK',
+            },
+            idempotencyKey: `ex:invalid_state:${employee.id}:${serverNow.toISOString().split('T')[0]}:NO_ACTIVE_BREAK`,
+          }).catch(() => null);
+
           throw new BadRequestException({
             statusCode: 400,
             message: 'No active break found to conclude.',
@@ -786,6 +1045,32 @@ export class AttendanceService {
 
     const employee = await this.resolveActiveEmployee(user.id, user.organizationId);
 
+    // 1b. Check for rapid consecutive punches (< 45s ago)
+    const recentPunch = await this.prisma.attendanceEvent.findFirst({
+      where: {
+        employeeId: employee.id,
+        eventTimestamp: { gte: new Date(serverNow.getTime() - 45 * 1000) },
+      },
+      orderBy: { eventTimestamp: 'desc' },
+    });
+    if (recentPunch) {
+      this.recordAttendanceException({
+        organizationId: employee.organizationId,
+        employeeId: employee.id,
+        date: serverNow,
+        exceptionType: 'SUSPICIOUS_REPEATED_ATTEMPTS',
+        severity: 'HIGH',
+        details: {
+          recentEventType: recentPunch.eventType,
+          timeDeltaSeconds: Math.floor(
+            (serverNow.getTime() - recentPunch.eventTimestamp.getTime()) / 1000,
+          ),
+          action: 'CHECK_OUT',
+        },
+        idempotencyKey: `ex:suspicious_attempts:${employee.id}:${serverNow.toISOString().split('T')[0]}:${Math.floor(serverNow.getTime() / 60000)}`,
+      }).catch(() => null);
+    }
+
     // 2. Perform atomic checkout in transaction
     const { session, event, summary, grossMinutes, netWorkMinutes, sessionBreakMinutes } =
       await this.prisma.$transaction(async (tx) => {
@@ -796,6 +1081,19 @@ export class AttendanceService {
         });
 
         if (!activeSession) {
+          this.recordAttendanceException({
+            organizationId: employee.organizationId,
+            employeeId: employee.id,
+            date: serverNow,
+            exceptionType: 'INVALID_STATE',
+            severity: 'MEDIUM',
+            details: {
+              attemptedAction: 'CHECK_OUT',
+              conflict: 'NO_ACTIVE_SESSION',
+            },
+            idempotencyKey: `ex:invalid_state:${employee.id}:${serverNow.toISOString().split('T')[0]}:CHECK_OUT_NO_SESSION`,
+          }).catch(() => null);
+
           throw new BadRequestException({
             statusCode: 400,
             message: 'No active open session found to check out.',
@@ -842,6 +1140,20 @@ export class AttendanceService {
           if (dto.accuracyMeters !== undefined && dto.accuracyMeters !== null) {
             const accuracyCheck = validateGpsAccuracy(dto.accuracyMeters, maxAccuracy);
             if (!accuracyCheck.valid) {
+              this.recordAttendanceException({
+                organizationId: employee.organizationId,
+                employeeId: employee.id,
+                date: activeSession.date,
+                exceptionType: 'LOW_GPS_ACCURACY',
+                severity: 'HIGH',
+                details: {
+                  reportedAccuracy: dto.accuracyMeters,
+                  maxAllowedAccuracy: maxAccuracy,
+                  action: 'CHECK_OUT',
+                },
+                idempotencyKey: `ex:low_accuracy:${employee.id}:${activeSession.date.toISOString().split('T')[0]}:CHECK_OUT`,
+              }).catch(() => null);
+
               throw new BadRequestException({
                 statusCode: 400,
                 message:
@@ -867,6 +1179,21 @@ export class AttendanceService {
               policy.geofenceEnforcement &&
               checkoutDistanceMeters > office.geofenceRadiusMeters
             ) {
+              this.recordAttendanceException({
+                organizationId: employee.organizationId,
+                employeeId: employee.id,
+                date: activeSession.date,
+                exceptionType: 'OUTSIDE_GEOFENCE',
+                severity: 'HIGH',
+                details: {
+                  distanceMeters: Math.round(checkoutDistanceMeters),
+                  allowedRadiusMeters: office.geofenceRadiusMeters,
+                  officeName: office.name,
+                  action: 'CHECK_OUT',
+                },
+                idempotencyKey: `ex:outside_geofence:${employee.id}:${activeSession.date.toISOString().split('T')[0]}:CHECK_OUT`,
+              }).catch(() => null);
+
               throw new BadRequestException({
                 statusCode: 400,
                 message: `Outside office geofence for checkout. You are ${Math.round(checkoutDistanceMeters)}m from ${office.name} (allowed perimeter: ${office.geofenceRadiusMeters}m).`,
@@ -1003,6 +1330,22 @@ export class AttendanceService {
       },
     });
 
+    if (summary && summary.earlyExitMinutes > 0) {
+      this.recordAttendanceException({
+        organizationId: employee.organizationId,
+        employeeId: employee.id,
+        date: session.date,
+        exceptionType: 'EARLY_DEPARTURE',
+        severity: summary.earlyExitMinutes > 60 ? 'MEDIUM' : 'LOW',
+        details: {
+          earlyExitMinutes: summary.earlyExitMinutes,
+          lastCheckOut: serverNow.toISOString(),
+          shiftEndTime: summary.shift?.endTime || '18:00',
+        },
+        idempotencyKey: `ex:early_departure:${employee.id}:${session.date.toISOString().split('T')[0]}`,
+      }).catch(() => null);
+    }
+
     return {
       success: true,
       message: 'Office check-out verified and recorded successfully.',
@@ -1061,6 +1404,9 @@ export class AttendanceService {
             date: session.date,
             exceptionType: 'MISSING_CHECKOUT',
             severity: 'MEDIUM',
+            status: 'OPEN',
+            resolved: false,
+            idempotencyKey: `ex:missing_checkout:${session.id}`,
             details: {
               sessionId: session.id,
               checkInTime: session.checkInTime.toISOString(),
@@ -1690,6 +2036,20 @@ export class AttendanceService {
         hasEvidence: !!dto.evidenceMetadata,
       },
     });
+
+    this.recordAttendanceException({
+      organizationId: user.organizationId,
+      employeeId: employee.id,
+      date: targetDateUtc,
+      exceptionType: 'PENDING_CORRECTION',
+      severity: 'MEDIUM',
+      details: {
+        requestId: request.id,
+        targetDate: dto.targetDate,
+        reasonCategory: dto.reasonCategory || 'MISSING_CHECKOUT',
+      },
+      idempotencyKey: `ex:pending_correction:${request.id}`,
+    }).catch(() => null);
 
     return {
       success: true,
@@ -2927,6 +3287,26 @@ export class AttendanceService {
       },
     });
 
+    // Auto-resolve or dismiss matching pending correction and missing checkout exceptions
+    await this.prisma.attendanceException
+      .updateMany({
+        where: {
+          organizationId: user.organizationId,
+          employeeId: request.employeeId,
+          date: request.targetDate,
+          exceptionType: { in: ['PENDING_CORRECTION', 'MISSING_CHECKOUT'] },
+          status: 'OPEN',
+        },
+        data: {
+          status: dto.decision === 'APPROVED' ? 'RESOLVED' : 'DISMISSED',
+          resolved: true,
+          resolvedAt: new Date(),
+          resolvedById: user.id,
+          resolutionNotes: `Auto-resolved via correction decision ${dto.decision}: ${dto.reviewNotes || 'Decided by reviewer'}`,
+        },
+      })
+      .catch(() => null);
+
     await this.auditService.record({
       action: 'ATTENDANCE_CORRECTION_DECIDED',
       entity: 'AttendanceCorrectionRequest',
@@ -3010,5 +3390,401 @@ export class AttendanceService {
 
     // Return sanitized operations employee detail
     return this.getOperationsEmployeeDetail(user, employeeId, dateStr);
+  }
+
+  // ===========================================================================
+  // 12. ATTENDANCE EXCEPTIONS MANAGEMENT & RESOLUTION WORKFLOW
+  // ===========================================================================
+
+  /**
+   * Retrieves paginated attendance exceptions for HR with multi-dimensional filters & KPIs
+   */
+  async getExceptions(organizationId: string, query: AttendanceExceptionQueryDto) {
+    const where: any = { organizationId };
+
+    if (query.status && query.status !== 'ALL') {
+      where.status = query.status;
+    }
+
+    if (query.exceptionType) {
+      where.exceptionType = query.exceptionType;
+    }
+
+    if (query.severity) {
+      where.severity = query.severity;
+    }
+
+    if (query.employeeId) {
+      where.employeeId = query.employeeId;
+    }
+
+    if (query.startDate || query.endDate) {
+      where.date = {};
+      if (query.startDate) {
+        where.date.gte = new Date(`${query.startDate}T00:00:00.000Z`);
+      }
+      if (query.endDate) {
+        where.date.lte = new Date(`${query.endDate}T23:59:59.999Z`);
+      }
+    }
+
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const [exceptions, total, openCount, resolvedCount, dismissedCount, highCount] =
+      await Promise.all([
+        this.prisma.attendanceException.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: [{ date: 'desc' }, { createdAt: 'desc' }],
+          include: {
+            employee: {
+              select: {
+                id: true,
+                employeeCode: true,
+                firstName: true,
+                lastName: true,
+                displayName: true,
+                user: {
+                  select: { email: true },
+                },
+                employment: {
+                  select: {
+                    department: { select: { id: true, name: true } },
+                    designation: { select: { id: true, name: true } },
+                  },
+                },
+              },
+            },
+            resolvedBy: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+              },
+            },
+          },
+        }),
+        this.prisma.attendanceException.count({ where }),
+        this.prisma.attendanceException.count({ where: { organizationId, status: 'OPEN' } }),
+        this.prisma.attendanceException.count({ where: { organizationId, status: 'RESOLVED' } }),
+        this.prisma.attendanceException.count({ where: { organizationId, status: 'DISMISSED' } }),
+        this.prisma.attendanceException.count({
+          where: { organizationId, severity: 'HIGH', status: 'OPEN' },
+        }),
+      ]);
+
+    const formatted = exceptions.map((e: any) => {
+      const rawDetails: Record<string, any> =
+        e.details && typeof e.details === 'object' ? { ...(e.details as any) } : {};
+      delete rawDetails.latitude;
+      delete rawDetails.longitude;
+      delete rawDetails.password;
+      delete rawDetails.token;
+
+      return {
+        id: e.id,
+        organizationId: e.organizationId,
+        employeeId: e.employeeId,
+        employee: e.employee
+          ? {
+              id: e.employee.id,
+              employeeCode: e.employee.employeeCode,
+              employeeNumber: e.employee.employeeCode,
+              firstName: e.employee.firstName,
+              lastName: e.employee.lastName,
+              displayName: e.employee.displayName,
+              email: e.employee.user?.email || null,
+              department: e.employee.employment?.department || null,
+              designation: e.employee.employment?.designation || null,
+            }
+          : null,
+        date: e.date.toISOString().split('T')[0],
+        exceptionType: e.exceptionType,
+        severity: e.severity,
+        status: e.status || (e.resolved ? 'RESOLVED' : 'OPEN'),
+        details: rawDetails,
+        resolved: e.resolved,
+        resolvedAt: e.resolvedAt?.toISOString() || null,
+        resolvedById: e.resolvedById,
+        resolvedBy: e.resolvedBy,
+        resolutionNotes: e.resolutionNotes,
+        createdAt: e.createdAt.toISOString(),
+        updatedAt: e.updatedAt.toISOString(),
+      };
+    });
+
+    return {
+      success: true,
+      data: formatted,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+      counts: {
+        open: openCount,
+        resolved: resolvedCount,
+        dismissed: dismissedCount,
+        highSeverity: highCount,
+      },
+    };
+  }
+
+  /**
+   * Retrieves single exception by ID
+   */
+  async getExceptionById(organizationId: string, id: string) {
+    const exception = await this.prisma.attendanceException.findFirst({
+      where: { id, organizationId },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            user: {
+              select: { email: true },
+            },
+            employment: {
+              select: {
+                department: { select: { id: true, name: true } },
+                designation: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        resolvedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!exception) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Attendance exception not found.',
+        code: 'EXCEPTION_NOT_FOUND',
+      });
+    }
+
+    const rawDetails: Record<string, any> =
+      exception.details && typeof exception.details === 'object'
+        ? { ...(exception.details as any) }
+        : {};
+    delete rawDetails.latitude;
+    delete rawDetails.longitude;
+    delete rawDetails.password;
+    delete rawDetails.token;
+
+    const emp = (exception as any).employee;
+    return {
+      success: true,
+      data: {
+        ...exception,
+        details: rawDetails,
+        employee: emp
+          ? {
+              id: emp.id,
+              employeeCode: emp.employeeCode,
+              employeeNumber: emp.employeeCode,
+              firstName: emp.firstName,
+              lastName: emp.lastName,
+              displayName: emp.displayName,
+              email: emp.user?.email || null,
+              department: emp.employment?.department || null,
+              designation: emp.employment?.designation || null,
+            }
+          : null,
+        date: exception.date.toISOString().split('T')[0],
+        status: exception.status || (exception.resolved ? 'RESOLVED' : 'OPEN'),
+      },
+    };
+  }
+
+  /**
+   * Resolves or dismisses an attendance exception with actor audit notes and employee notification
+   */
+  async resolveException(user: AuthenticatedUser, id: string, dto: ResolveExceptionDto) {
+    const exception = await this.prisma.attendanceException.findFirst({
+      where: { id, organizationId: user.organizationId },
+      include: { employee: true },
+    });
+
+    if (!exception) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Attendance exception not found.',
+        code: 'EXCEPTION_NOT_FOUND',
+      });
+    }
+
+    if (exception.status === dto.status) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: `Exception has already been marked as ${dto.status}.`,
+        code: 'EXCEPTION_ALREADY_DECIDED',
+      });
+    }
+
+    const updated = await this.prisma.attendanceException.update({
+      where: { id },
+      data: {
+        status: dto.status,
+        resolved: true,
+        resolvedAt: new Date(),
+        resolvedById: user.id,
+        resolutionNotes: dto.resolutionNotes.trim(),
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+          },
+        },
+        resolvedBy: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    // In-app notification to employee
+    if (this.notificationsService && exception.employee?.userId) {
+      await this.notificationsService
+        .createNotification({
+          userId: exception.employee.userId,
+          organizationId: user.organizationId,
+          title: `Attendance Exception ${dto.status === 'RESOLVED' ? 'Resolved' : 'Dismissed'}`,
+          message: `Your ${exception.exceptionType.replace(/_/g, ' ')} exception for ${exception.date.toISOString().split('T')[0]} has been ${dto.status.toLowerCase()}. Notes: ${dto.resolutionNotes.trim()}`,
+          type: 'EXCEPTION_RESOLVED',
+          metadata: { exceptionId: id, status: dto.status },
+        })
+        .catch((err) =>
+          this.logger.warn(`Failed to dispatch employee notification: ${err.message}`),
+        );
+    }
+
+    // Audit log
+    await this.auditService.record({
+      organizationId: user.organizationId,
+      userId: user.id,
+      action:
+        dto.status === 'RESOLVED'
+          ? 'ATTENDANCE_EXCEPTION_RESOLVED'
+          : 'ATTENDANCE_EXCEPTION_DISMISSED',
+      entity: 'AttendanceException',
+      entityId: id,
+      metadata: {
+        employeeId: exception.employeeId,
+        exceptionType: exception.exceptionType,
+        previousStatus: exception.status,
+        newStatus: dto.status,
+        resolutionNotes: dto.resolutionNotes.trim(),
+      },
+    });
+
+    return {
+      success: true,
+      message: `Attendance exception successfully marked as ${dto.status.toLowerCase()}.`,
+      data: updated,
+    };
+  }
+
+  /**
+   * Scans and flags attendance exceptions for a target working date across organization
+   */
+  async scanExceptions(organizationId: string, targetDateStr?: string) {
+    const dateStr = targetDateStr || new Date().toISOString().split('T')[0];
+    const dateUtc = new Date(`${dateStr}T00:00:00.000Z`);
+
+    const summaries = await this.prisma.attendanceDailySummary.findMany({
+      where: { organizationId, date: dateUtc },
+      include: { employee: true, shift: true },
+    });
+
+    let detectedCount = 0;
+
+    for (const s of summaries) {
+      // 1. Late arrival
+      if (s.lateMinutes > 0) {
+        await this.recordAttendanceException({
+          organizationId,
+          employeeId: s.employeeId,
+          date: dateUtc,
+          exceptionType: 'LATE_ARRIVAL',
+          severity: s.lateMinutes > 60 ? 'MEDIUM' : 'LOW',
+          details: {
+            lateMinutes: s.lateMinutes,
+            shiftStartTime: s.shift?.startTime || '09:00',
+            firstCheckIn: s.firstCheckIn?.toISOString(),
+          },
+          idempotencyKey: `ex:late_arrival:${s.employeeId}:${dateStr}`,
+        });
+        detectedCount++;
+      }
+
+      // 2. Early departure
+      if (s.earlyExitMinutes > 0) {
+        await this.recordAttendanceException({
+          organizationId,
+          employeeId: s.employeeId,
+          date: dateUtc,
+          exceptionType: 'EARLY_DEPARTURE',
+          severity: s.earlyExitMinutes > 60 ? 'MEDIUM' : 'LOW',
+          details: {
+            earlyExitMinutes: s.earlyExitMinutes,
+            shiftEndTime: s.shift?.endTime || '18:00',
+            lastCheckOut: s.lastCheckOut?.toISOString(),
+          },
+          idempotencyKey: `ex:early_departure:${s.employeeId}:${dateStr}`,
+        });
+        detectedCount++;
+      }
+
+      // 3. Missing checkout (INCOMPLETE status)
+      if (s.status === 'INCOMPLETE') {
+        await this.recordAttendanceException({
+          organizationId,
+          employeeId: s.employeeId,
+          date: dateUtc,
+          exceptionType: 'MISSING_CHECKOUT',
+          severity: 'MEDIUM',
+          details: {
+            summaryId: s.id,
+            firstCheckIn: s.firstCheckIn?.toISOString(),
+            message: 'Incomplete session: missing checkout punch',
+          },
+          idempotencyKey: `ex:missing_checkout:summary:${s.id}`,
+        });
+        detectedCount++;
+      }
+    }
+
+    return {
+      success: true,
+      message: `Exception scan completed for date ${dateStr}. Detected ${detectedCount} potential exception instances.`,
+      scannedSummariesCount: summaries.length,
+      detectedCount,
+    };
   }
 }

@@ -43,3 +43,6 @@ coverage
 
 # Docker data volumes
 postgres_data
+
+# Local scratch scripts
+scratch/

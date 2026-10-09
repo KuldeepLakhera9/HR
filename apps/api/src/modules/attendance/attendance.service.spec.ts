@@ -96,6 +96,7 @@ describe('AttendanceService', () => {
     prisma = {
       attendanceEvent: {
         findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         create: jest
           .fn()
@@ -121,9 +122,17 @@ describe('AttendanceService', () => {
           .mockImplementation(({ create }) => Promise.resolve({ id: 'summary-1', ...create })),
       },
       attendanceException: {
-        create: jest.fn().mockResolvedValue({ id: 'exc-1' }),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'exc-1', ...data })),
+        findUnique: jest.fn().mockResolvedValue(null),
+        findFirst: jest.fn().mockResolvedValue(null),
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'exc-1', ...data })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       attendanceCorrectionRequest: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -1694,6 +1703,228 @@ describe('AttendanceService', () => {
       expect(res.data.length).toBe(1);
       expect(res.data[0].reasonCategory).toBe('TECHNICAL_GLITCH');
       expect(res.data[0].explanation).toBe('Biometric device failed');
+    });
+  });
+
+  describe('Attendance Exceptions Workflow (Phase 4 Step 12)', () => {
+    const mockExceptionItem = {
+      id: 'exc-step12-1',
+      organizationId: mockOrgId,
+      employeeId: mockEmployeeId,
+      date: new Date('2026-10-09T00:00:00.000Z'),
+      exceptionType: 'LATE_ARRIVAL',
+      severity: 'LOW',
+      details: { lateMinutes: 25, shiftStartTime: '09:00' },
+      status: 'OPEN',
+      resolved: false,
+      resolvedAt: null,
+      resolvedById: null,
+      resolutionNotes: null,
+      idempotencyKey: `ex:late_arrival:${mockEmployeeId}:2026-10-09`,
+      createdAt: new Date('2026-10-09T09:25:00.000Z'),
+      updatedAt: new Date('2026-10-09T09:25:00.000Z'),
+      employee: {
+        id: mockEmployeeId,
+        employeeCode: 'EMP-001',
+        firstName: 'Jane',
+        lastName: 'Doe',
+        displayName: 'Jane Doe',
+        user: { email: 'jane.doe@company.com' },
+        employment: {
+          department: { id: 'dept-1', name: 'Engineering' },
+          designation: { id: 'desig-1', name: 'Developer' },
+        },
+      },
+      resolvedBy: null,
+    };
+
+    it('1. recordAttendanceException records exception and strips sensitive lat/long coordinates', async () => {
+      prisma.attendanceException.findUnique.mockResolvedValueOnce(null);
+
+      const res = await service.recordAttendanceException({
+        organizationId: mockOrgId,
+        employeeId: mockEmployeeId,
+        date: new Date('2026-10-09'),
+        exceptionType: 'OUTSIDE_GEOFENCE',
+        severity: 'HIGH',
+        details: {
+          distanceMeters: 450,
+          latitude: 12.9716, // MUST BE STRIPPED
+          longitude: 77.5946, // MUST BE STRIPPED
+          password: 'secret', // MUST BE STRIPPED
+          officeName: 'Headquarters',
+        },
+        idempotencyKey: 'ex:outside_geofence:test-1',
+      });
+
+      expect(prisma.attendanceException.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            exceptionType: 'OUTSIDE_GEOFENCE',
+            severity: 'HIGH',
+            details: expect.not.objectContaining({
+              latitude: 12.9716,
+              longitude: 77.5946,
+              password: 'secret',
+            }),
+          }),
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTENDANCE_EXCEPTION_FLAGGED',
+        }),
+      );
+    });
+
+    it('2. IDEMPOTENCY: returns existing exception without duplicate database insertions', async () => {
+      prisma.attendanceException.findUnique.mockResolvedValueOnce(mockExceptionItem);
+
+      const res = await service.recordAttendanceException({
+        organizationId: mockOrgId,
+        employeeId: mockEmployeeId,
+        date: new Date('2026-10-09'),
+        exceptionType: 'LATE_ARRIVAL',
+        details: { lateMinutes: 25 },
+        idempotencyKey: mockExceptionItem.idempotencyKey,
+      });
+
+      expect(res?.id).toBe(mockExceptionItem.id);
+      expect(prisma.attendanceException.create).not.toHaveBeenCalled();
+    });
+
+    it('3. retrieves filtered exception queue with status, severity, pagination, and KPI counts', async () => {
+      prisma.attendanceException.findMany.mockResolvedValueOnce([mockExceptionItem]);
+      prisma.attendanceException.count
+        .mockResolvedValueOnce(1) // total
+        .mockResolvedValueOnce(1) // open
+        .mockResolvedValueOnce(0) // resolved
+        .mockResolvedValueOnce(0) // dismissed
+        .mockResolvedValueOnce(0); // high severity
+
+      const res = await service.getExceptions(mockOrgId, {
+        status: 'OPEN',
+        severity: 'LOW',
+        page: 1,
+        limit: 10,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data.length).toBe(1);
+      expect(res.data[0].exceptionType).toBe('LATE_ARRIVAL');
+      expect(res.counts.open).toBe(1);
+      expect(res.meta.total).toBe(1);
+    });
+
+    it('4. getExceptionById retrieves single exception and throws NotFoundException for cross-org', async () => {
+      prisma.attendanceException.findFirst.mockResolvedValueOnce(mockExceptionItem);
+
+      const found = await service.getExceptionById(mockOrgId, 'exc-step12-1');
+      expect(found.success).toBe(true);
+      expect(found.data.id).toBe('exc-step12-1');
+
+      prisma.attendanceException.findFirst.mockResolvedValueOnce(null);
+      await expect(service.getExceptionById('other-org', 'exc-step12-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('5. RESOLUTION: resolves exception with reviewer notes and audit event', async () => {
+      prisma.attendanceException.findFirst.mockResolvedValueOnce(mockExceptionItem);
+      prisma.attendanceException.update.mockResolvedValueOnce({
+        ...mockExceptionItem,
+        status: 'RESOLVED',
+        resolved: true,
+        resolvedAt: new Date(),
+        resolvedById: mockUser.id,
+        resolutionNotes: 'Verified bus breakdown; approved late arrival.',
+      });
+
+      const res = await service.resolveException(mockUser, 'exc-step12-1', {
+        status: 'RESOLVED',
+        resolutionNotes: 'Verified bus breakdown; approved late arrival.',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data.status).toBe('RESOLVED');
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTENDANCE_EXCEPTION_RESOLVED',
+        }),
+      );
+    });
+
+    it('6. DISMISSAL: dismisses exception with reviewer notes', async () => {
+      prisma.attendanceException.findFirst.mockResolvedValueOnce(mockExceptionItem);
+      prisma.attendanceException.update.mockResolvedValueOnce({
+        ...mockExceptionItem,
+        status: 'DISMISSED',
+        resolved: true,
+        resolvedAt: new Date(),
+        resolvedById: mockUser.id,
+        resolutionNotes: 'False alarm, employee was present on client call.',
+      });
+
+      const res = await service.resolveException(mockUser, 'exc-step12-1', {
+        status: 'DISMISSED',
+        resolutionNotes: 'False alarm, employee was present on client call.',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data.status).toBe('DISMISSED');
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTENDANCE_EXCEPTION_DISMISSED',
+        }),
+      );
+    });
+
+    it('7. CONCURRENCY: prevents duplicate decision if exception is already resolved', async () => {
+      prisma.attendanceException.findFirst.mockResolvedValueOnce({
+        ...mockExceptionItem,
+        status: 'RESOLVED',
+        resolved: true,
+      });
+
+      await expect(
+        service.resolveException(mockUser, 'exc-step12-1', {
+          status: 'RESOLVED',
+          resolutionNotes: 'Attempting duplicate resolution',
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('8. BATCH SCAN: scans summaries and detects late arrivals and missing checkouts idempotently', async () => {
+      prisma.attendanceDailySummary.findMany.mockResolvedValueOnce([
+        {
+          id: 'sum-late',
+          organizationId: mockOrgId,
+          employeeId: mockEmployeeId,
+          date: new Date('2026-10-09T00:00:00.000Z'),
+          lateMinutes: 30,
+          earlyExitMinutes: 0,
+          status: 'PRESENT',
+          firstCheckIn: new Date('2026-10-09T09:30:00.000Z'),
+          shift: { startTime: '09:00', endTime: '18:00' },
+        },
+        {
+          id: 'sum-incomplete',
+          organizationId: mockOrgId,
+          employeeId: 'emp-2',
+          date: new Date('2026-10-09T00:00:00.000Z'),
+          lateMinutes: 0,
+          earlyExitMinutes: 0,
+          status: 'INCOMPLETE',
+          firstCheckIn: new Date('2026-10-09T09:00:00.000Z'),
+          shift: { startTime: '09:00', endTime: '18:00' },
+        },
+      ]);
+      prisma.attendanceException.findUnique.mockResolvedValue(null);
+
+      const scanResult = await service.scanExceptions(mockOrgId, '2026-10-09');
+      expect(scanResult.success).toBe(true);
+      expect(scanResult.detectedCount).toBe(2);
+      expect(scanResult.scannedSummariesCount).toBe(2);
     });
   });
 });

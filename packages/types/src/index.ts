@@ -627,7 +627,48 @@ export type AttendanceExceptionType =
   | 'MISSING_CHECKOUT'
   | 'OVERLAPPING_SESSION'
   | 'SUSPICIOUS_TIMING'
-  | 'POLICY_VIOLATION';
+  | 'POLICY_VIOLATION'
+  | 'LATE_ARRIVAL'
+  | 'EARLY_DEPARTURE'
+  | 'INVALID_STATE'
+  | 'PENDING_CORRECTION'
+  | 'SUSPICIOUS_REPEATED_ATTEMPTS';
+
+export type AttendanceExceptionStatus = 'OPEN' | 'RESOLVED' | 'DISMISSED';
+
+export interface AttendanceExceptionDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    employeeCode: string;
+    employeeNumber?: string;
+    firstName: string;
+    lastName: string;
+    displayName?: string;
+    email?: string | null;
+    department?: { id: string; name: string } | null;
+    designation?: { id: string; name: string } | null;
+  } | null;
+  date: string;
+  exceptionType: AttendanceExceptionType;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH';
+  status: AttendanceExceptionStatus;
+  details: Record<string, any>;
+  resolved: boolean;
+  resolvedAt?: string | null;
+  resolvedById?: string | null;
+  resolvedBy?: {
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+  resolutionNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export type SessionStatus = 'OPEN' | 'COMPLETED' | 'AUTO_CLOSED';
 

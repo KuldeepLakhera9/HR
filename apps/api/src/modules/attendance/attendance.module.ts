@@ -25,6 +25,9 @@ import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
 import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.dto';
 import { DecideCorrectionRequestDto } from './dto/decide-correction.dto';
+import { AttendanceExceptionQueryDto } from './dto/attendance-exception-query.dto';
+import { ResolveExceptionDto } from './dto/resolve-exception.dto';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { EmployeesModule } from '../employees/employees.module';
 import {
   OfficeLocationsController,
@@ -224,6 +227,58 @@ export class AttendanceController {
   }
 
   // ===========================================================================
+  // ATTENDANCE EXCEPTIONS WORKFLOW ENDPOINTS
+  // ===========================================================================
+
+  @Get('exceptions')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary:
+      'Get organizational attendance exceptions queue with filters, pagination, and KPI counts',
+  })
+  async getExceptions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AttendanceExceptionQueryDto,
+  ) {
+    return this.attendanceService.getExceptions(user.organizationId, query);
+  }
+
+  @Get('exceptions/:id')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get single attendance exception detail by ID',
+  })
+  async getExceptionById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.attendanceService.getExceptionById(user.organizationId, id);
+  }
+
+  @Post('exceptions/:id/resolve')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({
+    summary: 'Resolve or dismiss an attendance exception with resolution audit notes',
+  })
+  async resolveException(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ResolveExceptionDto,
+  ) {
+    return this.attendanceService.resolveException(user, id, dto);
+  }
+
+  @Post('exceptions/scan')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({
+    summary:
+      'Scan and flag attendance exceptions (late arrival, missing checkout, early departure) for a date',
+  })
+  async scanExceptions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { targetDate?: string },
+  ) {
+    return this.attendanceService.scanExceptions(user.organizationId, body?.targetDate);
+  }
+
+  // ===========================================================================
   // MANAGER TEAM ATTENDANCE ENDPOINTS
   // ===========================================================================
 
@@ -312,7 +367,7 @@ export class AttendanceController {
 }
 
 @Module({
-  imports: [EmployeesModule],
+  imports: [EmployeesModule, NotificationsModule],
   controllers: [
     AttendanceController,
     OfficeLocationsController,

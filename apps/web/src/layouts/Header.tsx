@@ -9,6 +9,8 @@ import { Search, Menu, Command, LogIn } from 'lucide-react';
 import { UserMenu, NotificationMenu, Button } from '@hrms/ui';
 import { GlobalSearch } from './GlobalSearch';
 
+import { notificationsApi } from '../lib/api-client';
+
 const INITIAL_NOTIFICATIONS = [
   {
     id: '1',
@@ -39,6 +41,21 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
 
+  useEffect(() => {
+    if (isAuthenticated) {
+      notificationsApi
+        .getNotifications()
+        .then((items) => {
+          if (Array.isArray(items) && items.length > 0) {
+            setNotifications(items);
+          }
+        })
+        .catch(() => {
+          // Non-fatal fallback
+        });
+    }
+  }, [isAuthenticated]);
+
   // Global keyboard shortcut listener (Ctrl+K or Cmd+K)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -53,6 +70,11 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
 
   const handleMarkAllRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+    notifications.forEach((n) => {
+      if (!n.isRead) {
+        notificationsApi.markRead(n.id).catch(() => {});
+      }
+    });
   };
 
   return (

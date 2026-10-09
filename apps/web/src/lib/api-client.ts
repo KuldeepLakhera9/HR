@@ -841,6 +841,68 @@ export const attendanceApi = {
     const res = await fetchWithAuth<any>(`/attendance/manager/records/${employeeId}${qs}`);
     return res.data;
   },
+
+  async getExceptions(query?: {
+    status?: string;
+    exceptionType?: string;
+    severity?: string;
+    employeeId?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.exceptionType && query.exceptionType !== 'ALL')
+      params.append('exceptionType', query.exceptionType);
+    if (query?.severity && query.severity !== 'ALL') params.append('severity', query.severity);
+    if (query?.employeeId) params.append('employeeId', query.employeeId);
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString();
+    const res = await fetchWithAuth<any>(`/attendance/exceptions${qs ? `?${qs}` : ''}`);
+    return res.data;
+  },
+
+  async getExceptionById(id: string) {
+    const res = await fetchWithAuth<any>(`/attendance/exceptions/${id}`);
+    return res.data;
+  },
+
+  async resolveException(
+    id: string,
+    payload: { status: 'RESOLVED' | 'DISMISSED'; resolutionNotes: string },
+  ) {
+    const res = await fetchWithAuth<any>(`/attendance/exceptions/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res.data;
+  },
+
+  async scanExceptions(targetDate?: string) {
+    const res = await fetchWithAuth<any>('/attendance/exceptions/scan', {
+      method: 'POST',
+      body: JSON.stringify(targetDate ? { targetDate } : {}),
+    });
+    return res.data;
+  },
+};
+
+export const notificationsApi = {
+  async getNotifications() {
+    const res = await fetchWithAuth<any[]>('/notifications');
+    return res.data;
+  },
+  async markRead(id: string) {
+    const res = await fetchWithAuth<any>(`/notifications/${id}/read`, {
+      method: 'PATCH',
+    });
+    return res.data;
+  },
 };
 
 export const attendancePoliciesApi = {

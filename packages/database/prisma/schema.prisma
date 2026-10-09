@@ -668,6 +668,11 @@ enum AttendanceExceptionType {
   OVERLAPPING_SESSION
   SUSPICIOUS_TIMING
   POLICY_VIOLATION
+  LATE_ARRIVAL
+  EARLY_DEPARTURE
+  INVALID_STATE
+  PENDING_CORRECTION
+  SUSPICIOUS_REPEATED_ATTEMPTS
 }
 
 enum SessionStatus {
@@ -950,6 +955,9 @@ model AttendanceException {
   resolvedAt     DateTime?
   resolvedById   String?
   resolvedBy     User?                   @relation("ExceptionResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+  status         String                  @default("OPEN") // OPEN, RESOLVED, DISMISSED
+  resolutionNotes String?
+  idempotencyKey String?                 @unique
 
   createdAt      DateTime                @default(now())
   updatedAt      DateTime                @updatedAt
@@ -958,6 +966,8 @@ model AttendanceException {
   @@index([employeeId])
   @@index([exceptionType])
   @@index([resolved])
+  @@index([status])
+  @@index([idempotencyKey])
   @@map("attendance_exceptions")
 }
 

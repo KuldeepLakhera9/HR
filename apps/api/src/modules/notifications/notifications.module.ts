@@ -1,11 +1,94 @@
-import { Controller, Get, Patch, Param, Injectable, Module, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Param,
+  Injectable,
+  Module,
+  UseGuards,
+  Logger,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
+
+export interface InternalNotification {
+  id: string;
+  userId?: string | null;
+  organizationId: string;
+  title: string;
+  message: string;
+  type?: string;
+  link?: string | null;
+  metadata?: any;
+  createdAt: Date;
+  isRead: boolean;
+}
 
 @Injectable()
 export class NotificationsService {
-  async getNotifications() {
-    return [
+  private readonly logger = new Logger(NotificationsService.name);
+  private notifications: InternalNotification[] = [];
+
+  /**
+   * Internal in-app notification dispatch without paid external services.
+   */
+  async createNotification(data: {
+    userId?: string | null;
+    organizationId: string;
+    title: string;
+    message: string;
+    type?: string;
+    link?: string | null;
+    metadata?: any;
+  }): Promise<InternalNotification> {
+    const notif: InternalNotification = {
+      id: `notif-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      userId: data.userId ?? null,
+      organizationId: data.organizationId,
+      title: data.title,
+      message: data.message,
+      type: data.type || 'INFO',
+      link: data.link ?? null,
+      metadata: data.metadata ?? null,
+      createdAt: new Date(),
+      isRead: false,
+    };
+
+    this.notifications.unshift(notif);
+    // Keep internal buffer bounded
+    if (this.notifications.length > 500) {
+      this.notifications.pop();
+    }
+
+    this.logger.log(
+      `[In-App Notification] Org=${data.organizationId} Title="${data.title}" Type=${data.type}`,
+    );
+
+    return notif;
+  }
+
+  async getNotifications(userId?: string, organizationId?: string) {
+    const filtered = this.notifications.filter((n) => {
+      if (organizationId && n.organizationId !== organizationId) return false;
+      if (n.userId && userId && n.userId !== userId) return false;
+      return true;
+    });
+
+    const formattedDynamic = filtered.map((n) => ({
+      id: n.id,
+      title: n.title,
+      message: n.message,
+      type: n.type,
+      time: this.formatRelativeTime(n.createdAt),
+      isRead: n.isRead,
+      metadata: n.metadata,
+      link: n.link,
+    }));
+
+    // Retain default seed notifications for demonstration
+    const defaults = [
       {
         id: 'notif-1',
         title: 'Upcoming Holiday: Dussehra',
@@ -28,6 +111,27 @@ export class NotificationsService {
         isRead: true,
       },
     ];
+
+    return [...formattedDynamic, ...defaults];
+  }
+
+  async markRead(id: string, _userId?: string) {
+    const notif = this.notifications.find((n) => n.id === id);
+    if (notif) {
+      notif.isRead = true;
+    }
+    return { id, isRead: true };
+  }
+
+  private formatRelativeTime(date: Date): string {
+    const diffSecs = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000));
+    if (diffSecs < 60) return 'Just now';
+    const diffMins = Math.floor(diffSecs / 60);
+    if (diffMins < 60) return `${diffMins} min${diffMins > 1 ? 's' : ''} ago`;
+    const diffHours = Math.floor(diffMins / 60);
+    if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays} day${diffDays > 1 ? 's' : ''} ago`;
   }
 }
 
@@ -40,8 +144,8 @@ export class NotificationsController {
 
   @Get()
   @ApiOperation({ summary: 'Get current user notifications' })
-  async getNotifications() {
-    const data = await this.notificationsService.getNotifications();
+  async getNotifications(@CurrentUser() user?: AuthenticatedUser) {
+    const data = await this.notificationsService.getNotifications(user?.id, user?.organizationId);
     return {
       message: 'Notifications retrieved',
       data,
@@ -50,10 +154,11 @@ export class NotificationsController {
 
   @Patch(':id/read')
   @ApiOperation({ summary: 'Mark specific notification as read' })
-  async markRead(@Param('id') id: string) {
+  async markRead(@Param('id') id: string, @CurrentUser() user?: AuthenticatedUser) {
+    const data = await this.notificationsService.markRead(id, user?.id);
     return {
       message: `Notification ${id} marked as read`,
-      data: { id, isRead: true },
+      data,
     };
   }
 }

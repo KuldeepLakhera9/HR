@@ -59,6 +59,7 @@ import {
 } from 'recharts';
 import { attendanceApi, organizationApi } from '../../../lib/api-client';
 import { useAuth } from '../../../context/AuthContext';
+import { HRAttendanceExceptionsQueue } from './HRAttendanceExceptionsQueue';
 
 interface HRAttendanceDashboardProps {
   onRefreshNeeded?: () => void;
@@ -66,6 +67,9 @@ interface HRAttendanceDashboardProps {
 
 export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () => {
   const { user } = useAuth();
+
+  // Sub-navigation state: 'roster' | 'exceptions' | 'corrections'
+  const [hrSubTab, setHrSubTab] = useState<'roster' | 'exceptions' | 'corrections'>('roster');
 
   // Query Filter States
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
@@ -528,19 +532,97 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
               icon={<AlertTriangle className="h-4 w-4 text-amber-700" />}
               iconBg="bg-amber-100/60"
             />
-            <KPICard
-              title="Unresolved Exceptions"
-              value={headcount.unresolvedExceptions}
-              description="Geofence / delay alerts"
-              icon={<ShieldAlert className="h-4 w-4 text-rose-700" />}
-              iconBg="bg-rose-50"
-            />
+            <div
+              onClick={() => setHrSubTab('exceptions')}
+              className="cursor-pointer transition-transform hover:scale-[1.02]"
+              title="Click to view Attendance Exceptions Queue"
+            >
+              <KPICard
+                title="Unresolved Exceptions"
+                value={headcount.unresolvedExceptions}
+                description="Geofence / delay alerts"
+                icon={<ShieldAlert className="h-4 w-4 text-rose-700" />}
+                iconBg="bg-rose-50"
+              />
+            </div>
           </>
         )}
       </div>
 
+      {/* 2.5 Sub-Navigation Tab Bar */}
+      <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+        <button
+          onClick={() => setHrSubTab('roster')}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+            hrSubTab === 'roster'
+              ? 'bg-amber-600 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+          }`}
+        >
+          <Users className="h-3.5 w-3.5" />
+          <span>Attendance Roster & Analytics</span>
+        </button>
+
+        <button
+          onClick={() => setHrSubTab('exceptions')}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+            hrSubTab === 'exceptions'
+              ? 'bg-rose-600 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+          }`}
+        >
+          <ShieldAlert className="h-3.5 w-3.5" />
+          <span>Exceptions Queue</span>
+          {headcount.unresolvedExceptions > 0 && (
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                hrSubTab === 'exceptions' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-700'
+              }`}
+            >
+              {headcount.unresolvedExceptions}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setHrSubTab('corrections')}
+          className={`flex items-center gap-2 px-3.5 py-2 text-xs font-semibold rounded-lg transition-all ${
+            hrSubTab === 'corrections'
+              ? 'bg-amber-700 text-white shadow-xs'
+              : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+          }`}
+        >
+          <Clock className="h-3.5 w-3.5" />
+          <span>Regularization Requests</span>
+          {corrections.length > 0 && (
+            <span
+              className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono font-bold ${
+                hrSubTab === 'corrections'
+                  ? 'bg-white/20 text-white'
+                  : 'bg-amber-100 text-amber-700'
+              }`}
+            >
+              {corrections.length}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* Exceptions Queue Sub-View */}
+      {hrSubTab === 'exceptions' && (
+        <HRAttendanceExceptionsQueue
+          defaultDate={selectedDate}
+          onRefreshNeeded={() => {
+            loadDashboard();
+            loadRecords();
+          }}
+        />
+      )}
+
       {/* 3. Reusable Charts Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div
+        className={`grid grid-cols-1 lg:grid-cols-3 gap-6 ${hrSubTab !== 'roster' ? 'hidden' : ''}`}
+      >
         {/* Left 2 Cols: 7-Day Attendance Trend */}
         <Card className="lg:col-span-2 p-5 border-stone-200">
           <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
@@ -700,7 +782,7 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
       </div>
 
       {/* 3.5. Pending Regularization Requests for HR Review */}
-      {corrections.length > 0 && (
+      {(hrSubTab === 'corrections' || (hrSubTab === 'roster' && corrections.length > 0)) && (
         <Card className="p-5 border-amber-200/70 bg-gradient-to-r from-amber-50/40 via-white to-amber-50/20 shadow-2xs space-y-3">
           <div className="flex items-center justify-between pb-2 border-b border-amber-100">
             <div className="flex items-center gap-2">
@@ -727,484 +809,509 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
             </Button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-            {corrections.map((req) => {
-              const categoryLabel =
-                req.reasonCategory === 'MISSING_CHECKOUT'
-                  ? 'Missing Check-Out'
-                  : req.reasonCategory === 'WRONG_EVENT'
-                    ? 'Wrong Event'
-                    : req.reasonCategory === 'TECHNICAL_GLITCH'
-                      ? 'Technical Glitch'
-                      : req.reasonCategory === 'EMERGENCY'
-                        ? 'Emergency'
-                        : req.reasonCategory === 'OFFICIAL_DUTY'
-                          ? 'Official Duty'
-                          : req.reasonCategory || 'Discrepancy';
+          {corrections.length === 0 ? (
+            <div className="p-8 text-center text-stone-500 text-xs">
+              <CheckCircle2 className="h-6 w-6 text-emerald-600 mx-auto mb-2" />
+              No pending regularization requests. All submitted correction requests have been
+              addressed.
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {corrections.map((req) => {
+                const categoryLabel =
+                  req.reasonCategory === 'MISSING_CHECKOUT'
+                    ? 'Missing Check-Out'
+                    : req.reasonCategory === 'WRONG_EVENT'
+                      ? 'Wrong Event'
+                      : req.reasonCategory === 'TECHNICAL_GLITCH'
+                        ? 'Technical Glitch'
+                        : req.reasonCategory === 'EMERGENCY'
+                          ? 'Emergency'
+                          : req.reasonCategory === 'OFFICIAL_DUTY'
+                            ? 'Official Duty'
+                            : req.reasonCategory || 'Discrepancy';
 
-              const isSelfRequest = user?.id === req.employee?.userId;
+                const isSelfRequest = user?.id === req.employee?.userId;
 
-              return (
-                <div
-                  key={req.id}
-                  className="p-4 bg-white rounded-xl border border-stone-200 shadow-2xs space-y-2.5 text-xs"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-stone-900">
-                        {req.employee?.displayName || 'Employee'}
-                      </span>
-                      <span className="text-[11px] font-mono text-stone-400">
-                        ({req.employee?.employeeCode})
-                      </span>
-                      <Badge variant="outline" size="sm" className="bg-stone-100 text-stone-700">
-                        {categoryLabel}
+                return (
+                  <div
+                    key={req.id}
+                    className="p-4 bg-white rounded-xl border border-stone-200 shadow-2xs space-y-2.5 text-xs"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-stone-900">
+                          {req.employee?.displayName || 'Employee'}
+                        </span>
+                        <span className="text-[11px] font-mono text-stone-400">
+                          ({req.employee?.employeeCode})
+                        </span>
+                        <Badge variant="outline" size="sm" className="bg-stone-100 text-stone-700">
+                          {categoryLabel}
+                        </Badge>
+                      </div>
+                      <Badge variant="warning" size="sm">
+                        PENDING
                       </Badge>
                     </div>
-                    <Badge variant="warning" size="sm">
-                      PENDING
-                    </Badge>
-                  </div>
 
-                  <div className="grid grid-cols-2 gap-2 text-stone-600 bg-stone-50 p-2.5 rounded-lg text-[11px]">
-                    <div>
-                      <span className="text-stone-400 block text-[10px]">DATE</span>
-                      <strong>{req.targetDate ? req.targetDate.split('T')[0] : '—'}</strong>
+                    <div className="grid grid-cols-2 gap-2 text-stone-600 bg-stone-50 p-2.5 rounded-lg text-[11px]">
+                      <div>
+                        <span className="text-stone-400 block text-[10px]">DATE</span>
+                        <strong>{req.targetDate ? req.targetDate.split('T')[0] : '—'}</strong>
+                      </div>
+                      <div>
+                        <span className="text-stone-400 block text-[10px]">REQUESTED TIMINGS</span>
+                        <strong className="font-mono">
+                          {req.requestedCheckIn
+                            ? new Date(req.requestedCheckIn).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '09:00'}{' '}
+                          –{' '}
+                          {req.requestedCheckOut
+                            ? new Date(req.requestedCheckOut).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            : '18:00'}
+                        </strong>
+                      </div>
                     </div>
-                    <div>
-                      <span className="text-stone-400 block text-[10px]">REQUESTED TIMINGS</span>
-                      <strong className="font-mono">
-                        {req.requestedCheckIn
-                          ? new Date(req.requestedCheckIn).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '09:00'}{' '}
-                        –{' '}
-                        {req.requestedCheckOut
-                          ? new Date(req.requestedCheckOut).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '18:00'}
-                      </strong>
-                    </div>
-                  </div>
 
-                  <p className="text-stone-600 text-xs">
-                    <strong>Reason:</strong> {req.explanation || req.reason}
-                  </p>
-
-                  {req.evidenceMetadata && (
-                    <p className="text-[11px] text-amber-800 bg-amber-50/60 px-2.5 py-1 rounded border border-amber-200/50">
-                      <strong>Evidence Reference:</strong>{' '}
-                      {typeof req.evidenceMetadata === 'object'
-                        ? req.evidenceMetadata.note || JSON.stringify(req.evidenceMetadata)
-                        : req.evidenceMetadata}
+                    <p className="text-stone-600 text-xs">
+                      <strong>Reason:</strong> {req.explanation || req.reason}
                     </p>
-                  )}
 
-                  {isSelfRequest ? (
-                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
-                      <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
-                        Self-Approval Prohibited (Must be reviewed by another admin)
-                      </span>
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleOpenDecisionModal(req, 'REJECTED')}
-                        className="text-rose-700 hover:bg-rose-50 text-xs h-7 px-2.5"
-                      >
-                        <X className="h-3.5 w-3.5 mr-1" /> Reject
-                      </Button>
-                      <Button
-                        size="sm"
-                        onClick={() => handleOpenDecisionModal(req, 'APPROVED')}
-                        className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 font-semibold"
-                      >
-                        <Check className="h-3.5 w-3.5 mr-1" /> Approve
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                    {req.evidenceMetadata && (
+                      <p className="text-[11px] text-amber-800 bg-amber-50/60 px-2.5 py-1 rounded border border-amber-200/50">
+                        <strong>Evidence Reference:</strong>{' '}
+                        {typeof req.evidenceMetadata === 'object'
+                          ? req.evidenceMetadata.note || JSON.stringify(req.evidenceMetadata)
+                          : req.evidenceMetadata}
+                      </p>
+                    )}
+
+                    {isSelfRequest ? (
+                      <div className="pt-2 border-t border-stone-100 flex items-center justify-between">
+                        <span className="text-[11px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                          Self-Approval Prohibited (Must be reviewed by another admin)
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-100">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleOpenDecisionModal(req, 'REJECTED')}
+                          className="text-rose-700 hover:bg-rose-50 text-xs h-7 px-2.5"
+                        >
+                          <X className="h-3.5 w-3.5 mr-1" /> Reject
+                        </Button>
+                        <Button
+                          size="sm"
+                          onClick={() => handleOpenDecisionModal(req, 'APPROVED')}
+                          className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs h-7 px-3 font-semibold"
+                        >
+                          <Check className="h-3.5 w-3.5 mr-1" /> Approve
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </Card>
       )}
 
-      {/* 4. Filter & Search Controls Bar */}
-      <Card className="p-4 border-stone-200">
-        <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
-          {/* Search Input */}
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
-            <input
-              type="text"
-              placeholder="Search employee by name or code (e.g., Vikram, EMP-101)..."
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-stone-200 bg-white placeholder-stone-400 text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            />
-          </div>
-
-          {/* Dropdown Filters */}
-          <div className="flex flex-wrap items-center gap-2.5">
-            {/* Branch Filter */}
-            <select
-              value={selectedBranchId}
-              onChange={(e) => {
-                setSelectedBranchId(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            >
-              <option value="">All Branches</option>
-              {branches.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Department Filter */}
-            <select
-              value={selectedDeptId}
-              onChange={(e) => {
-                setSelectedDeptId(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            >
-              <option value="">All Departments</option>
-              {departments.map((d) => (
-                <option key={d.id} value={d.id}>
-                  {d.name}
-                </option>
-              ))}
-            </select>
-
-            {/* Status Filter */}
-            <select
-              value={selectedStatus}
-              onChange={(e) => {
-                setSelectedStatus(e.target.value);
-                setCurrentPage(1);
-              }}
-              className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
-            >
-              <option value="ALL">All Statuses</option>
-              <option value="PRESENT">Present</option>
-              <option value="LATE">Late Arrivals</option>
-              <option value="HALF_DAY">Half Day</option>
-              <option value="INCOMPLETE">Incomplete</option>
-              <option value="PENDING_REVIEW">Pending Review</option>
-              <option value="ABSENT">Absent</option>
-              <option value="ON_LEAVE">On Leave</option>
-              <option value="WEEK_OFF">Week Off</option>
-              <option value="HOLIDAY">Holiday</option>
-            </select>
-
-            {(searchQuery || selectedBranchId || selectedDeptId || selectedStatus !== 'ALL') && (
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={handleResetFilters}
-                className="text-stone-500 hover:text-stone-900 text-xs px-2.5"
-              >
-                <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
-              </Button>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {/* 5. Paginated Attendance Management Table */}
-      <Card className="border-stone-200 overflow-hidden shadow-2xs">
-        <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <h3 className="text-sm font-bold text-stone-900">Attendance Records</h3>
-            <span className="text-xs text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full font-mono">
-              {paginationMeta.total} Employees
-            </span>
-          </div>
-
-          <div className="text-xs text-stone-500 flex items-center gap-2">
-            <span>Rows per page:</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setCurrentPage(1);
-              }}
-              className="border border-stone-200 rounded px-1.5 py-0.5 text-xs bg-white"
-            >
-              <option value={10}>10</option>
-              <option value={20}>20</option>
-              <option value={50}>50</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Error State */}
-        {recordsError && (
-          <div className="p-6 text-center">
-            <div className="inline-flex p-3 bg-rose-50 text-rose-600 rounded-full mb-2">
-              <AlertCircle className="h-6 w-6" />
-            </div>
-            <p className="text-sm font-semibold text-rose-900">{recordsError}</p>
-            <Button size="sm" variant="secondary" onClick={loadRecords} className="mt-3 text-xs">
-              Retry
-            </Button>
-          </div>
-        )}
-
-        {/* Loading State */}
-        {isLoadingRecords && !recordsError && (
-          <div className="p-6 space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <div key={i} className="flex items-center gap-4">
-                <Skeleton className="h-9 w-9 rounded-full" />
-                <div className="space-y-1.5 flex-1">
-                  <Skeleton className="h-4 w-40" />
-                  <Skeleton className="h-3 w-28" />
-                </div>
-                <Skeleton className="h-6 w-20" />
-                <Skeleton className="h-4 w-24" />
-                <Skeleton className="h-4 w-16" />
+      {/* 4. Filter & Search Controls Bar & 5. Table */}
+      {hrSubTab === 'roster' && (
+        <>
+          <Card className="p-4 border-stone-200">
+            <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+              {/* Search Input */}
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-2.5 h-4 w-4 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Search employee by name or code (e.g., Vikram, EMP-101)..."
+                  value={searchQuery}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full pl-9 pr-4 py-2 text-xs rounded-lg border border-stone-200 bg-white placeholder-stone-400 text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                />
               </div>
-            ))}
-          </div>
-        )}
 
-        {/* Empty State */}
-        {!isLoadingRecords && !recordsError && records.length === 0 && (
-          <div className="p-12 text-center space-y-3">
-            <div className="inline-flex p-3 bg-stone-100 text-stone-400 rounded-full">
-              <Search className="h-6 w-6" />
+              {/* Dropdown Filters */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Branch Filter */}
+                <select
+                  value={selectedBranchId}
+                  onChange={(e) => {
+                    setSelectedBranchId(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="">All Branches</option>
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Department Filter */}
+                <select
+                  value={selectedDeptId}
+                  onChange={(e) => {
+                    setSelectedDeptId(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="">All Departments</option>
+                  {departments.map((d) => (
+                    <option key={d.id} value={d.id}>
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+
+                {/* Status Filter */}
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => {
+                    setSelectedStatus(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="px-3 py-2 text-xs rounded-lg border border-stone-200 bg-white text-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="PRESENT">Present</option>
+                  <option value="LATE">Late Arrivals</option>
+                  <option value="HALF_DAY">Half Day</option>
+                  <option value="INCOMPLETE">Incomplete</option>
+                  <option value="PENDING_REVIEW">Pending Review</option>
+                  <option value="ABSENT">Absent</option>
+                  <option value="ON_LEAVE">On Leave</option>
+                  <option value="WEEK_OFF">Week Off</option>
+                  <option value="HOLIDAY">Holiday</option>
+                </select>
+
+                {(searchQuery ||
+                  selectedBranchId ||
+                  selectedDeptId ||
+                  selectedStatus !== 'ALL') && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleResetFilters}
+                    className="text-stone-500 hover:text-stone-900 text-xs px-2.5"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
+                  </Button>
+                )}
+              </div>
             </div>
-            <p className="text-sm font-semibold text-stone-800">No attendance records found</p>
-            <p className="text-xs text-stone-500 max-w-sm mx-auto">
-              No employees matched the selected date ({selectedDate}) and filter parameters. Try
-              adjusting or resetting the search filters.
-            </p>
-            <Button size="sm" variant="secondary" onClick={handleResetFilters} className="text-xs">
-              Reset Filters
-            </Button>
-          </div>
-        )}
+          </Card>
 
-        {/* Records Table */}
-        {!isLoadingRecords && !recordsError && records.length > 0 && (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-stone-700">
-              <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wider text-stone-500 border-b border-stone-200">
-                <tr>
-                  <th className="py-3 px-4">Employee</th>
-                  <th className="py-3 px-4">Branch / Dept</th>
-                  <th className="py-3 px-4">Status</th>
-                  <th className="py-3 px-4">First Punch</th>
-                  <th className="py-3 px-4">Last Punch</th>
-                  <th className="py-3 px-4">Net Work Time</th>
-                  <th className="py-3 px-4">Exceptions</th>
-                  <th className="py-3 px-4">Geofence Status</th>
-                  <th className="py-3 px-4 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-stone-100 font-medium">
-                {records.map((row: any) => {
-                  const emp = row.employee;
-                  const sum = row.summary;
-                  const loc = row.locationVerification;
-                  const active = row.activeSession;
-                  const excCount = row.exceptionCount || 0;
+          {/* 5. Paginated Attendance Management Table */}
+          <Card className="border-stone-200 overflow-hidden shadow-2xs">
+            <div className="p-4 border-b border-stone-100 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-bold text-stone-900">Attendance Records</h3>
+                <span className="text-xs text-stone-500 bg-stone-100 px-2 py-0.5 rounded-full font-mono">
+                  {paginationMeta.total} Employees
+                </span>
+              </div>
 
-                  return (
-                    <tr
-                      key={emp.id}
-                      className="hover:bg-stone-50/80 transition-colors cursor-pointer"
-                      onClick={() => handleOpenDetail(emp.id)}
-                    >
-                      {/* Employee Column */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-2.5">
-                          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
-                            {emp.displayName ? emp.displayName.charAt(0).toUpperCase() : 'E'}
-                          </div>
-                          <div>
-                            <span className="font-bold text-stone-900 block hover:text-amber-700">
-                              {emp.displayName}
-                            </span>
-                            <span className="text-[11px] font-mono text-stone-400">
-                              {emp.employeeCode}
-                            </span>
-                          </div>
-                        </div>
-                      </td>
+              <div className="text-xs text-stone-500 flex items-center gap-2">
+                <span>Rows per page:</span>
+                <select
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setCurrentPage(1);
+                  }}
+                  className="border border-stone-200 rounded px-1.5 py-0.5 text-xs bg-white"
+                >
+                  <option value={10}>10</option>
+                  <option value={20}>20</option>
+                  <option value={50}>50</option>
+                </select>
+              </div>
+            </div>
 
-                      {/* Branch & Department */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="text-stone-800 text-xs font-semibold">{emp.branch}</div>
-                        <div className="text-[11px] text-stone-400">{emp.department}</div>
-                      </td>
+            {/* Error State */}
+            {recordsError && (
+              <div className="p-6 text-center">
+                <div className="inline-flex p-3 bg-rose-50 text-rose-600 rounded-full mb-2">
+                  <AlertCircle className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-semibold text-rose-900">{recordsError}</p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={loadRecords}
+                  className="mt-3 text-xs"
+                >
+                  Retry
+                </Button>
+              </div>
+            )}
 
-                      {/* Attendance Status */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        <div className="flex items-center gap-1.5">
-                          {getStatusBadge(sum.status)}
-                          {active && (
-                            <span
-                              className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"
-                              title="Active open session"
-                            />
-                          )}
-                        </div>
-                      </td>
+            {/* Loading State */}
+            {isLoadingRecords && !recordsError && (
+              <div className="p-6 space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="flex items-center gap-4">
+                    <Skeleton className="h-9 w-9 rounded-full" />
+                    <div className="space-y-1.5 flex-1">
+                      <Skeleton className="h-4 w-40" />
+                      <Skeleton className="h-3 w-28" />
+                    </div>
+                    <Skeleton className="h-6 w-20" />
+                    <Skeleton className="h-4 w-24" />
+                    <Skeleton className="h-4 w-16" />
+                  </div>
+                ))}
+              </div>
+            )}
 
-                      {/* First Punch */}
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
-                        {sum.firstCheckIn
-                          ? new Date(sum.firstCheckIn).toLocaleTimeString([], {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })
-                          : '—'}
-                      </td>
+            {/* Empty State */}
+            {!isLoadingRecords && !recordsError && records.length === 0 && (
+              <div className="p-12 text-center space-y-3">
+                <div className="inline-flex p-3 bg-stone-100 text-stone-400 rounded-full">
+                  <Search className="h-6 w-6" />
+                </div>
+                <p className="text-sm font-semibold text-stone-800">No attendance records found</p>
+                <p className="text-xs text-stone-500 max-w-sm mx-auto">
+                  No employees matched the selected date ({selectedDate}) and filter parameters. Try
+                  adjusting or resetting the search filters.
+                </p>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={handleResetFilters}
+                  className="text-xs"
+                >
+                  Reset Filters
+                </Button>
+              </div>
+            )}
 
-                      {/* Last Punch */}
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
-                        {sum.lastCheckOut ? (
-                          new Date(sum.lastCheckOut).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        ) : active ? (
-                          <span className="text-emerald-700 text-[11px] font-sans">Open</span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
+            {/* Records Table */}
+            {!isLoadingRecords && !recordsError && records.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-stone-700">
+                  <thead className="bg-stone-50 text-[11px] font-semibold uppercase tracking-wider text-stone-500 border-b border-stone-200">
+                    <tr>
+                      <th className="py-3 px-4">Employee</th>
+                      <th className="py-3 px-4">Branch / Dept</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4">First Punch</th>
+                      <th className="py-3 px-4">Last Punch</th>
+                      <th className="py-3 px-4">Net Work Time</th>
+                      <th className="py-3 px-4">Exceptions</th>
+                      <th className="py-3 px-4">Geofence Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100 font-medium">
+                    {records.map((row: any) => {
+                      const emp = row.employee;
+                      const sum = row.summary;
+                      const loc = row.locationVerification;
+                      const active = row.activeSession;
+                      const excCount = row.exceptionCount || 0;
 
-                      {/* Net Hours */}
-                      <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-900 font-semibold">
-                        {sum.netHours > 0 ? `${sum.netHours} hrs` : '0 hrs'}
-                        {sum.lateMinutes > 0 && (
-                          <span className="text-amber-700 text-[11px] block font-sans">
-                            +{sum.lateMinutes}m late
-                          </span>
-                        )}
-                      </td>
-
-                      {/* Exceptions */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {excCount > 0 ? (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                            <ShieldAlert className="h-3 w-3" /> {excCount} Alert
-                            {excCount > 1 ? 's' : ''}
-                          </span>
-                        ) : (
-                          <span className="text-stone-400 text-[11px]">None</span>
-                        )}
-                      </td>
-
-                      {/* Location Verification & Privacy */}
-                      <td className="py-3 px-4 whitespace-nowrap">
-                        {loc ? (
-                          <div className="space-y-0.5">
-                            <div className="flex items-center gap-1">
-                              {loc.geofenceStatus === 'VERIFIED' ? (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
-                                  <ShieldCheck className="h-3.5 w-3.5" /> Verified (
-                                  {loc.distanceMeters}m)
+                      return (
+                        <tr
+                          key={emp.id}
+                          className="hover:bg-stone-50/80 transition-colors cursor-pointer"
+                          onClick={() => handleOpenDetail(emp.id)}
+                        >
+                          {/* Employee Column */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-2.5">
+                              <div className="h-8 w-8 rounded-full bg-gradient-to-br from-amber-500 to-amber-700 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs">
+                                {emp.displayName ? emp.displayName.charAt(0).toUpperCase() : 'E'}
+                              </div>
+                              <div>
+                                <span className="font-bold text-stone-900 block hover:text-amber-700">
+                                  {emp.displayName}
                                 </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700">
-                                  <ShieldAlert className="h-3.5 w-3.5" /> Outside (
-                                  {loc.distanceMeters}m)
+                                <span className="text-[11px] font-mono text-stone-400">
+                                  {emp.employeeCode}
                                 </span>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* Branch & Department */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="text-stone-800 text-xs font-semibold">{emp.branch}</div>
+                            <div className="text-[11px] text-stone-400">{emp.department}</div>
+                          </td>
+
+                          {/* Attendance Status */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            <div className="flex items-center gap-1.5">
+                              {getStatusBadge(sum.status)}
+                              {active && (
+                                <span
+                                  className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse shrink-0"
+                                  title="Active open session"
+                                />
                               )}
                             </div>
-                            {loc.isGpsRedacted && (
-                              <span
-                                className="inline-flex items-center gap-1 text-[10px] text-stone-400"
-                                title="Precise latitude/longitude redacted for privacy"
-                              >
-                                <Lock className="h-2.5 w-2.5" /> GPS Redacted
+                          </td>
+
+                          {/* First Punch */}
+                          <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
+                            {sum.firstCheckIn
+                              ? new Date(sum.firstCheckIn).toLocaleTimeString([], {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })
+                              : '—'}
+                          </td>
+
+                          {/* Last Punch */}
+                          <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-700">
+                            {sum.lastCheckOut ? (
+                              new Date(sum.lastCheckOut).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })
+                            ) : active ? (
+                              <span className="text-emerald-700 text-[11px] font-sans">Open</span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+
+                          {/* Net Hours */}
+                          <td className="py-3 px-4 whitespace-nowrap font-mono text-stone-900 font-semibold">
+                            {sum.netHours > 0 ? `${sum.netHours} hrs` : '0 hrs'}
+                            {sum.lateMinutes > 0 && (
+                              <span className="text-amber-700 text-[11px] block font-sans">
+                                +{sum.lateMinutes}m late
                               </span>
                             )}
-                          </div>
-                        ) : (
-                          <span className="text-stone-400 text-[11px]">—</span>
-                        )}
-                      </td>
+                          </td>
 
-                      {/* Action */}
-                      <td
-                        className="py-3 px-4 text-right whitespace-nowrap"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <button
-                          onClick={() => handleOpenDetail(emp.id)}
-                          className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/70 px-2.5 py-1 rounded-lg transition-colors"
-                        >
-                          <Eye className="h-3.5 w-3.5" /> Details
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
+                          {/* Exceptions */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {excCount > 0 ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                                <ShieldAlert className="h-3 w-3" /> {excCount} Alert
+                                {excCount > 1 ? 's' : ''}
+                              </span>
+                            ) : (
+                              <span className="text-stone-400 text-[11px]">None</span>
+                            )}
+                          </td>
 
-        {/* Pagination Footer */}
-        <div className="p-4 border-t border-stone-100 bg-stone-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-500">
-          <div>
-            Showing{' '}
-            <strong className="text-stone-800">
-              {paginationMeta.total === 0
-                ? 0
-                : (paginationMeta.page - 1) * paginationMeta.limit + 1}
-            </strong>{' '}
-            to{' '}
-            <strong className="text-stone-800">
-              {Math.min(paginationMeta.page * paginationMeta.limit, paginationMeta.total)}
-            </strong>{' '}
-            of <strong className="text-stone-800">{paginationMeta.total}</strong> employees
-          </div>
+                          {/* Location Verification & Privacy */}
+                          <td className="py-3 px-4 whitespace-nowrap">
+                            {loc ? (
+                              <div className="space-y-0.5">
+                                <div className="flex items-center gap-1">
+                                  {loc.geofenceStatus === 'VERIFIED' ? (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700">
+                                      <ShieldCheck className="h-3.5 w-3.5" /> Verified (
+                                      {loc.distanceMeters}m)
+                                    </span>
+                                  ) : (
+                                    <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-700">
+                                      <ShieldAlert className="h-3.5 w-3.5" /> Outside (
+                                      {loc.distanceMeters}m)
+                                    </span>
+                                  )}
+                                </div>
+                                {loc.isGpsRedacted && (
+                                  <span
+                                    className="inline-flex items-center gap-1 text-[10px] text-stone-400"
+                                    title="Precise latitude/longitude redacted for privacy"
+                                  >
+                                    <Lock className="h-2.5 w-2.5" /> GPS Redacted
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-stone-400 text-[11px]">—</span>
+                            )}
+                          </td>
 
-          <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={paginationMeta.page <= 1 || isLoadingRecords}
-              onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-              className="h-8 px-2.5 text-xs border-stone-200"
-            >
-              <ChevronLeft className="h-4 w-4 mr-0.5" /> Previous
-            </Button>
-            <span className="px-2 font-semibold text-stone-700">
-              Page {paginationMeta.page} of {paginationMeta.totalPages}
-            </span>
-            <Button
-              size="sm"
-              variant="secondary"
-              disabled={paginationMeta.page >= paginationMeta.totalPages || isLoadingRecords}
-              onClick={() => setCurrentPage((p) => Math.min(paginationMeta.totalPages, p + 1))}
-              className="h-8 px-2.5 text-xs border-stone-200"
-            >
-              Next <ChevronRight className="h-4 w-4 ml-0.5" />
-            </Button>
-          </div>
-        </div>
-      </Card>
+                          {/* Action */}
+                          <td
+                            className="py-3 px-4 text-right whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <button
+                              onClick={() => handleOpenDetail(emp.id)}
+                              className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 bg-amber-50 hover:bg-amber-100/70 px-2.5 py-1 rounded-lg transition-colors"
+                            >
+                              <Eye className="h-3.5 w-3.5" /> Details
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Pagination Footer */}
+            <div className="p-4 border-t border-stone-100 bg-stone-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-stone-500">
+              <div>
+                Showing{' '}
+                <strong className="text-stone-800">
+                  {paginationMeta.total === 0
+                    ? 0
+                    : (paginationMeta.page - 1) * paginationMeta.limit + 1}
+                </strong>{' '}
+                to{' '}
+                <strong className="text-stone-800">
+                  {Math.min(paginationMeta.page * paginationMeta.limit, paginationMeta.total)}
+                </strong>{' '}
+                of <strong className="text-stone-800">{paginationMeta.total}</strong> employees
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={paginationMeta.page <= 1 || isLoadingRecords}
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  className="h-8 px-2.5 text-xs border-stone-200"
+                >
+                  <ChevronLeft className="h-4 w-4 mr-0.5" /> Previous
+                </Button>
+                <span className="px-2 font-semibold text-stone-700">
+                  Page {paginationMeta.page} of {paginationMeta.totalPages}
+                </span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={paginationMeta.page >= paginationMeta.totalPages || isLoadingRecords}
+                  onClick={() => setCurrentPage((p) => Math.min(paginationMeta.totalPages, p + 1))}
+                  className="h-8 px-2.5 text-xs border-stone-200"
+                >
+                  Next <ChevronRight className="h-4 w-4 ml-0.5" />
+                </Button>
+              </div>
+            </div>
+          </Card>
+        </>
+      )}
 
       {/* 6. Attendance Detail Drawer (Right Slide-Over) */}
       <Drawer
