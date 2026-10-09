@@ -615,6 +615,104 @@ describe('EmployeesService', () => {
       expect(preview.errors.some((e) => e.field === 'employeeCode')).toBe(true);
       expect(preview.errors.some((e) => e.field === 'workEmail')).toBe(true);
     });
+
+    it('should validate CSV buffers and detect manager self-assignment, invalid status, and invalid employmentType', async () => {
+      const csvData = [
+        'employeeCode,firstName,lastName,workEmail,departmentCode,designationCode,branchCode,managerEmployeeCode,employmentType,status',
+        'EMP001,Aarav,Patel,aarav@peopleos.local,ENG,SWE,BLR-HQ,EMP001,INVALID_TYPE,INVALID_STATUS',
+        'EMP002,Priya,Nair,priya@peopleos.local,ENG,SWE,BLR-HQ,NONEXISTENT_MGR,FULL_TIME,ACTIVE',
+      ].join('\n');
+
+      const buffer = Buffer.from(csvData, 'utf-8');
+
+      prisma.employee.findMany.mockResolvedValue([]);
+
+      const preview = await service.previewImport(buffer, mockOrgId);
+
+      expect(preview.totalRows).toBe(2);
+      expect(preview.validRowsCount).toBe(0);
+      expect(preview.errorRowsCount).toBeGreaterThanOrEqual(3);
+
+      // Verify row-level error types
+      expect(
+        preview.errors.some(
+          (e) => e.field === 'managerEmployeeCode' && e.message.includes('own reporting manager'),
+        ),
+      ).toBe(true);
+      expect(
+        preview.errors.some(
+          (e) => e.field === 'employmentType' && e.message.includes('Invalid employment type'),
+        ),
+      ).toBe(true);
+      expect(
+        preview.errors.some(
+          (e) => e.field === 'employmentStatus' && e.message.includes('Invalid status'),
+        ),
+      ).toBe(true);
+      expect(
+        preview.errors.some(
+          (e) => e.field === 'managerEmployeeCode' && e.message.includes('not found in database'),
+        ),
+      ).toBe(true);
+    });
+
+    it('should throw BadRequestException when uploaded file is empty', async () => {
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet([]);
+      XLSX.utils.book_append_sheet(wb, ws, 'Empty');
+      const buffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+      await expect(service.previewImport(buffer, mockOrgId)).rejects.toThrow(BadRequestException);
+    });
+
+    it('should execute confirmImport within database transaction and return full import summary', async () => {
+      const validatedRows = [
+        {
+          rowNumber: 2,
+          employeeCode: 'EMP101',
+          firstName: 'Ananya',
+          lastName: 'Sen',
+          displayName: 'Ananya Sen',
+          workEmail: 'ananya@peopleos.local',
+          phone: '+91-9999999999',
+          departmentId: 'dept-eng',
+          designationId: 'desig-swe',
+          branchId: 'branch-blr',
+          managerEmployeeCode: null,
+          employmentType: 'FULL_TIME',
+          employmentStatus: 'ACTIVE',
+          workMode: 'OFFICE',
+          joiningDate: '2026-01-01',
+        },
+      ];
+
+      prisma.employee.findMany.mockResolvedValue([]);
+      prisma.user.create.mockResolvedValue({ id: 'user-101' });
+      prisma.role.findFirst.mockResolvedValue({ id: 'role-emp' });
+      prisma.userRole.create.mockResolvedValue({ id: 'ur-101' });
+      prisma.employee.create.mockResolvedValue({
+        id: 'emp-101',
+        employeeCode: 'EMP101',
+        status: 'ACTIVE',
+      });
+      prisma.employeeEmployment.create.mockResolvedValue({ id: 'ee-101' });
+      prisma.employeeContact.create.mockResolvedValue({ id: 'ec-101' });
+      prisma.employeeHistory.create.mockResolvedValue({ id: 'eh-101' });
+
+      const result = await service.confirmImport(validatedRows, mockAdminUser);
+
+      expect(result.success).toBe(true);
+      expect(result.importedCount).toBe(1);
+      expect(result.totalRows).toBe(1);
+      expect(result.validRowsCount).toBe(1);
+      expect(result.skippedCount).toBe(0);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'EMPLOYEE_IMPORTED',
+          metadata: { count: 1 },
+        }),
+      );
+    });
   });
 
   describe('Employee Directory Export', () => {

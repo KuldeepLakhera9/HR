@@ -109,7 +109,7 @@ export class EmployeesController {
     return {
       success: true,
       message: result.message,
-      data: { count: result.count },
+      data: result,
     };
   }
 

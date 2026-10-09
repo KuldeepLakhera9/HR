@@ -1073,14 +1073,32 @@ export class EmployeesService {
       existingEmployees.map((e) => e.contact?.workEmail?.toLowerCase()).filter(Boolean),
     );
 
-    const branchMap = new Map(branches.map((b) => [b.code.toUpperCase(), b.id]));
-    const deptMap = new Map(departments.map((d) => [d.code.toUpperCase(), d.id]));
-    const desigMap = new Map(designations.map((d) => [d.code.toUpperCase(), d.id]));
+    // Support lookup by code OR name/title
+    const branchMap = new Map<string, { id: string; name: string }>();
+    branches.forEach((b) => {
+      branchMap.set(b.code.toUpperCase(), { id: b.id, name: b.name });
+      branchMap.set(b.name.toUpperCase(), { id: b.id, name: b.name });
+    });
+
+    const deptMap = new Map<string, { id: string; name: string }>();
+    departments.forEach((d) => {
+      deptMap.set(d.code.toUpperCase(), { id: d.id, name: d.name });
+      deptMap.set(d.name.toUpperCase(), { id: d.id, name: d.name });
+    });
+
+    const desigMap = new Map<string, { id: string; title: string }>();
+    designations.forEach((d) => {
+      desigMap.set(d.code.toUpperCase(), { id: d.id, title: d.title });
+      desigMap.set(d.title.toUpperCase(), { id: d.id, title: d.title });
+    });
 
     const errors: Array<{ row: number; field: string; value: unknown; message: string }> = [];
     const validRows: any[] = [];
     const seenCodesInBatch = new Set<string>();
     const seenEmailsInBatch = new Set<string>();
+
+    const VALID_EMPLOYMENT_TYPES = ['FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERN'];
+    const VALID_STATUSES = ['PROBATION', 'ACTIVE', 'ON_NOTICE', 'RESIGNED', 'TERMINATED', 'EXITED'];
 
     for (let i = 0; i < rawRows.length; i++) {
       const row = rawRows[i];
@@ -1092,21 +1110,57 @@ export class EmployeesService {
       const email = String(row['workEmail'] || row['Work Email'] || row['email'] || '')
         .trim()
         .toLowerCase();
-      const deptCode = String(row['departmentCode'] || row['Department Code'] || '')
+      const deptVal = String(
+        row['departmentCode'] ||
+          row['Department Code'] ||
+          row['department'] ||
+          row['Department'] ||
+          '',
+      )
         .trim()
         .toUpperCase();
-      const desigCode = String(row['designationCode'] || row['Designation Code'] || '')
+      const desigVal = String(
+        row['designationCode'] ||
+          row['Designation Code'] ||
+          row['designation'] ||
+          row['Designation'] ||
+          '',
+      )
         .trim()
         .toUpperCase();
-      const branchCode = String(row['branchCode'] || row['Branch Code'] || '')
+      const branchVal = String(
+        row['branchCode'] || row['Branch Code'] || row['branch'] || row['Branch'] || '',
+      )
         .trim()
         .toUpperCase();
-      const managerCode = String(row['managerEmployeeCode'] || row['Manager Code'] || '')
+      const managerCode = String(
+        row['managerEmployeeCode'] ||
+          row['Manager Code'] ||
+          row['managerCode'] ||
+          row['manager'] ||
+          '',
+      )
         .trim()
         .toUpperCase();
+
+      const rawType = String(row['employmentType'] || row['Employment Type'] || 'FULL_TIME')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '_');
+      const rawStatus = String(
+        row['employmentStatus'] || row['status'] || row['Status'] || 'PROBATION',
+      )
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '_');
+      const workMode = String(row['workMode'] || row['Work Mode'] || 'OFFICE')
+        .trim()
+        .toUpperCase()
+        .replace(/\s+/g, '_');
 
       let rowHasError = false;
 
+      // 1. Employee Code Validation
       if (!code) {
         errors.push({
           row: rowNum,
@@ -1133,6 +1187,7 @@ export class EmployeesService {
         rowHasError = true;
       }
 
+      // 2. Name Validation
       if (!firstName) {
         errors.push({
           row: rowNum,
@@ -1153,6 +1208,7 @@ export class EmployeesService {
         rowHasError = true;
       }
 
+      // 3. Email Validation
       if (!email) {
         errors.push({
           row: rowNum,
@@ -1187,32 +1243,81 @@ export class EmployeesService {
         rowHasError = true;
       }
 
-      if (!deptCode || !deptMap.has(deptCode)) {
+      // 4. Department Validation
+      if (!deptVal || !deptMap.has(deptVal)) {
         errors.push({
           row: rowNum,
           field: 'departmentCode',
-          value: deptCode,
-          message: `Department '${deptCode}' not found`,
+          value: deptVal,
+          message: `Department '${deptVal}' not found in organization`,
         });
         rowHasError = true;
       }
 
-      if (!desigCode || !desigMap.has(desigCode)) {
+      // 5. Designation Validation
+      if (!desigVal || !desigMap.has(desigVal)) {
         errors.push({
           row: rowNum,
           field: 'designationCode',
-          value: desigCode,
-          message: `Designation '${desigCode}' not found`,
+          value: desigVal,
+          message: `Designation '${desigVal}' not found in organization`,
         });
         rowHasError = true;
       }
 
-      if (!branchCode || !branchMap.has(branchCode)) {
+      // 6. Branch Validation
+      if (!branchVal || !branchMap.has(branchVal)) {
         errors.push({
           row: rowNum,
           field: 'branchCode',
-          value: branchCode,
-          message: `Branch '${branchCode}' not found`,
+          value: branchVal,
+          message: `Branch '${branchVal}' not found in organization`,
+        });
+        rowHasError = true;
+      }
+
+      // 7. Manager Hierarchy Validation
+      if (managerCode) {
+        if (code && managerCode.toUpperCase() === code.toUpperCase()) {
+          errors.push({
+            row: rowNum,
+            field: 'managerEmployeeCode',
+            value: managerCode,
+            message: 'Employee cannot be their own reporting manager',
+          });
+          rowHasError = true;
+        } else if (
+          !existingCodes.has(managerCode.toUpperCase()) &&
+          !seenCodesInBatch.has(managerCode.toUpperCase())
+        ) {
+          errors.push({
+            row: rowNum,
+            field: 'managerEmployeeCode',
+            value: managerCode,
+            message: `Manager '${managerCode}' not found in database or prior batch rows`,
+          });
+          rowHasError = true;
+        }
+      }
+
+      // 8. Employment Type Validation
+      if (rawType && !VALID_EMPLOYMENT_TYPES.includes(rawType)) {
+        errors.push({
+          row: rowNum,
+          field: 'employmentType',
+          value: rawType,
+          message: `Invalid employment type '${rawType}'. Must be one of: ${VALID_EMPLOYMENT_TYPES.join(', ')}`,
+        });
+        rowHasError = true;
+      }
+
+      // 9. Status Validation
+      if (rawStatus && !VALID_STATUSES.includes(rawStatus)) {
+        errors.push({
+          row: rowNum,
+          field: 'employmentStatus',
+          value: rawStatus,
+          message: `Invalid status '${rawStatus}'. Must be one of: ${VALID_STATUSES.join(', ')}`,
         });
         rowHasError = true;
       }
@@ -1221,20 +1326,28 @@ export class EmployeesService {
       if (email) seenEmailsInBatch.add(email);
 
       if (!rowHasError) {
+        const resolvedDept = deptMap.get(deptVal)!;
+        const resolvedDesig = desigMap.get(desigVal)!;
+        const resolvedBranch = branchMap.get(branchVal)!;
+
         validRows.push({
           rowNumber: rowNum,
           employeeCode: code,
           firstName,
           lastName,
+          displayName: `${firstName} ${lastName}`.trim(),
           workEmail: email,
           phone: row['phone'] || row['Phone'] || null,
-          departmentId: deptMap.get(deptCode)!,
-          designationId: desigMap.get(desigCode)!,
-          branchId: branchMap.get(branchCode)!,
+          departmentId: resolvedDept.id,
+          departmentName: resolvedDept.name,
+          designationId: resolvedDesig.id,
+          designationTitle: resolvedDesig.title,
+          branchId: resolvedBranch.id,
+          branchName: resolvedBranch.name,
           managerEmployeeCode: managerCode || null,
-          employmentType: row['employmentType'] || EmploymentType.FULL_TIME,
-          employmentStatus: row['employmentStatus'] || EmploymentStatus.PROBATION,
-          workMode: row['workMode'] || WorkMode.OFFICE,
+          employmentType: rawType || EmploymentType.FULL_TIME,
+          employmentStatus: rawStatus || EmploymentStatus.PROBATION,
+          workMode: workMode || WorkMode.OFFICE,
           joiningDate: row['joiningDate'] || new Date().toISOString(),
         });
       }
@@ -1245,8 +1358,8 @@ export class EmployeesService {
       validRowsCount: validRows.length,
       errorRowsCount: errors.length,
       errors,
-      previewData: validRows.slice(0, 10), // First 10 valid preview rows
-      validatedRows: validRows, // Full payload passed to confirm step
+      previewData: validRows.slice(0, 15),
+      validatedRows: validRows,
     };
   }
 
@@ -1308,11 +1421,12 @@ export class EmployeesService {
           });
         }
 
-        // 2. Create Employee
+        // 2. Create Employee (with direct managerId relation)
         const emp = await tx.employee.create({
           data: {
             userId: userAccount.id,
             organizationId: orgId,
+            managerId,
             employeeCode: row.employeeCode,
             firstName: row.firstName,
             lastName: row.lastName,
@@ -1374,6 +1488,10 @@ export class EmployeesService {
     return {
       success: true,
       message: `Successfully imported ${importedCount} employee records`,
+      totalRows: rows.length,
+      validRowsCount: rows.length,
+      importedCount,
+      skippedCount: 0,
       count: importedCount,
     };
   }

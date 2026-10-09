@@ -18,12 +18,10 @@ import {
   MapPin,
   UserCheck,
   RotateCcw,
-  FileSpreadsheet,
-  AlertTriangle,
-  XCircle,
 } from 'lucide-react';
 import { employeesApi, organizationApi } from '../../lib/api-client';
 import { useAuth } from '../../context/AuthContext';
+import { BulkImportModal } from '../../components/employees/BulkImportModal';
 
 export default function EmployeesPage() {
   const router = useRouter();
@@ -69,10 +67,6 @@ export default function EmployeesPage() {
 
   // Import Modal state
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [importPreview, setImportPreview] = useState<any>(null);
-  const [importing, setImporting] = useState(false);
-  const [importError, setImportError] = useState<string | null>(null);
 
   // Count active filters
   const activeFilterCount = [
@@ -199,47 +193,6 @@ export default function EmployeesPage() {
     }
   };
 
-  // Import preview handler
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setImportFile(file);
-    setImportError(null);
-    setImporting(true);
-
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const preview = await employeesApi.previewImport(formData);
-      setImportPreview(preview);
-    } catch (err: any) {
-      setImportError(err.message || 'Failed to parse file');
-      setImportPreview(null);
-    } finally {
-      setImporting(false);
-    }
-  };
-
-  // Commit import handler
-  const handleConfirmImport = async () => {
-    if (!importPreview?.validatedRows || importPreview.validatedRows.length === 0) return;
-
-    setImporting(true);
-    setImportError(null);
-    try {
-      await employeesApi.confirmImport(importPreview.validatedRows);
-      setIsImportModalOpen(false);
-      setImportFile(null);
-      setImportPreview(null);
-      await fetchEmployees();
-    } catch (err: any) {
-      setImportError(err.message || 'Import failed to commit');
-    } finally {
-      setImporting(false);
-    }
-  };
-
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'ACTIVE':
@@ -313,12 +266,7 @@ export default function EmployeesPage() {
               <Button
                 variant="outline"
                 className="border-stone-200 text-stone-700 hover:bg-stone-50"
-                onClick={() => {
-                  setImportFile(null);
-                  setImportPreview(null);
-                  setImportError(null);
-                  setIsImportModalOpen(true);
-                }}
+                onClick={() => setIsImportModalOpen(true)}
               >
                 <Upload className="h-4 w-4 mr-2 text-stone-500" />
                 Bulk Import
@@ -701,103 +649,12 @@ export default function EmployeesPage() {
           </div>
         </div>
 
-        {/* Bulk Import Modal */}
-        <Dialog
+        {/* Professional Bulk Import Modal */}
+        <BulkImportModal
           isOpen={isImportModalOpen}
           onClose={() => setIsImportModalOpen(false)}
-          title="Bulk Employee Import"
-          description="Upload CSV or Excel spreadsheet with employee master records"
-        >
-          <div className="space-y-4 pt-2">
-            {importError && (
-              <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-md flex items-start gap-2">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                <div>{importError}</div>
-              </div>
-            )}
-
-            {/* Dropzone */}
-            <div className="border-2 border-dashed border-stone-300 hover:border-amber-700 rounded-xl p-6 text-center transition-colors bg-stone-50/50">
-              <FileSpreadsheet className="h-8 w-8 mx-auto text-amber-800 mb-2" />
-              <div className="text-xs font-semibold text-stone-900 mb-1">
-                Choose CSV or Excel (.xlsx) file
-              </div>
-              <p className="text-[11px] text-stone-500 mb-3">
-                Include columns: employeeCode, firstName, lastName, workEmail, departmentCode,
-                designationCode, branchCode
-              </p>
-              <input
-                type="file"
-                accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel"
-                onChange={handleFileSelect}
-                className="text-xs file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-amber-800 file:text-white hover:file:bg-amber-900 cursor-pointer"
-              />
-            </div>
-
-            {/* Validation Preview Summary */}
-            {importPreview && (
-              <div className="space-y-3">
-                <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                  <div className="p-2 bg-stone-100 rounded-lg">
-                    <div className="text-stone-500">Total Rows</div>
-                    <div className="font-bold text-stone-900 text-sm">
-                      {importPreview.totalRows}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-emerald-50 rounded-lg border border-emerald-200">
-                    <div className="text-emerald-700">Valid Rows</div>
-                    <div className="font-bold text-emerald-800 text-sm">
-                      {importPreview.validRowsCount}
-                    </div>
-                  </div>
-                  <div className="p-2 bg-rose-50 rounded-lg border border-rose-200">
-                    <div className="text-rose-700">Error Rows</div>
-                    <div className="font-bold text-rose-800 text-sm">
-                      {importPreview.errorRowsCount}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Row-Level Errors list */}
-                {importPreview.errors && importPreview.errors.length > 0 && (
-                  <div className="max-h-36 overflow-y-auto border border-rose-200 rounded-lg p-2.5 bg-rose-50/50 space-y-1.5 text-xs">
-                    <div className="font-semibold text-rose-900 text-[11px] uppercase tracking-wider mb-1">
-                      Validation Issues Detected:
-                    </div>
-                    {importPreview.errors.map((err: any, idx: number) => (
-                      <div key={idx} className="flex items-start gap-1.5 text-rose-800 text-[11px]">
-                        <XCircle className="h-3.5 w-3.5 shrink-0 text-rose-600 mt-0.5" />
-                        <span>
-                          <strong>Row {err.row}:</strong> {err.message} (field: {err.field})
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            <div className="flex justify-end gap-2 pt-2 border-t border-stone-200">
-              <Button variant="ghost" onClick={() => setIsImportModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button
-                disabled={
-                  importing ||
-                  !importPreview ||
-                  importPreview.validRowsCount === 0 ||
-                  importPreview.errorRowsCount > 0
-                }
-                className="bg-amber-800 hover:bg-amber-900 text-white"
-                onClick={handleConfirmImport}
-              >
-                {importing
-                  ? 'Importing...'
-                  : `Import ${importPreview?.validRowsCount || 0} Records`}
-              </Button>
-            </div>
-          </div>
-        </Dialog>
+          onImportSuccess={fetchEmployees}
+        />
       </div>
     </AppShell>
   );
