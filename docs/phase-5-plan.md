@@ -1,55 +1,227 @@
-# Phase 5 Implementation Plan: Official Visits & Work From Home (WFH)
+# Phase 5 Architecture & Implementation Plan: Official Visits & Work From Home (WFH)
 
 ## Executive Summary
 
-Phase 5 extends the production-grade PeopleOS Attendance Engine (Phase 4) with authorized field duty and remote work workflows:
+Phase 5 extends the self-hosted PeopleOS HRMS core attendance platform with authorized field duty and remote work capabilities:
 
-1. **Official Visits / Outdoor Duty (OD)**: Request, approval, field destination geofencing, and GPS-verified outdoor attendance.
-2. **Work From Home (WFH)**: Full-day, half-day (first/second half), and multi-day remote work requests with manager maker-checker approvals and privacy-minimized remote check-in.
-3. **Unified Attendance Integration**: Seamlessly connects with Phase 4 `AttendanceSession`, `AttendanceEvent`, and `AttendanceDailySummary` models and deterministic calculation pipelines without duplicating check-in engines or table schemas.
-
----
-
-## 1. Current State Verification (Phase 4 Baseline)
-
-Before planning, the active repository was verified against all existing Phase 4 capabilities:
-
-- **Prisma Migrations**: 10 incremental migrations applied cleanly (`pnpm --filter @hrms/database exec prisma migrate status` reports schema is up to date).
-- **Backend Test Suite**: **19 test suites passed, 403/403 unit tests passed** (`npm --prefix apps/api test`).
-- **Live E2E Integration Suite**: **42/42 assertions passed** (`scratch/test_step15_e2e_verification.js`) against live PostgreSQL and NestJS API.
-- **Monorepo Lint & Typecheck**: **5/5 lint tasks clean, 9/9 package typechecks clean**.
-- **Production Build**: Both NestJS API (`apps/api/dist`) and Next.js 14 Web App (`apps/web/.next`) compile with zero errors (`turbo run build` in 24.8s).
-- **Existing `attendanceMode` Handling**: In Phase 4, `attendance.service.ts` intentionally rejected non-`OFFICE` punches (`UNAPPROVED_ATTENDANCE_MODE`). Phase 5 will officially activate `OFFICIAL_VISIT` and `WFH` modes under verified authorization.
+1. **Official Visits / Outdoor Duty (OD)**: Creation, manager approvals, destination geofencing, material change detection, and field check-in.
+2. **Work From Home (WFH)**: Multi-duration remote work requests (full-day, half-day morning/afternoon, date ranges), manager maker-checker review, and privacy-preserving remote check-in.
+3. **Unified Attendance Integration**: Leverages existing Phase 4 `AttendanceSession`, `AttendanceEvent`, and `AttendanceDailySummary` models and deterministic calculation pipelines without duplicating check-in engines or table schemas.
 
 ---
 
-## 2. Domain Models & Database Schema Design
+## 1. Current Reusable Services, Models & Dependencies
 
-Phase 5 introduces targeted, normalized database entities in `packages/database/prisma/schema.prisma` while linking directly to existing models (`Organization`, `Employee`, `User`, `AttendanceSession`, `AttendanceDailySummary`):
+Before planning Phase 5, the active codebase was empirically inspected:
+
+### 1.1 Verified Reusable Core Models (`packages/database/prisma/schema.prisma`)
+
+- **`AttendanceSession`**: Continuous work interval tracking `OPEN`, `ON_BREAK`, `COMPLETED`, `AUTO_CLOSED`. Readily supports foreign keys `officialVisitId` and `wfhRequestId`.
+- **`AttendanceEvent`**: Immutable append-only punch log storing UTC timestamps, coordinates, device metadata, and geofence results. Supports linking to visit/WFH authorization.
+- **`AttendanceDailySummary`**: Single source of truth for daily work hours, break deductions, status (`PRESENT`, `HALF_DAY`, `ABSENT`), and attendance mode breakdown.
+- **`AttendancePolicy` & `Shift`**: Provides deterministic shift timings, grace periods (15m), half-day thresholds (240m), full-day thresholds (420m), standard work hours (480m), and the 05:00 AM cutoff hour.
+- **`OfficeLocation`**: Geofence coordinates and radius definitions for office attendance.
+- **`Employee` & `User`**: Normalized employment records and user authentication profiles.
+
+### 1.2 Verified Reusable Backend Services (`apps/api/src`)
+
+- **`AttendanceService`**: Manages check-in, check-out, break start/end, missing checkout reconciliation, and daily summary computation.
+- **`daily-attendance-calculator.util.ts` & `policy-evaluator.util.ts`**: Pure mathematical functions for deterministic attendance evaluation, timezone conversions, and shift window calculations.
+- **`geofence.util.ts`**: Pure mathematical Haversine great-circle formula, coordinate bounds checking, and accuracy tolerance evaluation.
+- **`HierarchyService`**: Common Table Expression (CTE) engine resolving direct and indirect subordinate trees for managers (`getDirectReportIds`, `getAllSubordinateIds`, `isSubordinateOf`).
+- **`AccessControlService`**: Scopes queries by tenant organization, department, branch, and role permissions.
+- **`AuditService`**: Sanitizes sensitive attributes and writes immutable records to PostgreSQL `audit_logs`.
+- **`NotificationsService`**: In-app event notifications for employees and managers without paid external dependencies.
+
+### 1.3 Baseline Dependency Status
+
+- **Failing / Missing Dependencies**: **None**. All 19 test suites and 403 unit tests pass. All 42 live integration assertions pass. Monorepo linting, typechecks, and production builds are 100% clean.
+
+---
+
+## 2. Official Visit Workflow
+
+### 2.1 Visit Request Attributes
+
+Employees submit an official visit request containing:
+
+- **Title**: Brief description (e.g. "Acme Corp Client Architecture Review").
+- **Purpose**: Business justification and objectives.
+- **Date Range**: `startDate` and `endDate` (UTC normalized).
+- **Expected Duration**: Number of working days (e.g. 1.0, 2.5).
+- **Destinations**: 1 to $N$ destination stops containing:
+  - Destination name and address (city, state).
+  - Target coordinates (`latitude`, `longitude`).
+  - Allowed geofence radius (default: 200m).
+  - `isGeofenceRequired`: Boolean flag (true for client offices with known GPS; false for roaming sales/inspections).
+
+### 2.2 Official Visit State Machine
 
 ```mermaid
-erDiagram
-    Organization ||--o{ OfficialVisit : "authorizes"
-    Organization ||--o{ WfhRequest : "authorizes"
+stateDiagram-v2
+    [*] --> DRAFT: Save as Draft
+    DRAFT --> SUBMITTED: Submit for Approval
+    [*] --> SUBMITTED: Direct Submission
 
-    Employee ||--o{ OfficialVisit : "requests"
-    Employee ||--o{ WfhRequest : "requests"
+    SUBMITTED --> APPROVED: Manager / HR Approval
+    SUBMITTED --> REJECTED: Manager / HR Rejection
+    SUBMITTED --> CANCELLED: Employee Cancellation
 
-    OfficialVisit ||--o{ VisitDestination : "specifies"
-    OfficialVisit ||--o{ VisitApproval : "adjudicated_by"
-    OfficialVisit ||--o{ AttendanceSession : "authorizes_sessions"
+    APPROVED --> IN_PROGRESS: First Check-in on Visit Date
+    APPROVED --> CANCELLED: Pre-start Cancellation (with reason)
+    APPROVED --> SUBMITTED: Material Modification (Triggers Reapproval)
+    APPROVED --> EXPIRED: Date Passed without Attendance
 
-    WfhRequest ||--o{ WfhApproval : "adjudicated_by"
-    WfhRequest ||--o{ AttendanceSession : "authorizes_sessions"
+    IN_PROGRESS --> COMPLETED: Final Check-out / End Date Concluded
+    IN_PROGRESS --> CANCELLED: Exceptional Cancellation (HR Only)
 
-    User ||--o{ VisitApproval : "decided_by"
-    User ||--o{ WfhApproval : "decided_by"
-
-    AttendanceSession ||--o{ AttendanceEvent : "records"
-    AttendanceDailySummary }o--|| Employee : "aggregates"
+    REJECTED --> [*]
+    CANCELLED --> [*]
+    COMPLETED --> [*]
+    EXPIRED --> [*]
 ```
 
-### 2.1 Enums
+### 2.3 Material Change Reapproval Rule
+
+- If an employee modifies a **non-material** field (e.g., minor notes), the approved status remains intact.
+- If an employee modifies **material** parameters (dates, destinations, or coordinates) of an `APPROVED` visit, the status is immediately reset to `SUBMITTED`, invalidating existing approvals and requiring the manager to re-approve the changes.
+
+---
+
+## 3. Work From Home (WFH) Workflow
+
+### 3.1 Request Types & Durations
+
+Employees submit WFH requests specifying:
+
+1. **`FULL_DAY`**: Employee is authorized to work remotely for the entire scheduled shift.
+2. **`FIRST_HALF`**: Employee works remotely during the first half of the shift and is expected in the office for the second half.
+3. **`SECOND_HALF`**: Employee works in the office for the first half and works remotely for the second half.
+4. **`CUSTOM_RANGE`**: Multi-day consecutive remote work block (e.g., Monday through Wednesday).
+
+### 3.2 WFH State Machine
+
+```mermaid
+stateDiagram-v2
+    [*] --> SUBMITTED: Submit Request
+
+    SUBMITTED --> APPROVED: Manager / HR Approval
+    SUBMITTED --> REJECTED: Manager / HR Rejection
+    SUBMITTED --> CANCELLED: Employee Cancellation
+
+    APPROVED --> COMPLETED: Working Day Concluded with Remote Attendance
+    APPROVED --> CANCELLED: Pre-start Cancellation
+
+    REJECTED --> [*]
+    CANCELLED --> [*]
+    COMPLETED --> [*]
+```
+
+### 3.3 Shift Window Alignment for Half-Day WFH
+
+- When a `FIRST_HALF` WFH request is approved, the remote check-in must occur within the shift start window. An office punch later in the day will be recognized as the second half of the day.
+- Net working time across both sessions is accumulated in `AttendanceDailySummary`.
+
+---
+
+## 4. Approval and Cancellation Rules
+
+### 4.1 Strict Maker-Checker & Anti-Self-Approval
+
+- **Rule**: No employee or manager may approve their own request under any circumstances.
+- **Enforcement**:
+  ```ts
+  if (request.employee.userId === currentUser.id) {
+    throw new ForbiddenException({
+      statusCode: 403,
+      message: 'Self-approval is strictly disallowed. You cannot approve your own request.',
+      code: 'SELF_APPROVAL_DISALLOWED',
+    });
+  }
+  ```
+- **Manager Hierarchy Check**: The reviewer must either possess organizational `HR`/`ADMIN` role or be confirmed as an ancestor manager in the reporting chain via `hierarchyService.isSubordinateOf(request.employeeId, managerEmployeeId)`.
+
+### 4.2 Overlap Policies
+
+- **Visit Overlap**: An employee cannot submit or hold two approved `OfficialVisit` requests overlapping the same calendar date.
+- **Visit vs WFH Overlap**: An employee cannot hold an approved `OfficialVisit` and an approved `WFH` on the exact same full-day working date.
+- **Rejection**: Attempted submissions overlapping existing active requests fail with `409 Conflict` (`REQUEST_OVERLAP_CONFLICT`).
+
+### 4.3 Cancellation Governance
+
+- **Prior to Start Date**: Employee can freely cancel `SUBMITTED` or `APPROVED` requests.
+- **After Date / During In-Progress**: Employee cannot cancel; cancellation requires an authorized HR Admin with documented audit notes.
+
+---
+
+## 5. Attendance Integration Design
+
+### 5.1 Unified Check-In Engine (No Duplicate Logic)
+
+The existing Phase 4 `POST /api/v1/attendance/check-in` is extended to support authorized field and remote punches:
+
+```mermaid
+flowchart TD
+    PunchReq[POST /attendance/check-in] --> ModeCheck{attendanceMode}
+
+    ModeCheck -- "OFFICE" --> OfficeVerify[Verify OfficeLocation Geofence]
+    OfficeVerify --> CreateSession[Create AttendanceSession]
+
+    ModeCheck -- "OFFICIAL_VISIT" --> VisitAuthCheck{Approved Visit Today?}
+    VisitAuthCheck -- No --> RejectVisitAuth[403 UNAUTHORIZED_VISIT_PUNCH]
+    VisitAuthCheck -- Yes --> GeofenceReq{Visit isGeofenceRequired?}
+    GeofenceReq -- Yes --> VisitGeofence[Verify VisitDestination Geofence]
+    VisitGeofence -- Outside --> RejectVisitGeo[400 VISIT_GEOFENCE_VIOLATION]
+    VisitGeofence -- Inside --> LinkVisitSession[Create Session with officialVisitId]
+    GeofenceReq -- No --> LinkVisitSession
+
+    ModeCheck -- "WFH" --> WfhAuthCheck{Approved WFH Today?}
+    WfhAuthCheck -- No --> RejectWfhAuth[403 UNAUTHORIZED_WFH_PUNCH]
+    WfhAuthCheck -- Yes --> WfhHalfCheck{Half-Day Timing Valid?}
+    WfhHalfCheck -- No --> RejectWfhTiming[400 WFH_TIMING_INVALID]
+    WfhHalfCheck -- Yes --> LinkWfhSession[Create Session with wfhRequestId]
+
+    LinkVisitSession --> CreateSession
+    LinkWfhSession --> CreateSession
+```
+
+### 5.2 Session & Daily Summary Representation
+
+- `AttendanceSession`:
+  - Stores `attendanceMode: AttendanceMode` (`OFFICE`, `OFFICIAL_VISIT`, `WFH`).
+  - Stores `officialVisitId?: string` or `wfhRequestId?: string`.
+- `AttendanceDailySummary`:
+  - Tracks `primaryAttendanceMode: AttendanceMode`. If an employee has both office and field sessions in one day, the mode with greater working minutes is designated as primary.
+  - Exposes `isOfficialVisit: boolean` and `isWfh: boolean`.
+
+---
+
+## 6. Location Verification Policy
+
+### 6.1 Server-Side Validation Rules
+
+1. **Coordinate Sanity**: Latitude $[-90.0, +90.0]$ and Longitude $[-180.0, +180.0]$.
+2. **Timestamp Freshness**: Client GPS reading must be within $\le 300$ seconds (5 minutes) of authoritative server NTP time.
+3. **Accuracy Tolerance**: GPS horizontal accuracy radius must be $\le 150$ meters. Readings with $> 150$m are rejected (`GPS_ACCURACY_POOR`).
+4. **Distance Formula**: Pure spherical Haversine formula calculation:
+   $$d = 2R \arcsin\left(\sqrt{\sin^2\left(\frac{\Delta\phi}{2}\right) + \cos\phi_1\cos\phi_2\sin^2\left(\frac{\Delta\lambda}{2}\right)}\right)$$
+   Where $R = 6,371,000$ meters.
+5. **Visit Geofence Bounds**: Distance between punch coordinates and authorized `VisitDestination` must be $\le \text{radiusMeters}$ (default 200m).
+
+### 6.2 Privacy by Design for WFH
+
+- **Home Privacy Rule**: For `WFH` mode, exact residential GPS coordinates are **not** collected or stored in the database by default. Punch events record `latitude: 0, longitude: 0, accuracyMeters: null` and log IP/device signatures only.
+
+### 6.3 Honest Operational Disclaimers
+
+- Browser `navigator.geolocation` can be mocked using browser developer tools or GPS spoofing mobile apps. Server-side checks reduce low-effort spoofing but cannot guarantee physical truth.
+- Physical location presence is never legally equivalent to proof of actual work performance.
+
+---
+
+## 7. Database Migration Plan
+
+### 7.1 Schema Additions in `packages/database/prisma/schema.prisma`
 
 ```prisma
 enum VisitStatus {
@@ -82,136 +254,117 @@ enum ApprovalDecision {
   APPROVED
   REJECTED
 }
-```
 
-### 2.2 Models
+enum AttendanceMode {
+  OFFICE
+  OFFICIAL_VISIT
+  WFH
+}
 
-#### `OfficialVisit` (`official_visits`)
-
-```prisma
 model OfficialVisit {
-  id                  String             @id @default(uuid())
-  organizationId      String
-  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employeeId          String
-  employee            Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id                   String             @id @default(uuid())
+  organizationId       String
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  title               String             // e.g. "Onsite Architecture Review"
-  purpose             String             // Detailed business justification
-  startDate           DateTime           // UTC date
-  endDate             DateTime           // UTC date
-  expectedDurationDays Float             @default(1.0)
+  title                String
+  purpose              String
+  startDate            DateTime           // Normalized UTC midnight
+  endDate              DateTime           // Normalized UTC midnight
+  expectedDurationDays Float              @default(1.0)
+  status               VisitStatus        @default(SUBMITTED)
+  cancellationReason   String?
 
-  status              VisitStatus        @default(SUBMITTED)
-  cancellationReason  String?
+  destinations         VisitDestination[]
+  approvals            VisitApproval[]
+  attendanceSessions   AttendanceSession[]
+  attendanceDailySummaries AttendanceDailySummary[]
 
-  // Destination details
-  destinations        VisitDestination[]
-
-  // Approvals & audit
-  approvals           VisitApproval[]
-  attendanceSessions  AttendanceSession[]
-
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   @@index([organizationId, status])
   @@index([employeeId, startDate, endDate])
   @@index([status])
   @@map("official_visits")
 }
-```
 
-#### `VisitDestination` (`visit_destinations`)
-
-```prisma
 model VisitDestination {
-  id                  String             @id @default(uuid())
-  visitId             String
-  visit               OfficialVisit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  id                   String             @id @default(uuid())
+  visitId              String
+  visit                OfficialVisit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
 
-  destinationName     String             // e.g. "Acme Tech Labs HQ"
-  address             String?
-  city                String?
-  latitude            Float?             // Optional geofence target
-  longitude           Float?             // Optional geofence target
-  radiusMeters        Int                @default(200) // Verification tolerance
-  isGeofenceRequired  Boolean            @default(true)
+  destinationName      String
+  address              String?
+  city                 String?
+  latitude             Float?
+  longitude            Float?
+  radiusMeters         Int                @default(200)
+  isGeofenceRequired   Boolean            @default(true)
 
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   @@index([visitId])
   @@map("visit_destinations")
 }
-```
 
-#### `VisitApproval` (`visit_approvals`)
-
-```prisma
 model VisitApproval {
-  id                  String             @id @default(uuid())
-  visitId             String
-  visit               OfficialVisit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  id                   String             @id @default(uuid())
+  visitId              String
+  visit                OfficialVisit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
 
-  approverId          String
-  approver            User               @relation(fields: [approverId], references: [id], onDelete: Restrict)
+  approverId           String
+  approver             User               @relation(fields: [approverId], references: [id], onDelete: Restrict)
 
-  decision            ApprovalDecision   // APPROVED / REJECTED
-  comments            String?
-  decidedAt           DateTime           @default(now())
+  decision             ApprovalDecision
+  comments             String?
+  decidedAt            DateTime           @default(now())
 
   @@index([visitId])
   @@index([approverId])
   @@map("visit_approvals")
 }
-```
 
-#### `WfhRequest` (`wfh_requests`)
-
-```prisma
 model WfhRequest {
-  id                  String             @id @default(uuid())
-  organizationId      String
-  organization        Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  employeeId          String
-  employee            Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  id                   String             @id @default(uuid())
+  organizationId       String
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
-  startDate           DateTime           // UTC date
-  endDate             DateTime           // UTC date
-  durationType        WfhDurationType    @default(FULL_DAY) // FULL_DAY, FIRST_HALF, SECOND_HALF, CUSTOM_RANGE
-  reason              String             // Justification
+  startDate            DateTime           // Normalized UTC midnight
+  endDate              DateTime           // Normalized UTC midnight
+  durationType         WfhDurationType    @default(FULL_DAY)
+  reason               String
+  status               WfhStatus          @default(SUBMITTED)
+  cancellationReason   String?
 
-  status              WfhStatus          @default(SUBMITTED)
-  cancellationReason  String?
+  approvals            WfhApproval[]
+  attendanceSessions   AttendanceSession[]
+  attendanceDailySummaries AttendanceDailySummary[]
 
-  approvals           WfhApproval[]
-  attendanceSessions  AttendanceSession[]
-
-  createdAt           DateTime           @default(now())
-  updatedAt           DateTime           @updatedAt
+  createdAt            DateTime           @default(now())
+  updatedAt            DateTime           @updatedAt
 
   @@index([organizationId, status])
   @@index([employeeId, startDate, endDate])
   @@index([status])
   @@map("wfh_requests")
 }
-```
 
-#### `WfhApproval` (`wfh_approvals`)
-
-```prisma
 model WfhApproval {
-  id                  String             @id @default(uuid())
-  requestId           String
-  request             WfhRequest         @relation(fields: [requestId], references: [id], onDelete: Cascade)
+  id                   String             @id @default(uuid())
+  requestId            String
+  request              WfhRequest         @relation(fields: [requestId], references: [id], onDelete: Cascade)
 
-  approverId          String
-  approver            User               @relation(fields: [approverId], references: [id], onDelete: Restrict)
+  approverId           String
+  approver             User               @relation(fields: [approverId], references: [id], onDelete: Restrict)
 
-  decision            ApprovalDecision   // APPROVED / REJECTED
-  comments            String?
-  decidedAt           DateTime           @default(now())
+  decision             ApprovalDecision
+  comments             String?
+  decidedAt            DateTime           @default(now())
 
   @@index([requestId])
   @@index([approverId])
@@ -219,185 +372,119 @@ model WfhApproval {
 }
 ```
 
-#### Updates to Existing Models:
+### 7.2 Non-Destructive Schema Alterations
 
-- `AttendanceSession`:
-  - `officialVisitId String?` (FK to `OfficialVisit`)
-  - `wfhRequestId String?` (FK to `WfhRequest`)
-  - `attendanceMode AttendanceMode @default(OFFICE)` (Enum: `OFFICE`, `OFFICIAL_VISIT`, `WFH`)
-- `AttendanceEvent`:
-  - `officialVisitId String?`
-  - `wfhRequestId String?`
-- `AttendanceDailySummary`:
-  - `primaryAttendanceMode AttendanceMode @default(OFFICE)`
-  - `officialVisitId String?`
-  - `wfhRequestId String?`
+- Add `attendanceMode AttendanceMode @default(OFFICE)` to `AttendanceSession` and `AttendanceEvent`.
+- Add `officialVisitId String?` and `wfhRequestId String?` (nullable foreign keys) to `AttendanceSession`, `AttendanceEvent`, and `AttendanceDailySummary`.
+- Add `primaryAttendanceMode AttendanceMode @default(OFFICE)` to `AttendanceDailySummary`.
 
 ---
 
-## 3. Attendance Engine Integration & Rules
+## 8. API Contract Plan
 
-### 3.1 Strict Authorization Verification
+All routes conform to `/api/v1` conventions:
 
-When an employee punches with `attendanceMode`:
+### 8.1 Official Visits API (`/api/v1/visits`)
 
-1. **`OFFICE`**: Verified against assigned active `OfficeLocation` perimeter (Phase 4).
-2. **`OFFICIAL_VISIT`**:
-   - Checks if employee has an active `OfficialVisit` in status `APPROVED` or `IN_PROGRESS` covering the working date.
-   - Verifies if destination geofence is required:
-     - If `isGeofenceRequired = true`, checks server-side distance to authorized visit destination (`latitude`, `longitude`, `radiusMeters`).
-     - Rejects out-of-radius punches with `VISIT_GEOFENCE_VIOLATION`.
-   - Checks GPS freshness ($\le 5$ min) and accuracy ($\le 150$m).
-   - Links session directly to `officialVisit.id`.
-3. **`WFH`**:
-   - Checks if employee has an active `WfhRequest` in status `APPROVED` covering the working date.
-   - For half-day WFH (`FIRST_HALF` or `SECOND_HALF`), validates punch timestamp against scheduled half-day shift boundaries.
-   - **Privacy Rule**: Does NOT require or capture home coordinates by default unless explicit high-security policy mandates.
-   - Links session directly to `wfhRequest.id`.
+| Route                         | Method  |          Roles           |   Permission    | Description                                                  |
+| :---------------------------- | :-----: | :----------------------: | :-------------: | :----------------------------------------------------------- |
+| `/visits`                     | `POST`  |           All            | `VISIT_CREATE`  | Create a new official visit (as `DRAFT` or `SUBMITTED`)      |
+| `/visits/my`                  |  `GET`  |           All            |  `VISIT_VIEW`   | Paginated visit requests submitted by current employee       |
+| `/visits/:id`                 |  `GET`  |           All            |  `VISIT_VIEW`   | Detailed visit view (destinations, approval trail)           |
+| `/visits/:id`                 | `PATCH` |           All            | `VISIT_CREATE`  | Update visit. Modifying approved visit resets to `SUBMITTED` |
+| `/visits/:id/cancel`          | `POST`  |           All            | `VISIT_CREATE`  | Cancel visit before start date with reason                   |
+| `/visits/manager/pending`     |  `GET`  | `MANAGER`, `HR`, `ADMIN` | `VISIT_APPROVE` | Scoped list of pending visit requests from reporting team    |
+| `/visits/:id/decide`          | `POST`  | `MANAGER`, `HR`, `ADMIN` | `VISIT_APPROVE` | Approve or reject a subordinate's visit request              |
+| `/visits/operations/overview` |  `GET`  |      `HR`, `ADMIN`       |  `VISIT_VIEW`   | Organization-wide active and upcoming field visits monitor   |
 
-### 3.2 Overlap Prevention & State Invariants
+### 8.2 Work From Home API (`/api/v1/wfh`)
 
-- An employee cannot have overlapping approved visits on the same date.
-- An employee cannot have overlapping approved WFH and Visit requests on the same date.
-- An active `AttendanceSession` cannot be opened if another session is already `OPEN`.
-- Approval does not equal attendance; employees must still check in/out to establish working hours.
+| Route                      | Method |          Roles           |  Permission   | Description                                                         |
+| :------------------------- | :----: | :----------------------: | :-----------: | :------------------------------------------------------------------ |
+| `/wfh`                     | `POST` |           All            | `WFH_CREATE`  | Submit WFH request (`FULL_DAY`, `FIRST_HALF`, `SECOND_HALF`, range) |
+| `/wfh/my`                  | `GET`  |           All            |  `WFH_VIEW`   | Paginated WFH requests submitted by current employee                |
+| `/wfh/:id`                 | `GET`  |           All            |  `WFH_VIEW`   | Detailed WFH request view and decision history                      |
+| `/wfh/:id/cancel`          | `POST` |           All            | `WFH_CREATE`  | Cancel a pending or upcoming WFH request                            |
+| `/wfh/manager/pending`     | `GET`  | `MANAGER`, `HR`, `ADMIN` | `WFH_APPROVE` | Scoped pending WFH requests from manager's reporting team           |
+| `/wfh/:id/decide`          | `POST` | `MANAGER`, `HR`, `ADMIN` | `WFH_APPROVE` | Approve or reject subordinate's WFH request                         |
+| `/wfh/operations/overview` | `GET`  |      `HR`, `ADMIN`       |  `WFH_VIEW`   | Organization-wide remote attendance overview                        |
 
-### 3.3 Strict Anti-Self-Approval Guard
+### 8.3 Enhanced Check-In Payload
 
-- Managers and Team Leads are cryptographically prevented from approving their own visit or WFH requests:
-  `if (request.employee.userId === currentUser.id) throw new ForbiddenException('SELF_APPROVAL_DISALLOWED')`.
-- Manager approvals are scoped strictly to direct and indirect reporting subordinates resolved via `hierarchy.service.ts`.
-
----
-
-## 4. API Endpoints Architecture
-
-All endpoints follow RESTful conventions under `/api/v1`:
-
-### 4.1 Official Visits API (`/api/v1/visits`)
-
-- `POST /visits`: Create an official visit request (draft or submit).
-- `GET /visits/my`: Get current employee's visit history with pagination and status filters.
-- `GET /visits/:id`: Get full details of a specific visit, destinations, and approval timeline.
-- `PATCH /visits/:id`: Update draft or modify pending visit. (Modifying an approved visit resets status to `SUBMITTED` for reapproval).
-- `POST /visits/:id/cancel`: Cancel visit before or during execution.
-- `GET /visits/manager/pending`: List pending visit requests for the manager's reporting team.
-- `POST /visits/:id/decide`: Manager approve/reject with review comments.
-- `GET /visits/operations/overview`: HR/Admin organization-wide visit monitor with filters.
-
-### 4.2 Work From Home API (`/api/v1/wfh`)
-
-- `POST /wfh`: Submit a WFH request (full-day, half-day, date range).
-- `GET /wfh/my`: Get current employee's WFH requests.
-- `GET /wfh/:id`: Get WFH request detail and decision history.
-- `POST /wfh/:id/cancel`: Cancel a pending or upcoming WFH request.
-- `GET /wfh/manager/pending`: List pending WFH requests for manager's reporting team.
-- `POST /wfh/:id/decide`: Manager approve/reject with review comments.
-- `GET /wfh/operations/overview`: HR/Admin organization-wide remote work overview.
-
-### 4.3 Enhanced Attendance Punch APIs
-
-- `POST /attendance/check-in`: Enhanced to validate `attendanceMode` (`OFFICE`, `OFFICIAL_VISIT`, `WFH`) with `officialVisitId` or `wfhRequestId`.
-- `GET /attendance/today`: Returns authorized attendance modes for today based on active approvals.
-
----
-
-## 5. User Interface & Design System Integration
-
-Preserves the established **warm ivory, amber/gold, deep charcoal** design system:
-
-### 5.1 Employee Experience
-
-1. **Visits Portal (`/visits`)**:
-   - Modern tabbed layout: "My Visits", "New Request".
-   - Destination builder with city, coordinates/radius, and expected duration.
-   - Status cards with visual timeline (`SUBMITTED` → `APPROVED` → `IN_PROGRESS` → `COMPLETED`).
-2. **WFH Request Modal & Portal**:
-   - Clean radio selector for `Full Day`, `First Half (Morning)`, `Second Half (Afternoon)`, `Date Range`.
-   - Date picker with conflict detection and remaining balance indicator.
-3. **Smart Punch Card (`/attendance`)**:
-   - Dynamically highlights available attendance modes:
-     - Office (Always available if in office perimeter)
-     - Official Visit (Active badge if visit approved for today)
-     - WFH (Active badge if WFH approved for today)
-   - Disables unauthorized modes with explanatory tooltips.
-
-### 5.2 Manager Experience
-
-1. **Approvals Hub (`/team` or `/approvals`)**:
-   - Dedicated "Field Visits" and "WFH Requests" review tabs.
-   - Team calendar showing who is in office, on visit, or WFH today.
-   - Quick one-click Approve / Reject with mandatory comment modal.
-
-### 5.3 HR Operations Interface
-
-1. **Organization Field & Remote Attendance Monitor**:
-   - Headcount KPI cards: Onsite %, WFH %, Official Visit %, Unresolved OD Anomalies.
-   - Paginated operations table with branch, department, and destination filters.
-   - Audit trail drawer inspecting raw GPS events and approval histories.
-
----
-
-## 6. Step-by-Step Implementation Roadmap
-
-```mermaid
-gantt
-    title Phase 5 Implementation Steps
-    dateFormat  X
-    axisFormat Step %s
-    section Database & Core
-    Step 1 Database Schema & Migrations       :active, 1, 2
-    Step 2 Visits Backend Service             :2, 3
-    Step 3 WFH Backend Service                :3, 4
-    Step 4 Attendance Engine Integration      :4, 5
-    section APIs & Scoping
-    Step 5 Visits & WFH REST Endpoints        :5, 6
-    Step 6 Manager Approval & Scoping APIs    :6, 7
-    Step 7 HR Operations & Exceptions         :7, 8
-    Step 8 Unit & Security Test Suites        :8, 9
-    section Frontend & UI
-    Step 9 Web API Contracts & Hooks          :9, 10
-    Step 10 Employee Visits UI                :10, 11
-    Step 11 Employee WFH UI                   :11, 12
-    Step 12 Smart Attendance Punch Card UI    :12, 13
-    Step 13 Manager Approvals Portal          :13, 14
-    Step 14 HR Operations & Audit Monitor     :14, 15
-    section QA & Acceptance
-    Step 15 End-to-End QA & Responsive Polish :15, 16
-    Step 16 Production Readiness & Acceptance :16, 17
+```json
+{
+  "latitude": 19.076,
+  "longitude": 72.8777,
+  "accuracyMeters": 20,
+  "idempotencyKey": "9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d",
+  "attendanceMode": "OFFICIAL_VISIT",
+  "officialVisitId": "vis-8f19da2e-4b61-419b-a01b-9471de81b0a1",
+  "deviceInfo": "Chrome 124 / Android"
+}
 ```
 
-### Detailed Steps:
+---
 
-- **Step 1: Database Foundation & Prisma Migrations**: Define `OfficialVisit`, `VisitDestination`, `VisitApproval`, `WfhRequest`, `WfhApproval` in `schema.prisma`. Run non-destructive migration.
-- **Step 2: Official Visits Core Service**: Implement state machine, overlap checks, destination validation, and material change detection.
-- **Step 3: Work From Home Core Service**: Implement WFH request lifecycle, duration parsing (half-day vs full-day), and overlap rules.
-- **Step 4: Attendance Engine Integration**: Update `attendance.service.ts` to allow and enforce `OFFICIAL_VISIT` and `WFH` check-ins, linking sessions to authorized requests.
-- **Step 5: Visits & WFH REST APIs**: Create NestJS controllers, DTOs with `class-validator`, Swagger annotations, and standardized error responses.
-- **Step 6: Manager Approval APIs & Scoping**: Implement manager team queue, hierarchy scoping, review notes, and anti-self-approval enforcement.
-- **Step 7: HR Operations, Exception Management & Reporting**: Extend attendance reports and exception scanner to surface visit and WFH anomalies.
-- **Step 8: Backend Unit & Security Tests**: Comprehensive test suite covering state transitions, GPS tolerance, cross-tenant isolation, overlap rejection, and anti-self-approval.
-- **Step 9: Web Client API & Typed Contracts**: Add typed API clients in `apps/web/src/lib/api-client.ts` and React hooks.
-- **Step 10: Employee Official Visits UI**: Build `/visits` page with request creation dialog, status cards, and destination details.
-- **Step 11: Employee WFH Requests UI**: Implement WFH request dialog with duration pickers, conflict warnings, and history table.
-- **Step 12: Smart Attendance Punch Card UI**: Upgrade `/attendance` quick check-in card to adapt dynamically to today's approved mode (Office, OD, WFH).
-- **Step 13: Manager Approvals Portal**: Build manager team review queue with decision drawer and team calendar preview.
-- **Step 14: HR Operations Dashboard & Audit Monitor**: Add organization-wide OD and remote work filters, charts, and export options.
-- **Step 15: End-to-End QA & UI Polish**: Verify desktop, tablet, and mobile layouts; test GPS spoof edge cases, clock drift, and offline behaviors.
-- **Step 16: Production Readiness & Acceptance Matrix**: Verify Docker builds, migration locks, health probes, rollback runbooks, and produce final acceptance matrix.
+## 9. Role & Scope Matrix
+
+| Action / Resource                |          Employee          |                 Manager                 |            HR            |          Admin           |
+| :------------------------------- | :------------------------: | :-------------------------------------: | :----------------------: | :----------------------: |
+| **Create Visit / WFH**           |     Own requests only      |            Own requests only            |    Own requests only     |    Own requests only     |
+| **View Requests**                | Self (`employeeId = self`) | Team Subtree (`isSubordinateOf`) + Self |    Organization-wide     |    Organization-wide     |
+| **Edit Draft Request**           |  Self (before submission)  |        Self (before submission)         | Self (before submission) | Self (before submission) |
+| **Cancel Request**               |    Self (before start)     |           Self (before start)           |  Any (with audit note)   |  Any (with audit note)   |
+| **Approve / Reject**             |         **DENIED**         | Team Subtree only (Anti-self-approval)  |    Organization-wide     |    Organization-wide     |
+| **Punch Attendance**             |   Self (under approval)    |          Self (under approval)          |  Self (under approval)   |  Self (under approval)   |
+| **Override / Emergency Excusal** |         **DENIED**         |               **DENIED**                |    Organization-wide     |    Organization-wide     |
+| **View GPS Evidence**            |            Self            |    Team (City/Perimeter status only)    |    Full raw audit log    |    Full raw audit log    |
 
 ---
 
-## 7. Testing & Acceptance Criteria
+## 10. Security Threats & Mitigations
 
-| Category                 | Test Scenario                                                   | Acceptance Criteria                                        |
-| :----------------------- | :-------------------------------------------------------------- | :--------------------------------------------------------- |
-| **Visit State Machine**  | Invalid status transition (e.g. `REJECTED` → `APPROVED`)        | Rejected with 400 `INVALID_STATE_TRANSITION`               |
-| **Overlapping Requests** | Overlapping visit or WFH on identical dates                     | Rejected with 409 `REQUEST_OVERLAP_CONFLICT`               |
-| **Anti-Self-Approval**   | Manager attempts to approve their own visit or WFH              | Blocked with 403 `SELF_APPROVAL_DISALLOWED`                |
-| **Cross-Tenant IDOR**    | User queries visit ID belonging to another organization         | Rejected with 404 / 403 access control                     |
-| **Visit Geofence**       | Punch with `OFFICIAL_VISIT` mode 500m outside visit destination | Rejected with 400 `VISIT_GEOFENCE_VIOLATION`               |
-| **Unapproved WFH**       | Punch with `WFH` mode without approved WFH request              | Rejected with 403 `UNAUTHORIZED_WFH_PUNCH`                 |
-| **Half-Day WFH**         | `FIRST_HALF` WFH punched in during evening window               | Evaluated against second-half shift rules or flagged       |
-| **Privacy Preservation** | WFH punch event stored in database                              | Zero coordinates collected unless explicit policy mandates |
-| **Office Continuity**    | Standard office check-in / check-out                            | 100% backward-compatible, unchanged Phase 4 behavior       |
+| Threat Vector                  |   Severity   | Attack Description                                    | Architectural Mitigation                                                                                                |
+| :----------------------------- | :----------: | :---------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------- |
+| **Self-Approval Bypass**       | **CRITICAL** | Manager submits WFH/Visit and approves own request    | Cryptographic check `request.employee.userId !== reviewer.id` returns 403 `SELF_APPROVAL_DISALLOWED`.                   |
+| **Cross-Tenant IDOR**          | **CRITICAL** | Tenant A attempts to approve or view Tenant B visits  | Prisma queries filter strictly by `organizationId: user.organizationId`.                                                |
+| **Cross-Team Manager IDOR**    |   **HIGH**   | Manager approves peer or foreign department request   | `hierarchyService.isSubordinateOf` verifies ancestry. Foreign requests return 403 `FORBIDDEN_OUTSIDE_SCOPE`.            |
+| **Overlapping Double-Booking** |   **HIGH**   | Multiple visits/WFH submitted for identical dates     | Database transactions and collision checks return 409 `REQUEST_OVERLAP_CONFLICT`.                                       |
+| **Stale GPS Injection**        |  **MEDIUM**  | Attacker replays previously captured office/visit GPS | Server verifies GPS reading age $\le 300$s; rejects stale timestamps.                                                   |
+| **Out-of-Radius Punch**        |  **MEDIUM**  | Employee punches field attendance from home/hotel     | Server calculates Haversine distance; punches $> \text{radiusMeters}$ are rejected with 400 `VISIT_GEOFENCE_VIOLATION`. |
+| **Residential GPS Leak**       |  **MEDIUM**  | WFH captures precise employee home coordinates        | WFH mode zeros coordinates (`0.0, 0.0`) by design; no home GPS captured.                                                |
+
+---
+
+## 11. Automated Test Strategy
+
+The test plan covers unit, integration, and E2E security layers:
+
+1. **Unit Test Suites (`apps/api/src/modules/visits/*.spec.ts`, `wfh/*.spec.ts`)**:
+   - State transition validation (valid vs invalid transitions).
+   - Date range parsing and working day overlap detection.
+   - Half-day WFH shift boundary calculations.
+   - Material change detection and reapproval triggers.
+2. **Security & RBAC Test Suite (`apps/api/test/visit-wfh-security.spec.ts`)**:
+   - Anti-self-approval enforcement for managers and admins.
+   - Cross-tenant IDOR attack attempts.
+   - Manager team boundary traversal attacks.
+   - GPS coordinate boundary and freshness rejection.
+   - Unapproved mode check-in rejection (`UNAUTHORIZED_VISIT_PUNCH`, `UNAUTHORIZED_WFH_PUNCH`).
+3. **Live E2E Integration Suite**:
+   - Create visit request → Manager approve → Punch field check-in with GPS → Complete session.
+   - Create WFH request → Manager approve → Remote punch (zero GPS captured) → Accumulate daily summary.
+   - Backward-compatibility verification: Office check-in continues to pass 100% unchanged.
+
+---
+
+## 12. Unresolved Decisions for HR Leadership
+
+Prior to production launch, HR leadership must provide policy sign-off on:
+
+1. **Maximum Consecutive WFH Allowance**:
+   - _Question_: Should the system enforce a cap on consecutive WFH days (e.g., maximum 3 days/week or 10 days/month), or leave it unmetered subject to manager approval?
+2. **Prior Notice Lead Time**:
+   - _Question_: Must Official Visits and WFH requests be submitted at least $N$ days in advance (e.g., 24 hours prior), or are retroactive same-day requests permitted for emergencies?
+3. **Roaming Visits Geofence Exemption**:
+   - _Question_: For sales or field inspection visits where exact coordinates are unknown in advance, should HR allow `isGeofenceRequired = false` (roaming outdoor duty), or require specifying at least one landmark/city center?
+4. **Half-Day Shift Transition Window**:
+   - _Question_: When an employee takes `FIRST_HALF` WFH, what is the allowable transit window between their morning remote checkout and their afternoon office check-in?
