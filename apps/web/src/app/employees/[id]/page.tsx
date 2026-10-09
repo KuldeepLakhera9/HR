@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { employeesApi, organizationApi } from '../../../lib/api-client';
 import { useAuth } from '../../../context/AuthContext';
+import { EmployeeHistoryTimeline } from '../../../components/employees/EmployeeHistoryTimeline';
 
 // Valid lifecycle transitions according to Phase 3 Step 7 state machine
 const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -1055,72 +1056,22 @@ export default function EmployeeProfilePage() {
         {/* ------------------------------------------------------------------ */}
         {activeTab === 'history' && (
           <Card className="border border-stone-200/80 shadow-xs bg-white">
-            <CardHeader>
-              <CardTitle className="text-sm font-bold text-stone-900 flex items-center gap-2">
-                <History className="h-4 w-4 text-amber-800" />
-                Employee Career History Log
+            <CardHeader className="pb-4 border-b border-stone-100">
+              <CardTitle className="text-base font-bold text-stone-900 flex items-center gap-2">
+                <History className="h-5 w-5 text-amber-800" />
+                Employee Career & Lifecycle History
               </CardTitle>
-              <CardDescription className="text-xs text-stone-500">
-                Immutable chronological event trail tracking transfers, promotions, and status
-                adjustments
+              <CardDescription className="text-xs text-stone-500 mt-0.5">
+                Immutable chronological event trail tracking organizational placements, promotions,
+                transfers, and lifecycle status transitions.
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              {employee.history && employee.history.length > 0 ? (
-                <div className="relative pl-6 space-y-6 before:absolute before:left-2.5 before:top-3 before:bottom-3 before:w-0.5 before:bg-stone-200">
-                  {employee.history.map((h: any) => (
-                    <div key={h.id} className="relative group text-xs">
-                      {/* Timeline Dot */}
-                      <div className="absolute -left-6 top-1.5 h-3.5 w-3.5 rounded-full border-2 border-white bg-amber-800 shadow-xs" />
-
-                      <div className="p-3.5 rounded-xl bg-stone-50/70 border border-stone-200/70 hover:border-stone-300 transition-colors space-y-1.5">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                          <span className="font-bold text-stone-900 text-xs tracking-wide">
-                            {h.eventType}
-                          </span>
-                          <span className="text-[11px] text-stone-400 font-mono">
-                            {new Date(h.timestamp).toLocaleString()}
-                          </span>
-                        </div>
-
-                        <div className="text-stone-700">
-                          {h.previousValue && (
-                            <span>
-                              From{' '}
-                              <strong className="text-stone-900">{h.previousValue}</strong>{' '}
-                            </span>
-                          )}
-                          {h.newValue && (
-                            <span>
-                              To <strong className="text-stone-900">{h.newValue}</strong>
-                            </span>
-                          )}
-                        </div>
-
-                        {h.metadata && Object.keys(h.metadata).length > 0 && (
-                          <div className="text-[11px] text-stone-500 pt-1">
-                            {h.metadata.reason && (
-                              <div>
-                                <span className="font-medium">Reason:</span> {h.metadata.reason}
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {h.performedBy && (
-                          <div className="text-[11px] text-stone-400 pt-0.5">
-                            Logged by {h.performedBy.firstName} {h.performedBy.lastName}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-xs text-stone-400 italic py-8 text-center">
-                  No historical event logs recorded.
-                </div>
-              )}
+            <CardContent className="pt-6">
+              <EmployeeHistoryTimeline
+                initialHistory={employee.history || []}
+                employeeId={employee.id}
+                employeeName={employee.displayName}
+              />
             </CardContent>
           </Card>
         )}
