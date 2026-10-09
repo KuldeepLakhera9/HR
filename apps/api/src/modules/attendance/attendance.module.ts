@@ -8,6 +8,8 @@ import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { AttendanceService } from './attendance.service';
 import { CheckInDto } from './dto/check-in.dto';
+import { CheckOutDto } from './dto/check-out.dto';
+import { BreakDto } from './dto/break.dto';
 import {
   OfficeLocationsController,
   OfficeLocationsAliasController,
@@ -39,6 +41,59 @@ export class AttendanceController {
     @Headers('user-agent') userAgent: string | undefined,
   ) {
     return this.attendanceService.checkIn(user, dto, ipAddress, userAgent);
+  }
+
+  @Post('check-out')
+  @RequirePermissions('ATTENDANCE_MARK')
+  @ApiOperation({
+    summary:
+      'Office check-out, break auto-conclusion, gross/net work time calculation & daily summary update',
+  })
+  async checkOut(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CheckOutDto,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    return this.attendanceService.checkOut(user, dto, ipAddress, userAgent);
+  }
+
+  @Post('break/start')
+  @RequirePermissions('ATTENDANCE_MARK')
+  @ApiOperation({
+    summary: 'Start an active break within the currently open attendance session',
+  })
+  async startBreak(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BreakDto,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    return this.attendanceService.startBreak(user, dto, ipAddress, userAgent);
+  }
+
+  @Post('break/end')
+  @RequirePermissions('ATTENDANCE_MARK')
+  @ApiOperation({
+    summary: 'End an active break and update total break minutes for the current session',
+  })
+  async endBreak(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: BreakDto,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    return this.attendanceService.endBreak(user, dto, ipAddress, userAgent);
+  }
+
+  @Post('reconcile-missing')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({
+    summary:
+      'Flag missing checkouts past cutoff hour, transition to AUTO_CLOSED, and record exceptions without fabricating checkout events',
+  })
+  async reconcileMissing(@CurrentUser() user: AuthenticatedUser) {
+    return this.attendanceService.reconcileMissingCheckouts(user.organizationId);
   }
 
   @Get('today')

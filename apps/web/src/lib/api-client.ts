@@ -662,6 +662,44 @@ export const attendanceApi = {
     return res;
   },
 
+  async checkOut(payload: {
+    idempotencyKey: string;
+    latitude?: number;
+    longitude?: number;
+    accuracyMeters?: number;
+    timestamp?: string | number;
+    deviceInfo?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/attendance/check-out', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async startBreak(payload: { idempotencyKey: string; reason?: string; deviceInfo?: string }) {
+    const res = await fetchWithAuth<any>('/attendance/break/start', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async endBreak(payload: { idempotencyKey: string; reason?: string; deviceInfo?: string }) {
+    const res = await fetchWithAuth<any>('/attendance/break/end', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async reconcileMissing() {
+    const res = await fetchWithAuth<any>('/attendance/reconcile-missing', {
+      method: 'POST',
+    });
+    return res;
+  },
+
   async getTodaySummary() {
     const res = await fetchWithAuth<any>('/attendance/summary');
     return res.data;

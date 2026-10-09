@@ -760,6 +760,21 @@ export interface CheckInRequestDto {
   deviceInfo?: string;
 }
 
+export interface CheckOutRequestDto {
+  idempotencyKey: string;
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  timestamp?: string | number;
+  deviceInfo?: string;
+}
+
+export interface BreakRequestDto {
+  idempotencyKey: string;
+  reason?: string;
+  deviceInfo?: string;
+}
+
 export interface TodayAttendanceStatusDto {
   date: string;
   workingDateUtc: string;

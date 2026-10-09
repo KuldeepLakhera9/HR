@@ -94,6 +94,7 @@ describe('AttendanceService', () => {
     prisma = {
       attendanceEvent: {
         findUnique: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest
           .fn()
           .mockImplementation(({ data }) => Promise.resolve({ id: 'evt-created-1', ...data })),
@@ -105,6 +106,9 @@ describe('AttendanceService', () => {
         create: jest
           .fn()
           .mockImplementation(({ data }) => Promise.resolve({ id: 'sess-created-1', ...data })),
+        update: jest
+          .fn()
+          .mockImplementation(({ where, data }) => Promise.resolve({ id: where.id, ...data })),
       },
       attendanceDailySummary: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -424,6 +428,282 @@ describe('AttendanceService', () => {
       expect(result.data.currentStatus.canCheckOut).toBe(true);
       expect(result.data.activeSession).toBeDefined();
       expect(result.data.activeSession?.id).toBe('sess-open-1');
+    });
+  });
+
+  describe('Break Management (startBreak & endBreak)', () => {
+    it('starts a break successfully when session is open and not on break', async () => {
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-open-break',
+        employeeId: mockEmployeeId,
+        status: 'OPEN',
+        events: [{ id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: new Date() }],
+      });
+
+      const dto = { idempotencyKey: 'idem-break-start-1', reason: 'Lunch' };
+      const result = await service.startBreak(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.data.isOnBreak).toBe(true);
+      expect(result.data.event.eventType).toBe('BREAK_START');
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'ATTENDANCE_BREAK_START' }),
+      );
+    });
+
+    it('returns idempotent result on duplicate break start with same key', async () => {
+      prisma.attendanceEvent.findUnique.mockResolvedValueOnce({
+        id: 'evt-prior-bs',
+        eventType: 'BREAK_START',
+        idempotencyKey: 'idem-break-replay',
+        session: { id: 'sess-1', status: 'OPEN' },
+      });
+
+      const dto = { idempotencyKey: 'idem-break-replay' };
+      const result = await service.startBreak(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.data.isIdempotentReplay).toBe(true);
+    });
+
+    it('rejects startBreak if no open session exists', async () => {
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce(null);
+
+      const dto = { idempotencyKey: 'idem-bs-no-sess' };
+      await expect(service.startBreak(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects startBreak if already on break', async () => {
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-on-break',
+        employeeId: mockEmployeeId,
+        status: 'OPEN',
+        events: [
+          { id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: new Date() },
+          { id: 'evt-bs', eventType: 'BREAK_START', eventTimestamp: new Date() },
+        ],
+      });
+
+      const dto = { idempotencyKey: 'idem-bs-already' };
+      await expect(service.startBreak(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('ends break successfully and recalculates session break duration', async () => {
+      const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-on-break-2',
+        employeeId: mockEmployeeId,
+        status: 'OPEN',
+        events: [
+          { id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: new Date(Date.now() - 60000) },
+          { id: 'evt-bs', eventType: 'BREAK_START', eventTimestamp: tenMinutesAgo },
+        ],
+      });
+
+      const dto = { idempotencyKey: 'idem-break-end-1' };
+      const result = await service.endBreak(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.data.isOnBreak).toBe(false);
+      expect(result.data.totalBreakMinutes).toBeGreaterThanOrEqual(9);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'ATTENDANCE_BREAK_END' }),
+      );
+    });
+
+    it('rejects endBreak if not currently on break', async () => {
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-not-on-break',
+        employeeId: mockEmployeeId,
+        status: 'OPEN',
+        events: [
+          { id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: new Date() },
+          { id: 'evt-bs', eventType: 'BREAK_START', eventTimestamp: new Date() },
+          { id: 'evt-be', eventType: 'BREAK_END', eventTimestamp: new Date() },
+        ],
+      });
+
+      const dto = { idempotencyKey: 'idem-be-not-on' };
+      await expect(service.endBreak(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('Office Check-Out Flow (checkOut)', () => {
+    it('checks out open session successfully, computes gross/net work time from server clock', async () => {
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-to-close',
+        employeeId: mockEmployeeId,
+        date: new Date('2026-10-09T00:00:00.000Z'),
+        checkInTime: oneHourAgo,
+        status: 'OPEN',
+        events: [{ id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: oneHourAgo }],
+      });
+
+      prisma.attendanceEvent.findMany.mockResolvedValueOnce([
+        { id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: oneHourAgo },
+      ]);
+
+      const dto = {
+        idempotencyKey: 'idem-checkout-normal-1',
+        latitude: 12.9716,
+        longitude: 77.5946,
+      };
+
+      const result = await service.checkOut(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.data.session?.status).toBe('COMPLETED');
+      expect(result.data.grossMinutes).toBeGreaterThanOrEqual(59);
+      expect(result.data.netWorkMinutes).toBeGreaterThanOrEqual(59);
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'ATTENDANCE_CHECK_OUT' }),
+      );
+    });
+
+    it('auto-concludes active open break upon checkout without leaving orphan breaks', async () => {
+      const twoHoursAgo = new Date(Date.now() - 120 * 60 * 1000);
+      const halfHourAgo = new Date(Date.now() - 30 * 60 * 1000);
+
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-on-break-checkout',
+        employeeId: mockEmployeeId,
+        date: new Date('2026-10-09T00:00:00.000Z'),
+        checkInTime: twoHoursAgo,
+        status: 'OPEN',
+        events: [
+          { id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: twoHoursAgo },
+          { id: 'evt-bs', eventType: 'BREAK_START', eventTimestamp: halfHourAgo },
+        ],
+      });
+
+      prisma.attendanceEvent.findMany.mockResolvedValueOnce([
+        { id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: twoHoursAgo },
+        { id: 'evt-bs', eventType: 'BREAK_START', eventTimestamp: halfHourAgo },
+        { id: 'evt-be-auto', eventType: 'BREAK_END', eventTimestamp: new Date() },
+      ]);
+
+      const dto = { idempotencyKey: 'idem-checkout-auto-break' };
+      const result = await service.checkOut(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.data.sessionBreakMinutes).toBeGreaterThanOrEqual(29);
+      expect(result.data.netWorkMinutes).toBeLessThan(result.data.grossMinutes!);
+    });
+
+    it('returns idempotent result on repeated checkout with identical key', async () => {
+      prisma.attendanceEvent.findUnique.mockResolvedValueOnce({
+        id: 'evt-prior-co',
+        eventType: 'CHECK_OUT',
+        idempotencyKey: 'idem-co-replay',
+        session: { id: 'sess-already-closed', status: 'COMPLETED' },
+      });
+
+      const dto = { idempotencyKey: 'idem-co-replay' };
+      const result = await service.checkOut(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.data.isIdempotentReplay).toBe(true);
+    });
+
+    it('rejects checkout if no active open session is found', async () => {
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce(null);
+
+      const dto = { idempotencyKey: 'idem-co-no-sess' };
+      await expect(service.checkOut(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('verifies location for office checkout and rejects if outside geofence', async () => {
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-geofence-co',
+        employeeId: mockEmployeeId,
+        date: new Date('2026-10-09T00:00:00.000Z'),
+        checkInTime: new Date(Date.now() - 3600000),
+        status: 'OPEN',
+        events: [{ id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: new Date() }],
+      });
+
+      const dto = {
+        idempotencyKey: 'idem-co-outside',
+        latitude: 19.076, // Mumbai (~1000km from Bangalore)
+        longitude: 72.8777,
+      };
+
+      await expect(service.checkOut(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('Overnight Shift & Working-Day Aggregation', () => {
+    it('accurately calculates overnight session spanning two calendar days under shift start working date', async () => {
+      // Overnight shift: 22:00 -> 06:00
+      const nightStart = new Date('2026-10-08T22:00:00.000Z');
+      const workingDate = new Date('2026-10-08T00:00:00.000Z');
+
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-night-overnight',
+        employeeId: mockEmployeeId,
+        date: workingDate,
+        checkInTime: nightStart,
+        status: 'OPEN',
+        events: [{ id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: nightStart }],
+      });
+
+      prisma.attendanceEvent.findMany.mockResolvedValueOnce([
+        { id: 'evt-ci', eventType: 'CHECK_IN', eventTimestamp: nightStart },
+      ]);
+
+      const dto = { idempotencyKey: 'idem-night-co' };
+      const result = await service.checkOut(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.data.session?.status).toBe('COMPLETED');
+    });
+  });
+
+  describe('Missing Checkout Reconciliation', () => {
+    it('flags unclosed stale sessions as AUTO_CLOSED without fabricating real CHECK_OUT events', async () => {
+      const staleSession = {
+        id: 'sess-stale-1',
+        organizationId: mockOrgId,
+        employeeId: mockEmployeeId,
+        date: new Date('2026-10-01T00:00:00.000Z'),
+        checkInTime: new Date('2026-10-01T09:00:00.000Z'),
+        status: 'OPEN',
+      };
+
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([staleSession]);
+
+      const result = await service.reconcileMissingCheckouts(
+        mockOrgId,
+        new Date('2026-10-05T00:00:00.000Z'),
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.reconciledCount).toBe(1);
+
+      // Verify that session was updated to AUTO_CLOSED
+      expect(prisma.attendanceSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sess-stale-1' },
+          data: { status: 'AUTO_CLOSED' },
+        }),
+      );
+
+      // Verify that AttendanceException of type MISSING_CHECKOUT was created
+      expect(prisma.attendanceException.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            exceptionType: 'MISSING_CHECKOUT',
+          }),
+        }),
+      );
+
+      // Crucially verify that NO CHECK_OUT event was inserted into attendanceEvent
+      const eventCalls = prisma.attendanceEvent.create.mock.calls;
+      const checkoutEvents = eventCalls.filter(
+        (call: any) => call[0]?.data?.eventType === 'CHECK_OUT',
+      );
+      expect(checkoutEvents.length).toBe(0);
     });
   });
 });
