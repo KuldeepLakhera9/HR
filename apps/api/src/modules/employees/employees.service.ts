@@ -128,28 +128,40 @@ export class EmployeesService {
   }
 
   /**
-   * Get direct manager for an employee
+   * Get direct manager for an employee (scoped to authorized user if provided)
    */
-  async getManager(employeeId: string, organizationId?: string) {
-    return this.hierarchy.getManager(employeeId, organizationId);
+  async getManager(employeeId: string, userOrOrgId?: string | AuthenticatedUser) {
+    if (typeof userOrOrgId === 'object' && userOrOrgId !== null) {
+      await this.findOne(employeeId, userOrOrgId);
+      return this.hierarchy.getManager(employeeId, userOrOrgId.organizationId);
+    }
+    return this.hierarchy.getManager(employeeId, userOrOrgId);
   }
 
   /**
-   * Get direct reports for a manager (Depth 1)
+   * Get direct reports for a manager (Depth 1, scoped to authorized user if provided)
    */
-  async getDirectReports(managerId: string, organizationId?: string) {
-    return this.hierarchy.getDirectReports(managerId, organizationId);
+  async getDirectReports(managerId: string, userOrOrgId?: string | AuthenticatedUser) {
+    if (typeof userOrOrgId === 'object' && userOrOrgId !== null) {
+      await this.findOne(managerId, userOrOrgId);
+      return this.hierarchy.getDirectReports(managerId, userOrOrgId.organizationId);
+    }
+    return this.hierarchy.getDirectReports(managerId, userOrOrgId);
   }
 
   /**
-   * Get full team hierarchy (direct and indirect reports) using iterative BFS batching
+   * Get full team hierarchy (direct and indirect reports) using iterative BFS batching (scoped to authorized user if provided)
    */
   async getTeam(
     managerId: string,
-    organizationId?: string,
+    userOrOrgId?: string | AuthenticatedUser,
     options?: { maxDepth?: number; includeManager?: boolean },
   ) {
-    return this.hierarchy.getTeam(managerId, organizationId, options);
+    if (typeof userOrOrgId === 'object' && userOrOrgId !== null) {
+      await this.findOne(managerId, userOrOrgId);
+      return this.hierarchy.getTeam(managerId, userOrOrgId.organizationId, options);
+    }
+    return this.hierarchy.getTeam(managerId, userOrOrgId as string, options);
   }
 
   // ---------------------------------------------------------------------------
@@ -158,10 +170,6 @@ export class EmployeesService {
 
   async findAll(user: AuthenticatedUser, query: EmployeeFilterDto) {
     const scopeFilter = await this.getScopedEmployeeFilter(user);
-
-    const where: Prisma.EmployeeWhereInput = {
-      AND: [scopeFilter],
-    };
 
     const andConditions: Prisma.EmployeeWhereInput[] = [];
 
@@ -196,9 +204,10 @@ export class EmployeesService {
       andConditions.push({ employment: employmentConditions });
     }
 
-    if (andConditions.length > 0) {
-      where.AND = [scopeFilter, ...andConditions];
-    }
+    const where: Prisma.EmployeeWhereInput = {
+      organizationId: user.organizationId,
+      AND: [scopeFilter, ...andConditions],
+    };
 
     const page = query.page || 1;
     const limit = query.limit || 20;
@@ -1027,8 +1036,14 @@ export class EmployeesService {
       }
     }
 
-    if (params.rootEmployeeId && nodeMap.has(params.rootEmployeeId)) {
-      return [nodeMap.get(params.rootEmployeeId)!];
+    if (params.rootEmployeeId) {
+      const rootNode = nodeMap.get(params.rootEmployeeId);
+      if (!rootNode) {
+        throw new NotFoundException(
+          `Root employee #${params.rootEmployeeId} not found in this organization`,
+        );
+      }
+      return [rootNode];
     }
 
     return rootNodes;

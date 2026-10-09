@@ -213,7 +213,7 @@ export class EmployeesController {
   @RequirePermissions('EMPLOYEE_VIEW')
   @ApiOperation({ summary: 'Get direct manager of an employee' })
   async getManager(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const data = await this.employeesService.getManager(id, req.user.organizationId);
+    const data = await this.employeesService.getManager(id, req.user);
     return {
       success: true,
       message: 'Manager retrieved successfully',
@@ -225,7 +225,7 @@ export class EmployeesController {
   @RequirePermissions('EMPLOYEE_VIEW')
   @ApiOperation({ summary: 'Get direct reports (subordinates) for a manager' })
   async getDirectReports(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const data = await this.employeesService.getDirectReports(id, req.user.organizationId);
+    const data = await this.employeesService.getDirectReports(id, req.user);
     return {
       success: true,
       message: 'Direct reports retrieved successfully',
@@ -242,7 +242,7 @@ export class EmployeesController {
     @Req() req: AuthenticatedRequest,
     @Query('maxDepth') maxDepth?: number,
   ) {
-    const data = await this.employeesService.getTeam(id, req.user.organizationId, {
+    const data = await this.employeesService.getTeam(id, req.user, {
       maxDepth: maxDepth ? Number(maxDepth) : undefined,
     });
     return {

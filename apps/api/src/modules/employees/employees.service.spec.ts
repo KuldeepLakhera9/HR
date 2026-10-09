@@ -3,7 +3,7 @@ import { EmployeesService } from './employees.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { EmploymentStatus, EmployeeHistoryEventType } from '@prisma/client';
 import * as XLSX from 'xlsx';
 
@@ -23,8 +23,35 @@ describe('EmployeesService', () => {
     lastName: 'Aditya',
     status: 'ACTIVE',
     roles: ['ADMIN'],
-    permissions: ['EMPLOYEE_VIEW', 'EMPLOYEE_CREATE', 'EMPLOYEE_UPDATE'],
+    permissions: [
+      'EMPLOYEE_VIEW',
+      'EMPLOYEE_CREATE',
+      'EMPLOYEE_UPDATE',
+      'EMPLOYEE_DELETE',
+      'EMPLOYEE_HISTORY_VIEW',
+      'EMPLOYEE_EXPORT',
+    ],
     sessionId: 'ses-1',
+  };
+
+  const mockHrUser: AuthenticatedUser = {
+    id: 'usr-hr',
+    email: 'hr@peopleos.local',
+    organizationId: mockOrgId,
+    employeeCode: 'EMP002',
+    firstName: 'Ananya',
+    lastName: 'Sharma',
+    status: 'ACTIVE',
+    roles: ['HR'],
+    permissions: [
+      'EMPLOYEE_VIEW',
+      'EMPLOYEE_CREATE',
+      'EMPLOYEE_UPDATE',
+      'EMPLOYEE_DELETE',
+      'EMPLOYEE_HISTORY_VIEW',
+      'EMPLOYEE_EXPORT',
+    ],
+    sessionId: 'ses-hr',
   };
 
   const mockManagerUser: AuthenticatedUser = {
@@ -969,6 +996,275 @@ describe('EmployeesService', () => {
       await expect(service.deactivate('emp-1', mockManagerUser)).rejects.toThrow(
         ForbiddenException,
       );
+    });
+  });
+
+  describe('Data-Scope Security Implementation & IDOR Review (Phase 3 - Step 15)', () => {
+    const empSelfId = 'emp-self';
+    const empColleagueBId = 'emp-colleague-b';
+    const empManagerId = 'emp-mgr';
+    const empSubordinateId = 'emp-subordinate';
+    const empOutsideTeamId = 'emp-outside-team';
+    const empOtherOrgId = 'emp-other-org';
+
+    beforeEach(() => {
+      // Mock findUnique for existence in org
+      prisma.employee.findUnique.mockImplementation((args: any) => {
+        const id = args?.where?.id;
+        if (id === empOtherOrgId) {
+          return Promise.resolve({ id, organizationId: 'other-org-999', isActive: true });
+        }
+        if (
+          [
+            empSelfId,
+            empColleagueBId,
+            empManagerId,
+            empSubordinateId,
+            empOutsideTeamId,
+            'emp-1',
+          ].includes(id)
+        ) {
+          return Promise.resolve({
+            id,
+            organizationId: mockOrgId,
+            isActive: true,
+            displayName: `Employee ${id}`,
+          });
+        }
+        return Promise.resolve(null);
+      });
+    });
+
+    describe('ADMIN & HR Scope Verification', () => {
+      it('ADMIN can access any employee in organization', async () => {
+        prisma.employee.findFirst.mockResolvedValue({
+          id: empOutsideTeamId,
+          organizationId: mockOrgId,
+        });
+        const result = await service.findOne(empOutsideTeamId, mockAdminUser);
+        expect(result).toBeDefined();
+        expect(result.id).toBe(empOutsideTeamId);
+      });
+
+      it('HR can access any employee in organization', async () => {
+        prisma.employee.findFirst.mockResolvedValue({
+          id: empOutsideTeamId,
+          organizationId: mockOrgId,
+        });
+        const result = await service.findOne(empOutsideTeamId, mockHrUser);
+        expect(result).toBeDefined();
+        expect(result.id).toBe(empOutsideTeamId);
+      });
+
+      it('ADMIN cannot access employee from another organization (throws NotFoundException)', async () => {
+        await expect(service.findOne(empOtherOrgId, mockAdminUser)).rejects.toThrow(
+          NotFoundException,
+        );
+      });
+
+      it('HR cannot access employee from another organization (throws NotFoundException)', async () => {
+        await expect(service.findOne(empOtherOrgId, mockHrUser)).rejects.toThrow(NotFoundException);
+      });
+    });
+
+    describe('MANAGER Scope & IDOR Protection', () => {
+      beforeEach(() => {
+        prisma.employee.findFirst.mockImplementation((args: any) => {
+          if (args?.where?.OR) {
+            return Promise.resolve({ id: empManagerId });
+          }
+          const andConditions = args?.where?.AND || [];
+          const idCondition = andConditions.find((c: any) => c.id)?.id;
+
+          if (idCondition === empOutsideTeamId) {
+            return Promise.resolve(null);
+          }
+          if (idCondition === empSubordinateId || idCondition === empManagerId) {
+            return Promise.resolve({ id: idCondition, organizationId: mockOrgId });
+          }
+          return Promise.resolve(null);
+        });
+
+        prisma.employeeEmployment.findMany
+          .mockResolvedValueOnce([{ employeeId: empSubordinateId }])
+          .mockResolvedValueOnce([]);
+      });
+
+      it('MANAGER can view direct report within team', async () => {
+        const result = await service.findOne(empSubordinateId, mockManagerUser);
+        expect(result).toBeDefined();
+        expect(result.id).toBe(empSubordinateId);
+      });
+
+      it('MANAGER accessing EmployeeOutsideTeam (GET /employees/EmployeeOutsideTeam) fails with ForbiddenException', async () => {
+        await expect(service.findOne(empOutsideTeamId, mockManagerUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('MANAGER querying organization-wide list receives only self and team subordinates', async () => {
+        prisma.employee.findFirst.mockResolvedValue({ id: empManagerId });
+        prisma.employeeEmployment.findMany
+          .mockResolvedValueOnce([{ employeeId: empSubordinateId }])
+          .mockResolvedValueOnce([]);
+
+        prisma.employee.findMany.mockResolvedValue([
+          { id: empManagerId, displayName: 'Manager Rajesh', joiningDate: new Date() },
+          { id: empSubordinateId, displayName: 'Subordinate Priya', joiningDate: new Date() },
+        ]);
+
+        const result = await service.findAll(mockManagerUser, {});
+
+        expect(prisma.employee.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              AND: expect.arrayContaining([
+                expect.objectContaining({
+                  id: { in: [empManagerId, empSubordinateId] },
+                }),
+              ]),
+            }),
+          }),
+        );
+        expect(result.items.length).toBe(2);
+      });
+
+      it('MANAGER tampering URL to get manager of employee outside team fails with ForbiddenException', async () => {
+        await expect(service.getManager(empOutsideTeamId, mockManagerUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('MANAGER tampering URL to get direct reports of employee outside team fails with ForbiddenException', async () => {
+        await expect(service.getDirectReports(empOutsideTeamId, mockManagerUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('MANAGER tampering URL to get team hierarchy of employee outside team fails with ForbiddenException', async () => {
+        await expect(service.getTeam(empOutsideTeamId, mockManagerUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('MANAGER tampering URL to get history of employee outside team fails with ForbiddenException', async () => {
+        await expect(service.getHistory(empOutsideTeamId, mockManagerUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('MANAGER tampering URL to update employee outside team fails with ForbiddenException', async () => {
+        await expect(
+          service.update(empOutsideTeamId, { phone: '123' }, mockManagerUser),
+        ).rejects.toThrow(ForbiddenException);
+      });
+    });
+
+    describe('EMPLOYEE Scope & IDOR Protection', () => {
+      beforeEach(() => {
+        prisma.employee.findFirst.mockImplementation((args: any) => {
+          if (args?.where?.OR) {
+            return Promise.resolve({ id: empSelfId });
+          }
+          const andConditions = args?.where?.AND || [];
+          const idCondition = andConditions.find((c: any) => c.id)?.id;
+          if (idCondition === empColleagueBId) {
+            return Promise.resolve(null);
+          }
+          if (idCondition === empSelfId) {
+            return Promise.resolve({ id: empSelfId, organizationId: mockOrgId });
+          }
+          return Promise.resolve(null);
+        });
+      });
+
+      it('EMPLOYEE accessing own profile succeeds', async () => {
+        const result = await service.findOne(empSelfId, mockEmployeeUser);
+        expect(result).toBeDefined();
+        expect(result.id).toBe(empSelfId);
+      });
+
+      it('EMPLOYEE accessing Colleague B (GET /employees/B) fails with ForbiddenException', async () => {
+        await expect(service.findOne(empColleagueBId, mockEmployeeUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('EMPLOYEE querying directory receives only self', async () => {
+        prisma.employee.findFirst.mockResolvedValue({ id: empSelfId });
+        prisma.employee.findMany.mockResolvedValue([
+          { id: empSelfId, displayName: 'Priya Nair', joiningDate: new Date() },
+        ]);
+
+        const result = await service.findAll(mockEmployeeUser, {});
+
+        expect(prisma.employee.findMany).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: expect.objectContaining({
+              AND: expect.arrayContaining([expect.objectContaining({ id: empSelfId })]),
+            }),
+          }),
+        );
+        expect(result.items.length).toBe(1);
+      });
+
+      it('EMPLOYEE tampering URL to view Colleague B history fails with ForbiddenException', async () => {
+        await expect(service.getHistory(empColleagueBId, mockEmployeeUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('EMPLOYEE tampering URL to view Colleague B manager fails with ForbiddenException', async () => {
+        await expect(service.getManager(empColleagueBId, mockEmployeeUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('EMPLOYEE tampering URL to view Colleague B direct reports fails with ForbiddenException', async () => {
+        await expect(service.getDirectReports(empColleagueBId, mockEmployeeUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('EMPLOYEE tampering URL to view Colleague B team fails with ForbiddenException', async () => {
+        await expect(service.getTeam(empColleagueBId, mockEmployeeUser)).rejects.toThrow(
+          ForbiddenException,
+        );
+      });
+
+      it('EMPLOYEE tampering URL to modify Colleague B (PATCH /employees/B) fails with ForbiddenException', async () => {
+        await expect(
+          service.update(empColleagueBId, { phone: '123' }, mockEmployeeUser),
+        ).rejects.toThrow(ForbiddenException);
+      });
+
+      it('EMPLOYEE accessing non-existent or other org employee (GET /employees/OtherOrg) fails with NotFoundException', async () => {
+        await expect(service.findOne(empOtherOrgId, mockEmployeeUser)).rejects.toThrow(
+          NotFoundException,
+        );
+      });
+    });
+
+    describe('Org Chart Scope Isolation', () => {
+      it('rejects rootEmployeeId from another organization with NotFoundException', async () => {
+        prisma.employee.findMany.mockResolvedValue([
+          {
+            id: 'emp-internal',
+            employeeCode: 'EMP001',
+            displayName: 'Internal Org Emp',
+            organizationId: mockOrgId,
+            isActive: true,
+            joiningDate: new Date(),
+          },
+        ]);
+
+        await expect(
+          service.getOrgChart({
+            organizationId: mockOrgId,
+            rootEmployeeId: 'foreign-emp-999',
+          }),
+        ).rejects.toThrow(NotFoundException);
+      });
     });
   });
 });
