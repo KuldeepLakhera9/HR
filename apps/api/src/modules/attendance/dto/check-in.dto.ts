@@ -2,25 +2,27 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { IsNotEmpty, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class CheckInDto {
-  @ApiProperty({
-    description: 'Device GPS latitude coordinate',
+  @ApiPropertyOptional({
+    description:
+      'Device GPS latitude coordinate (required for OFFICE and standard outdoor visit punches)',
     example: 12.9716,
   })
   @IsNumber()
   @Min(-90)
   @Max(90)
-  @IsNotEmpty()
-  latitude: number;
+  @IsOptional()
+  latitude?: number;
 
-  @ApiProperty({
-    description: 'Device GPS longitude coordinate',
+  @ApiPropertyOptional({
+    description:
+      'Device GPS longitude coordinate (required for OFFICE and standard outdoor visit punches)',
     example: 77.5946,
   })
   @IsNumber()
   @Min(-180)
   @Max(180)
-  @IsNotEmpty()
-  longitude: number;
+  @IsOptional()
+  longitude?: number;
 
   @ApiPropertyOptional({
     description: 'Device reported horizontal accuracy in meters',
@@ -56,13 +58,37 @@ export class CheckInDto {
   officeLocationId?: string;
 
   @ApiPropertyOptional({
-    description: 'Attendance mode (Only OFFICE permitted in Phase 4)',
+    description: 'Attendance mode (OFFICE, OFFICIAL_VISIT)',
     enum: ['OFFICE', 'WFH', 'OFFICIAL_VISIT'],
     default: 'OFFICE',
   })
   @IsString()
   @IsOptional()
   attendanceMode?: string;
+
+  @ApiPropertyOptional({
+    description: 'Supporting approved official visit ID when checking in for field outdoor duty',
+    example: 'a0b1c2d3-e4f5-6789-0123-abcdef456789',
+  })
+  @IsString()
+  @IsOptional()
+  officialVisitId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Specific visit destination ID being attended',
+    example: 'd1e2f3a4-b5c6-7890-1234-567890abcdef',
+  })
+  @IsString()
+  @IsOptional()
+  destinationId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Documented exception reason for indoor/remote sites where GPS is unavailable',
+    example: 'Client meeting in underground server bunker, zero GPS reception',
+  })
+  @IsString()
+  @IsOptional()
+  gpsExceptionReason?: string;
 
   @ApiPropertyOptional({
     description: 'Device/browser environment metadata',

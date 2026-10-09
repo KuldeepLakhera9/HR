@@ -31,6 +31,7 @@ import { ResolveExceptionDto } from './dto/resolve-exception.dto';
 import { HierarchyService } from '../employees/hierarchy.service';
 import { NotificationsService } from '../notifications/notifications.module';
 import { AttendanceDayStatus, AttendanceExceptionType } from '@hrms/types';
+import { VisitStatus, AttendanceMode, OfficialVisit, VisitDestination } from '@hrms/database';
 
 export function formatCorrectionReason(
   category: string,
@@ -274,12 +275,14 @@ export class AttendanceService {
       };
     }
 
-    // 2. Reject unapproved attendance modes in Phase 4
-    const mode = (dto.attendanceMode || 'OFFICE').toUpperCase();
-    if (mode !== 'OFFICE') {
+    // 2. Resolve requested attendance mode
+    const mode = (
+      dto.attendanceMode || (dto.officialVisitId ? 'OFFICIAL_VISIT' : 'OFFICE')
+    ).toUpperCase();
+    if (mode !== 'OFFICE' && mode !== 'OFFICIAL_VISIT') {
       throw new BadRequestException({
         statusCode: 400,
-        message: `Attendance mode '${mode}' is not permitted in this phase. Only verified OFFICE punches are supported.`,
+        message: `Attendance mode '${mode}' is not permitted in this phase. Only verified OFFICE and OFFICIAL_VISIT punches are supported.`,
         code: 'UNAPPROVED_ATTENDANCE_MODE',
       });
     }
@@ -319,32 +322,7 @@ export class AttendanceService {
 
     const branchId = employee.employment?.branchId || null;
 
-    // 4. Validate GPS coordinates
-    const coordCheck = validateCoordinates(dto.latitude, dto.longitude);
-    if (!coordCheck.valid) {
-      throw new BadRequestException({
-        statusCode: 400,
-        message: coordCheck.error || 'Invalid GPS coordinates provided.',
-        code: 'INVALID_COORDINATES',
-      });
-    }
-
-    // Validate timestamp freshness (clock skew maximum 120 seconds)
-    if (dto.timestamp !== undefined && dto.timestamp !== null) {
-      const freshness = validateTimestampFreshness(dto.timestamp, 120, now);
-      if (!freshness.valid) {
-        throw new BadRequestException({
-          statusCode: 400,
-          message:
-            freshness.error ||
-            `Stale or skewed GPS timestamp (${Math.round(freshness.skewSeconds || 0)}s skew). Please synchronize device clock.`,
-          code: 'STALE_LOCATION',
-          skewSeconds: freshness.skewSeconds,
-        });
-      }
-    }
-
-    // 5. Resolve policy & shift
+    // 4. Resolve policy, shift & working day
     const initialResolution = await this.policiesService.resolveEffectivePolicyAndShift(
       employee.id,
       now,
@@ -360,7 +338,7 @@ export class AttendanceService {
     const workingDateStr = workingDayResult.workingDateStr;
     const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
 
-    // 5b. Detect suspicious rapid punch attempts (< 45s ago)
+    // 4b. Detect suspicious rapid punch attempts (< 45s ago)
     const recentPunch = await this.prisma.attendanceEvent.findFirst({
       where: {
         employeeId: employee.id,
@@ -394,109 +372,373 @@ export class AttendanceService {
 
     const { policy, shift } = resolved;
 
-    // 6. Validate GPS accuracy against policy threshold
-    const maxAccuracyMeters = policy.maxGpsAccuracyMeters || 100;
-    if (dto.accuracyMeters !== undefined && dto.accuracyMeters !== null) {
-      const accuracyCheck = validateGpsAccuracy(dto.accuracyMeters, maxAccuracyMeters);
-      if (!accuracyCheck.valid) {
-        this.recordAttendanceException({
-          organizationId: employee.organizationId,
-          employeeId: employee.id,
-          date: workingDateUtc,
-          exceptionType: 'LOW_GPS_ACCURACY',
-          severity: 'HIGH',
-          details: {
-            reportedAccuracy: dto.accuracyMeters,
-            maxAllowedAccuracy: maxAccuracyMeters,
-            action: 'CHECK_IN',
-          },
-          idempotencyKey: `ex:low_accuracy:${employee.id}:${workingDateStr}:CHECK_IN`,
-        }).catch(() => null);
+    // 5. Mode-Specific Validations
+    let office: any = null;
+    let distanceMeters: number | null = null;
+    let officialVisit: (OfficialVisit & { destinations: VisitDestination[] }) | null = null;
+    let matchedDest: VisitDestination | null = null;
+    let isGpsException = false;
+    let verificationOutcome = 'VERIFIED';
 
-        throw new BadRequestException({
-          statusCode: 400,
-          message:
-            accuracyCheck.error ||
-            `GPS accuracy (${dto.accuracyMeters}m) exceeds maximum allowable threshold (${maxAccuracyMeters}m). Please ensure clear sky visibility.`,
-          code: 'LOW_GPS_ACCURACY',
-          reportedAccuracy: dto.accuracyMeters,
-          maxAllowedAccuracy: maxAccuracyMeters,
+    if (mode === 'OFFICIAL_VISIT') {
+      // 5A. OFFICIAL VISIT VALIDATION
+      // Resolve Visit (never trust client-supplied status, distance, or employeeId)
+      if (dto.officialVisitId) {
+        officialVisit = await this.prisma.officialVisit.findFirst({
+          where: {
+            id: dto.officialVisitId,
+            organizationId: user.organizationId,
+          },
+          include: { destinations: true },
+        });
+
+        if (!officialVisit) {
+          throw new NotFoundException({
+            statusCode: 404,
+            message: 'Official visit request not found in organization.',
+            code: 'VISIT_NOT_FOUND',
+          });
+        }
+      } else {
+        // Auto-resolve active approved/in-progress visit for current working day
+        officialVisit = await this.prisma.officialVisit.findFirst({
+          where: {
+            organizationId: user.organizationId,
+            employeeId: employee.id,
+            status: { in: [VisitStatus.APPROVED, VisitStatus.IN_PROGRESS] },
+            startDate: { lte: workingDateUtc },
+            endDate: { gte: workingDateUtc },
+          },
+          include: { destinations: true },
+          orderBy: { startDate: 'asc' },
+        });
+
+        if (!officialVisit) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: 'No approved official visit active for today found for your employee profile.',
+            code: 'VISIT_NOT_FOUND',
+          });
+        }
+      }
+
+      // Check ownership
+      if (officialVisit.employeeId !== employee.id) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: "You are not authorized to check in for another employee's official visit.",
+          code: 'VISIT_NOT_OWNED',
         });
       }
-    }
 
-    // 7. Resolve allowed office location
-    let office = null;
-    if (dto.officeLocationId) {
-      office = await this.prisma.officeLocation.findFirst({
-        where: {
-          id: dto.officeLocationId,
-          organizationId: employee.organizationId,
-          isActive: true,
-        },
-      });
+      // Check visit status
+      if (officialVisit.status === VisitStatus.CANCELLED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'Official visit has been cancelled.',
+          code: 'VISIT_ALREADY_CANCELLED',
+        });
+      }
+      if (officialVisit.status === VisitStatus.COMPLETED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'Official visit is already completed.',
+          code: 'VISIT_ALREADY_COMPLETED',
+        });
+      }
+      if (
+        officialVisit.status !== VisitStatus.APPROVED &&
+        officialVisit.status !== VisitStatus.IN_PROGRESS
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: `Official visit status is "${officialVisit.status}". Only APPROVED or IN_PROGRESS visits can be attended.`,
+          code: 'INVALID_VISIT_STATUS',
+        });
+      }
+
+      // Check date window
+      if (
+        workingDateUtc.getTime() < officialVisit.startDate.getTime() ||
+        workingDateUtc.getTime() > officialVisit.endDate.getTime()
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: `Current date is outside the approved visit window (${officialVisit.startDate.toISOString().split('T')[0]} to ${officialVisit.endDate.toISOString().split('T')[0]}).`,
+          code: 'VISIT_OUTSIDE_DATE_WINDOW',
+        });
+      }
+
+      // Candidate destinations
+      let candidateDests = officialVisit.destinations;
+      if (dto.destinationId) {
+        candidateDests = officialVisit.destinations.filter((d) => d.id === dto.destinationId);
+        if (candidateDests.length === 0) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: 'Specified destination does not belong to this official visit.',
+            code: 'INVALID_DESTINATION',
+          });
+        }
+      }
+
+      if (candidateDests.length === 0) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'Approved official visit has no registered destinations.',
+          code: 'NO_DESTINATIONS',
+        });
+      }
+
+      // Check coordinates & GPS policy
+      const hasCoords =
+        dto.latitude !== undefined &&
+        dto.latitude !== null &&
+        dto.longitude !== undefined &&
+        dto.longitude !== null;
+
+      if (!hasCoords) {
+        const hasDocReason = dto.gpsExceptionReason && dto.gpsExceptionReason.trim().length >= 10;
+        if (!hasDocReason) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message:
+              'A documented explanation (minimum 10 characters) is required by policy for visits where GPS is unsuitable or exempt.',
+            code: 'GPS_EXCEPTION_REQUIRED',
+          });
+        }
+        isGpsException = true;
+        matchedDest = candidateDests[0];
+        verificationOutcome = 'GPS_EXCEPTION_DOCUMENTED';
+      } else {
+        const coordCheck = validateCoordinates(dto.latitude, dto.longitude);
+        if (!coordCheck.valid) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: coordCheck.error || 'Invalid GPS coordinates provided.',
+            code: 'INVALID_COORDINATES',
+          });
+        }
+
+        if (dto.timestamp !== undefined && dto.timestamp !== null) {
+          const freshness = validateTimestampFreshness(dto.timestamp, 300, now);
+          if (!freshness.valid) {
+            throw new BadRequestException({
+              statusCode: 400,
+              message:
+                freshness.error ||
+                `Stale or skewed GPS timestamp (${Math.round(freshness.skewSeconds || 0)}s skew).`,
+              code: 'STALE_LOCATION',
+            });
+          }
+        }
+
+        const maxFieldAccuracy = Math.max(150, policy.maxGpsAccuracyMeters || 100);
+        if (dto.accuracyMeters !== undefined && dto.accuracyMeters !== null) {
+          const accuracyCheck = validateGpsAccuracy(dto.accuracyMeters, maxFieldAccuracy);
+          if (!accuracyCheck.valid) {
+            throw new BadRequestException({
+              statusCode: 400,
+              message:
+                accuracyCheck.error ||
+                `GPS accuracy (${dto.accuracyMeters}m) exceeds acceptable threshold (${maxFieldAccuracy}m).`,
+              code: 'LOW_GPS_ACCURACY',
+            });
+          }
+        }
+
+        // Distance calculation against candidate destination(s)
+        let minDistance = Infinity;
+        for (const dest of candidateDests) {
+          if (dest.latitude !== null && dest.longitude !== null) {
+            const dist = haversineDistance(
+              dto.latitude!,
+              dto.longitude!,
+              dest.latitude,
+              dest.longitude,
+            );
+            if (dist < minDistance) {
+              minDistance = dist;
+              matchedDest = dest;
+            }
+          }
+        }
+
+        if (!matchedDest) {
+          // Dest has no coordinates configured
+          const hasDocReason = dto.gpsExceptionReason && dto.gpsExceptionReason.trim().length >= 10;
+          if (!hasDocReason) {
+            throw new BadRequestException({
+              statusCode: 400,
+              message:
+                'No geographic coordinates are configured for this visit destination. Documented exception required (min 10 characters).',
+              code: 'GPS_EXCEPTION_REQUIRED',
+            });
+          }
+          isGpsException = true;
+          matchedDest = candidateDests[0];
+          verificationOutcome = 'GPS_EXCEPTION_DOCUMENTED';
+        } else {
+          distanceMeters = minDistance;
+          const isInside = minDistance <= matchedDest.radiusMeters;
+          if (isInside) {
+            verificationOutcome = 'VERIFIED';
+          } else {
+            const hasDocReason =
+              dto.gpsExceptionReason && dto.gpsExceptionReason.trim().length >= 10;
+            if ((!matchedDest.isGeofenceRequired || hasDocReason) && hasDocReason) {
+              isGpsException = true;
+              verificationOutcome = 'GPS_EXCEPTION_DOCUMENTED';
+            } else {
+              throw new BadRequestException({
+                statusCode: 400,
+                message: `Outside approved visit destination area. You are ${Math.round(minDistance)}m from ${matchedDest.destinationName} (allowed radius: ${matchedDest.radiusMeters}m).`,
+                code: 'OUTSIDE_APPROVED_AREA',
+                distanceMeters: Math.round(minDistance),
+                allowedRadiusMeters: matchedDest.radiusMeters,
+              });
+            }
+          }
+        }
+      }
+    } else {
+      // 5B. OFFICE CHECK-IN VALIDATION
+      if (
+        dto.latitude === undefined ||
+        dto.latitude === null ||
+        dto.longitude === undefined ||
+        dto.longitude === null
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'GPS coordinates are required for office check-in.',
+          code: 'INVALID_COORDINATES',
+        });
+      }
+
+      const coordCheck = validateCoordinates(dto.latitude, dto.longitude);
+      if (!coordCheck.valid) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: coordCheck.error || 'Invalid GPS coordinates provided.',
+          code: 'INVALID_COORDINATES',
+        });
+      }
+
+      if (dto.timestamp !== undefined && dto.timestamp !== null) {
+        const freshness = validateTimestampFreshness(dto.timestamp, 120, now);
+        if (!freshness.valid) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message:
+              freshness.error ||
+              `Stale or skewed GPS timestamp (${Math.round(freshness.skewSeconds || 0)}s skew). Please synchronize device clock.`,
+            code: 'STALE_LOCATION',
+            skewSeconds: freshness.skewSeconds,
+          });
+        }
+      }
+
+      const maxAccuracyMeters = policy.maxGpsAccuracyMeters || 100;
+      if (dto.accuracyMeters !== undefined && dto.accuracyMeters !== null) {
+        const accuracyCheck = validateGpsAccuracy(dto.accuracyMeters, maxAccuracyMeters);
+        if (!accuracyCheck.valid) {
+          this.recordAttendanceException({
+            organizationId: employee.organizationId,
+            employeeId: employee.id,
+            date: workingDateUtc,
+            exceptionType: 'LOW_GPS_ACCURACY',
+            severity: 'HIGH',
+            details: {
+              reportedAccuracy: dto.accuracyMeters,
+              maxAllowedAccuracy: maxAccuracyMeters,
+              action: 'CHECK_IN',
+            },
+            idempotencyKey: `ex:low_accuracy:${employee.id}:${workingDateStr}:CHECK_IN`,
+          }).catch(() => null);
+
+          throw new BadRequestException({
+            statusCode: 400,
+            message:
+              accuracyCheck.error ||
+              `GPS accuracy (${dto.accuracyMeters}m) exceeds maximum allowable threshold (${maxAccuracyMeters}m). Please ensure clear sky visibility.`,
+            code: 'LOW_GPS_ACCURACY',
+            reportedAccuracy: dto.accuracyMeters,
+            maxAllowedAccuracy: maxAccuracyMeters,
+          });
+        }
+      }
+
+      if (dto.officeLocationId) {
+        office = await this.prisma.officeLocation.findFirst({
+          where: {
+            id: dto.officeLocationId,
+            organizationId: employee.organizationId,
+            isActive: true,
+          },
+        });
+        if (!office) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: 'Specified office location does not exist or is inactive.',
+            code: 'INVALID_OFFICE_LOCATION',
+          });
+        }
+        if (branchId && office.branchId && office.branchId !== branchId) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            message: 'You are not assigned to this office branch location.',
+            code: 'BRANCH_MISMATCH',
+          });
+        }
+      } else {
+        office = await this.resolveOfficeForEmployee(employee.organizationId, branchId);
+      }
+
       if (!office) {
         throw new BadRequestException({
           statusCode: 400,
-          message: 'Specified office location does not exist or is inactive.',
-          code: 'INVALID_OFFICE_LOCATION',
+          message: 'No active office location configured for your branch or organization.',
+          code: 'UNASSIGNED_OFFICE',
         });
       }
-      if (branchId && office.branchId && office.branchId !== branchId) {
-        throw new ForbiddenException({
-          statusCode: 403,
-          message: 'You are not assigned to this office branch location.',
-          code: 'BRANCH_MISMATCH',
+
+      distanceMeters = haversineDistance(
+        dto.latitude,
+        dto.longitude,
+        office.latitude,
+        office.longitude,
+      );
+      const isWithinGeofence = distanceMeters <= office.geofenceRadiusMeters;
+
+      if (policy.geofenceEnforcement && !isWithinGeofence) {
+        await this.recordAttendanceException({
+          organizationId: employee.organizationId,
+          employeeId: employee.id,
+          date: workingDateUtc,
+          exceptionType: 'OUTSIDE_GEOFENCE',
+          severity: 'HIGH',
+          details: {
+            distanceMeters: Math.round(distanceMeters),
+            allowedRadiusMeters: office.geofenceRadiusMeters,
+            officeName: office.name,
+            action: 'CHECK_IN',
+          },
+          idempotencyKey: `ex:outside_geofence:${employee.id}:${workingDateStr}:CHECK_IN`,
         });
-      }
-    } else {
-      office = await this.resolveOfficeForEmployee(employee.organizationId, branchId);
-    }
 
-    if (!office) {
-      throw new BadRequestException({
-        statusCode: 400,
-        message: 'No active office location configured for your branch or organization.',
-        code: 'UNASSIGNED_OFFICE',
-      });
-    }
-
-    // 8. Calculate distance server-side & verify geofence
-    const distanceMeters = haversineDistance(
-      dto.latitude,
-      dto.longitude,
-      office.latitude,
-      office.longitude,
-    );
-    const isWithinGeofence = distanceMeters <= office.geofenceRadiusMeters;
-
-    if (policy.geofenceEnforcement && !isWithinGeofence) {
-      await this.recordAttendanceException({
-        organizationId: employee.organizationId,
-        employeeId: employee.id,
-        date: workingDateUtc,
-        exceptionType: 'OUTSIDE_GEOFENCE',
-        severity: 'HIGH',
-        details: {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: `Outside office geofence. You are ${Math.round(distanceMeters)}m from ${office.name} (allowed perimeter: ${office.geofenceRadiusMeters}m).`,
+          code: 'OUTSIDE_GEOFENCE',
           distanceMeters: Math.round(distanceMeters),
           allowedRadiusMeters: office.geofenceRadiusMeters,
           officeName: office.name,
-          action: 'CHECK_IN',
-        },
-        idempotencyKey: `ex:outside_geofence:${employee.id}:${workingDateStr}:CHECK_IN`,
-      });
-
-      throw new BadRequestException({
-        statusCode: 400,
-        message: `Outside office geofence. You are ${Math.round(distanceMeters)}m from ${office.name} (allowed perimeter: ${office.geofenceRadiusMeters}m).`,
-        code: 'OUTSIDE_GEOFENCE',
-        distanceMeters: Math.round(distanceMeters),
-        allowedRadiusMeters: office.geofenceRadiusMeters,
-        officeName: office.name,
-      });
+        });
+      }
     }
 
-    // 9. Atomic Transaction: Concurrency protection & creation
+    // 6. Atomic Transaction: Concurrency protection & creation
     try {
       const { session, event, summary } = await this.prisma.$transaction(async (tx) => {
         // A. Prevent overlapping / duplicate open sessions
@@ -567,6 +809,8 @@ export class AttendanceService {
             sessionNumber: sessionCount + 1,
             checkInTime: now,
             status: 'OPEN',
+            attendanceMode: mode as AttendanceMode,
+            officialVisitId: officialVisit ? officialVisit.id : null,
             totalWorkMinutes: 0,
             totalBreakMinutes: 0,
           },
@@ -580,28 +824,63 @@ export class AttendanceService {
             sessionId: newSession.id,
             eventType: 'CHECK_IN',
             eventTimestamp: now,
-            attendanceMode: 'OFFICE',
-            latitude: dto.latitude,
-            longitude: dto.longitude,
+            attendanceMode: mode as AttendanceMode,
+            latitude: dto.latitude ?? null,
+            longitude: dto.longitude ?? null,
             accuracyMeters: dto.accuracyMeters ?? null,
-            branchId: office.branchId || branchId,
-            officeLocationId: office.id,
-            distanceFromOfficeMeters: distanceMeters,
-            geofenceStatus: 'VERIFIED',
+            branchId: office?.branchId || branchId,
+            officeLocationId: office?.id ?? null,
+            distanceFromOfficeMeters:
+              distanceMeters !== null && distanceMeters !== Infinity ? distanceMeters : null,
+            geofenceStatus: isGpsException ? 'EXEMPT' : 'VERIFIED',
             idempotencyKey: dto.idempotencyKey,
             deviceInfo: dto.deviceInfo ?? null,
             ipAddress: clientIp ?? null,
             actorUserId: user.id,
+            officialVisitId: officialVisit ? officialVisit.id : null,
             metadata: {
               policyId: policy.id,
               shiftId: shift?.id ?? null,
-              officeName: office.name,
+              officeName: office?.name ?? null,
               workingDate: workingDateStr,
+              officialVisitTitle: officialVisit?.title ?? null,
+              destinationName: matchedDest?.destinationName ?? null,
+              isException: isGpsException,
             },
           },
         });
 
-        // F. Evaluate status (check if late)
+        // F. Official Visit: record location verification & transition status
+        if (officialVisit) {
+          await tx.visitLocationVerification.create({
+            data: {
+              organizationId: employee.organizationId,
+              visitId: officialVisit.id,
+              employeeId: employee.id,
+              destinationId: matchedDest?.id ?? null,
+              outcome: verificationOutcome,
+              isVerified: true,
+              isException: isGpsException,
+              exceptionReason: isGpsException ? dto.gpsExceptionReason?.trim() : null,
+              latitude: dto.latitude ?? null,
+              longitude: dto.longitude ?? null,
+              accuracyMeters: dto.accuracyMeters ?? null,
+              distanceMeters:
+                distanceMeters !== null && distanceMeters !== Infinity ? distanceMeters : null,
+              allowedRadiusMeters: matchedDest?.radiusMeters ?? null,
+              deviceInfo: dto.deviceInfo ?? null,
+            },
+          });
+
+          if (officialVisit.status === VisitStatus.APPROVED) {
+            await tx.officialVisit.update({
+              where: { id: officialVisit.id },
+              data: { status: VisitStatus.IN_PROGRESS },
+            });
+          }
+        }
+
+        // G. Evaluate status (check if late)
         let dayStatus: AttendanceDayStatus = 'PRESENT';
         let lateMinutes = 0;
         if (shift) {
@@ -638,7 +917,7 @@ export class AttendanceService {
           policy?.id && !policy.id.startsWith('synthetic') ? policy.id : null;
         const persistedShiftId = shift?.id && !shift.id.startsWith('synthetic') ? shift.id : null;
 
-        // G. Upsert Daily Summary
+        // H. Upsert Daily Summary
         const dailySummary = await tx.attendanceDailySummary.upsert({
           where: {
             organizationId_employeeId_date: {
@@ -656,11 +935,15 @@ export class AttendanceService {
             lateMinutes,
             shiftId: persistedShiftId,
             policyId: persistedPolicyId,
+            primaryAttendanceMode: mode as AttendanceMode,
+            officialVisitId: officialVisit ? officialVisit.id : null,
           },
           update: {
             status: dayStatus,
             shiftId: persistedShiftId,
             policyId: persistedPolicyId,
+            primaryAttendanceMode: mode as AttendanceMode,
+            officialVisitId: officialVisit ? officialVisit.id : null,
             ...(sessionCount === 0 ? { firstCheckIn: now, lateMinutes } : {}),
           },
         });
@@ -668,7 +951,7 @@ export class AttendanceService {
         return { session: newSession, event: newEvent, summary: dailySummary };
       });
 
-      // 10. Audit Record
+      // 7. Audit Record
       await this.auditService.record({
         organizationId: employee.organizationId,
         userId: user.id,
@@ -682,30 +965,60 @@ export class AttendanceService {
           workingDate: workingDateStr,
           sessionId: session.id,
           eventId: event.id,
-          officeId: office.id,
-          officeName: office.name,
-          distanceMeters: Math.round(distanceMeters),
+          mode,
+          officeId: office?.id ?? null,
+          officeName: office?.name ?? null,
+          officialVisitId: officialVisit?.id ?? null,
+          destinationId: matchedDest?.id ?? null,
+          distanceMeters:
+            distanceMeters !== null && distanceMeters !== Infinity
+              ? Math.round(distanceMeters)
+              : null,
           status: summary.status,
           lateMinutes: summary.lateMinutes,
+          isException: isGpsException,
         },
       });
 
-      // 11. Safe structured response
+      // 8. Safe structured response
+      const successMessage =
+        mode === 'OFFICIAL_VISIT'
+          ? 'Official visit check-in verified and recorded successfully.'
+          : 'Office check-in verified and recorded successfully.';
+
       return {
         success: true,
-        message: 'Office check-in verified and recorded successfully.',
+        message: successMessage,
         data: {
           session,
           event,
           summary,
           policy,
           shift,
-          office: {
-            id: office.id,
-            name: office.name,
-            distanceMeters: Math.round(distanceMeters),
-            allowedRadiusMeters: office.geofenceRadiusMeters,
-          },
+          office: office
+            ? {
+                id: office.id,
+                name: office.name,
+                distanceMeters: distanceMeters !== null ? Math.round(distanceMeters) : null,
+                allowedRadiusMeters: office.geofenceRadiusMeters,
+              }
+            : null,
+          officialVisit: officialVisit
+            ? {
+                id: officialVisit.id,
+                title: officialVisit.title,
+                status: VisitStatus.IN_PROGRESS,
+                matchedDestination: matchedDest
+                  ? {
+                      id: matchedDest.id,
+                      name: matchedDest.destinationName,
+                      distanceMeters: distanceMeters !== null ? Math.round(distanceMeters) : null,
+                      allowedRadiusMeters: matchedDest.radiusMeters,
+                    }
+                  : null,
+                isException: isGpsException,
+              }
+            : null,
         },
       };
     } catch (err: any) {
@@ -814,7 +1127,8 @@ export class AttendanceService {
           sessionId: activeSession.id,
           eventType: 'BREAK_START',
           eventTimestamp: serverNow,
-          attendanceMode: 'OFFICE',
+          attendanceMode: activeSession.attendanceMode || 'OFFICE',
+          officialVisitId: activeSession.officialVisitId ?? null,
           idempotencyKey: dto.idempotencyKey,
           deviceInfo: dto.deviceInfo ?? null,
           ipAddress: clientIp ?? null,
@@ -943,7 +1257,8 @@ export class AttendanceService {
             sessionId: activeSession.id,
             eventType: 'BREAK_END',
             eventTimestamp: serverNow,
-            attendanceMode: 'OFFICE',
+            attendanceMode: activeSession.attendanceMode || 'OFFICE',
+            officialVisitId: activeSession.officialVisitId ?? null,
             idempotencyKey: dto.idempotencyKey,
             deviceInfo: dto.deviceInfo ?? null,
             ipAddress: clientIp ?? null,
@@ -1108,6 +1423,9 @@ export class AttendanceService {
           employee.organizationId,
         );
 
+        const isOfficialVisit =
+          activeSession.attendanceMode === 'OFFICIAL_VISIT' || !!activeSession.officialVisitId;
+
         // Optional Location validation under policy
         let checkoutDistanceMeters: number | null = null;
         let officeLocationId: string | null = null;
@@ -1123,7 +1441,7 @@ export class AttendanceService {
           }
 
           if (dto.timestamp !== undefined && dto.timestamp !== null) {
-            const freshness = validateTimestampFreshness(dto.timestamp, 120, serverNow);
+            const freshness = validateTimestampFreshness(dto.timestamp, 300, serverNow);
             if (!freshness.valid) {
               throw new BadRequestException({
                 statusCode: 400,
@@ -1136,7 +1454,9 @@ export class AttendanceService {
             }
           }
 
-          const maxAccuracy = policy.maxGpsAccuracyMeters || 100;
+          const maxAccuracy = isOfficialVisit
+            ? Math.max(150, policy.maxGpsAccuracyMeters || 100)
+            : policy.maxGpsAccuracyMeters || 100;
           if (dto.accuracyMeters !== undefined && dto.accuracyMeters !== null) {
             const accuracyCheck = validateGpsAccuracy(dto.accuracyMeters, maxAccuracy);
             if (!accuracyCheck.valid) {
@@ -1164,43 +1484,45 @@ export class AttendanceService {
             }
           }
 
-          const branchId = employee.employment?.branchId || null;
-          const office = await this.resolveOfficeForEmployee(employee.organizationId, branchId);
-          if (office) {
-            officeLocationId = office.id;
-            checkoutDistanceMeters = haversineDistance(
-              dto.latitude,
-              dto.longitude,
-              office.latitude,
-              office.longitude,
-            );
+          if (!isOfficialVisit) {
+            const branchId = employee.employment?.branchId || null;
+            const office = await this.resolveOfficeForEmployee(employee.organizationId, branchId);
+            if (office) {
+              officeLocationId = office.id;
+              checkoutDistanceMeters = haversineDistance(
+                dto.latitude,
+                dto.longitude,
+                office.latitude,
+                office.longitude,
+              );
 
-            if (
-              policy.geofenceEnforcement &&
-              checkoutDistanceMeters > office.geofenceRadiusMeters
-            ) {
-              this.recordAttendanceException({
-                organizationId: employee.organizationId,
-                employeeId: employee.id,
-                date: activeSession.date,
-                exceptionType: 'OUTSIDE_GEOFENCE',
-                severity: 'HIGH',
-                details: {
+              if (
+                policy.geofenceEnforcement &&
+                checkoutDistanceMeters > office.geofenceRadiusMeters
+              ) {
+                this.recordAttendanceException({
+                  organizationId: employee.organizationId,
+                  employeeId: employee.id,
+                  date: activeSession.date,
+                  exceptionType: 'OUTSIDE_GEOFENCE',
+                  severity: 'HIGH',
+                  details: {
+                    distanceMeters: Math.round(checkoutDistanceMeters),
+                    allowedRadiusMeters: office.geofenceRadiusMeters,
+                    officeName: office.name,
+                    action: 'CHECK_OUT',
+                  },
+                  idempotencyKey: `ex:outside_geofence:${employee.id}:${activeSession.date.toISOString().split('T')[0]}:CHECK_OUT`,
+                }).catch(() => null);
+
+                throw new BadRequestException({
+                  statusCode: 400,
+                  message: `Outside office geofence for checkout. You are ${Math.round(checkoutDistanceMeters)}m from ${office.name} (allowed perimeter: ${office.geofenceRadiusMeters}m).`,
+                  code: 'OUTSIDE_GEOFENCE',
                   distanceMeters: Math.round(checkoutDistanceMeters),
                   allowedRadiusMeters: office.geofenceRadiusMeters,
-                  officeName: office.name,
-                  action: 'CHECK_OUT',
-                },
-                idempotencyKey: `ex:outside_geofence:${employee.id}:${activeSession.date.toISOString().split('T')[0]}:CHECK_OUT`,
-              }).catch(() => null);
-
-              throw new BadRequestException({
-                statusCode: 400,
-                message: `Outside office geofence for checkout. You are ${Math.round(checkoutDistanceMeters)}m from ${office.name} (allowed perimeter: ${office.geofenceRadiusMeters}m).`,
-                code: 'OUTSIDE_GEOFENCE',
-                distanceMeters: Math.round(checkoutDistanceMeters),
-                allowedRadiusMeters: office.geofenceRadiusMeters,
-              });
+                });
+              }
             }
           }
         }
@@ -1220,7 +1542,8 @@ export class AttendanceService {
               sessionId: activeSession.id,
               eventType: 'BREAK_END',
               eventTimestamp: serverNow,
-              attendanceMode: 'OFFICE',
+              attendanceMode: isOfficialVisit ? 'OFFICIAL_VISIT' : 'OFFICE',
+              officialVisitId: activeSession.officialVisitId ?? null,
               idempotencyKey: `auto-break-end-${dto.idempotencyKey}`,
               deviceInfo: 'Auto-concluded on checkout',
               actorUserId: user.id,
@@ -1237,7 +1560,8 @@ export class AttendanceService {
             sessionId: activeSession.id,
             eventType: 'CHECK_OUT',
             eventTimestamp: serverNow,
-            attendanceMode: 'OFFICE',
+            attendanceMode: isOfficialVisit ? 'OFFICIAL_VISIT' : 'OFFICE',
+            officialVisitId: activeSession.officialVisitId ?? null,
             latitude: dto.latitude ?? null,
             longitude: dto.longitude ?? null,
             accuracyMeters: dto.accuracyMeters ?? null,
@@ -1251,6 +1575,7 @@ export class AttendanceService {
             actorUserId: user.id,
             metadata: {
               workingDate: activeSession.date.toISOString().split('T')[0],
+              isOfficialVisit,
             },
           },
         });
@@ -1291,6 +1616,22 @@ export class AttendanceService {
           },
         });
 
+        // Transition official visit if checkout concludes the visit
+        if (activeSession.officialVisitId) {
+          const officialVisit = await tx.officialVisit.findUnique({
+            where: { id: activeSession.officialVisitId },
+          });
+          if (officialVisit) {
+            const isAtOrAfterEnd = activeSession.date.getTime() >= officialVisit.endDate.getTime();
+            if (isAtOrAfterEnd || dto.isVisitConcluded) {
+              await tx.officialVisit.update({
+                where: { id: officialVisit.id },
+                data: { status: VisitStatus.COMPLETED },
+              });
+            }
+          }
+        }
+
         // Recalculate daily summary for this working date
         const updatedSummary = await this.recalculateDailySummary(
           tx,
@@ -1323,6 +1664,8 @@ export class AttendanceService {
         employeeId: employee.id,
         sessionId: session.id,
         eventId: event.id,
+        mode: session.attendanceMode,
+        officialVisitId: session.officialVisitId,
         netWorkMinutes,
         grossMinutes,
         sessionBreakMinutes,
@@ -1508,6 +1851,12 @@ export class AttendanceService {
     const persistedPolicyId = policy?.id && !policy.id.startsWith('synthetic') ? policy.id : null;
     const persistedShiftId = shift?.id && !shift.id.startsWith('synthetic') ? shift.id : null;
 
+    const visitSession = allSessions.find(
+      (s: any) => s.attendanceMode === 'OFFICIAL_VISIT' || s.officialVisitId,
+    );
+    const primaryMode = visitSession ? 'OFFICIAL_VISIT' : 'OFFICE';
+    const primaryVisitId = visitSession?.officialVisitId ?? null;
+
     return tx.attendanceDailySummary.upsert({
       where: {
         organizationId_employeeId_date: {
@@ -1530,6 +1879,8 @@ export class AttendanceService {
         status: calculation.status,
         shiftId: persistedShiftId,
         policyId: persistedPolicyId,
+        primaryAttendanceMode: primaryMode as AttendanceMode,
+        officialVisitId: primaryVisitId,
       },
       update: {
         firstCheckIn: calculation.firstCheckIn,
@@ -1542,6 +1893,8 @@ export class AttendanceService {
         status: calculation.status,
         shiftId: persistedShiftId,
         policyId: persistedPolicyId,
+        primaryAttendanceMode: primaryMode as AttendanceMode,
+        officialVisitId: primaryVisitId,
       },
     });
   }

@@ -52,4 +52,33 @@ export class CheckOutDto {
   @IsString()
   @IsOptional()
   deviceInfo?: string;
+
+  @ApiPropertyOptional({
+    description: 'Supporting official visit ID if checking out of a field visit session',
+    example: 'a0b1c2d3-e4f5-6789-0123-abcdef456789',
+  })
+  @IsString()
+  @IsOptional()
+  officialVisitId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Specific visit destination ID',
+  })
+  @IsString()
+  @IsOptional()
+  destinationId?: string;
+
+  @ApiPropertyOptional({
+    description: 'Documented exception reason for indoor/remote sites',
+  })
+  @IsString()
+  @IsOptional()
+  gpsExceptionReason?: string;
+
+  @ApiPropertyOptional({
+    description: 'Explicitly mark multi-day official visit as completed on checkout',
+    example: true,
+  })
+  @IsOptional()
+  isVisitConcluded?: boolean;
 }

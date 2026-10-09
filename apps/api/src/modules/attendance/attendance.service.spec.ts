@@ -12,6 +12,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { CheckInDto } from './dto/check-in.dto';
+import { CheckOutDto } from './dto/check-out.dto';
 
 describe('AttendanceService', () => {
   let service: AttendanceService;
@@ -158,6 +159,18 @@ describe('AttendanceService', () => {
       officeLocation: {
         findFirst: jest.fn().mockResolvedValue(mockOffice),
       },
+      officialVisit: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({ id: 'visit-1', status: 'IN_PROGRESS' }),
+      },
+      visitDestination: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      visitLocationVerification: {
+        create: jest.fn().mockResolvedValue({ id: 'loc-verif-1' }),
+      },
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(prisma);
       }),
@@ -289,7 +302,7 @@ describe('AttendanceService', () => {
       await expect(service.checkIn(mockUser, dto)).rejects.toThrow(ForbiddenException);
     });
 
-    it('rejects unapproved WFH and OFFICIAL_VISIT modes in Phase 4', async () => {
+    it('rejects unapproved WFH modes and visits when not found', async () => {
       const dtoWfh: CheckInDto = {
         latitude: 12.9716,
         longitude: 77.5946,
@@ -1925,6 +1938,350 @@ describe('AttendanceService', () => {
       expect(scanResult.success).toBe(true);
       expect(scanResult.detectedCount).toBe(2);
       expect(scanResult.scannedSummariesCount).toBe(2);
+    });
+  });
+
+  describe('Official Visit Check-In Flow (Phase 5 Step 6)', () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayMidnight = new Date(`${todayStr}T00:00:00.000Z`);
+
+    const mockVisit = {
+      id: 'visit-approved-1',
+      organizationId: mockOrgId,
+      employeeId: mockEmployeeId,
+      title: 'Client Site Inspection',
+      purpose: 'Technical Audit',
+      startDate: todayMidnight,
+      endDate: todayMidnight,
+      status: 'APPROVED',
+      destinations: [
+        {
+          id: 'dest-client-hq',
+          visitId: 'visit-approved-1',
+          destinationName: 'Client Tech Park',
+          latitude: 12.9352,
+          longitude: 77.6245,
+          radiusMeters: 200,
+          isGeofenceRequired: true,
+        },
+      ],
+    };
+
+    it('successfully processes approved official visit check-in within destination geofence', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(mockVisit);
+
+      const dto: CheckInDto = {
+        latitude: 12.9352,
+        longitude: 77.6245,
+        accuracyMeters: 20,
+        idempotencyKey: 'idem-visit-checkin-1',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      const result = await service.checkIn(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect((result.data as any)?.session?.attendanceMode).toBe('OFFICIAL_VISIT');
+      expect((result.data as any)?.session?.officialVisitId).toBe(mockVisit.id);
+      expect((result.data as any)?.event?.attendanceMode).toBe('OFFICIAL_VISIT');
+      expect((result.data as any)?.event?.officialVisitId).toBe(mockVisit.id);
+      expect((result.data as any)?.officialVisit?.status).toBe('IN_PROGRESS');
+
+      // Verify VisitLocationVerification was created
+      expect(prisma.visitLocationVerification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            visitId: mockVisit.id,
+            outcome: 'VERIFIED',
+            isVerified: true,
+          }),
+        }),
+      );
+
+      // Verify visit transitioned to IN_PROGRESS
+      expect(prisma.officialVisit.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: mockVisit.id },
+          data: { status: 'IN_PROGRESS' },
+        }),
+      );
+
+      // Verify summary has primaryAttendanceMode OFFICIAL_VISIT
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            primaryAttendanceMode: 'OFFICIAL_VISIT',
+            officialVisitId: mockVisit.id,
+          }),
+        }),
+      );
+    });
+
+    it('returns idempotent result on duplicate official visit check-in with same key', async () => {
+      prisma.attendanceEvent.findUnique.mockResolvedValueOnce({
+        id: 'evt-cached-visit',
+        organizationId: mockOrgId,
+        employeeId: mockEmployeeId,
+        idempotencyKey: 'idem-visit-duplicate',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+        session: {
+          id: 'sess-cached-visit',
+          attendanceMode: 'OFFICIAL_VISIT',
+          status: 'OPEN',
+          officialVisitId: mockVisit.id,
+          date: todayMidnight,
+        },
+      });
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-visit-duplicate',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      const result = await service.checkIn(mockUser, dto);
+      expect(result.success).toBe(true);
+      expect((result.data as any)?.isIdempotentReplay).toBe(true);
+      expect((result.data as any)?.session?.attendanceMode).toBe('OFFICIAL_VISIT');
+    });
+
+    it('rejects check-in if official visit belongs to another employee (VISIT_NOT_OWNED)', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce({
+        ...mockVisit,
+        employeeId: 'other-emp-999',
+      });
+
+      const dto: CheckInDto = {
+        latitude: 12.9352,
+        longitude: 77.6245,
+        idempotencyKey: 'idem-visit-unowned',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects check-in if official visit is cancelled (VISIT_ALREADY_CANCELLED)', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce({
+        ...mockVisit,
+        status: 'CANCELLED',
+      });
+
+      const dto: CheckInDto = {
+        latitude: 12.9352,
+        longitude: 77.6245,
+        idempotencyKey: 'idem-visit-cancelled',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects check-in if official visit is already completed (VISIT_ALREADY_COMPLETED)', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce({
+        ...mockVisit,
+        status: 'COMPLETED',
+      });
+
+      const dto: CheckInDto = {
+        latitude: 12.9352,
+        longitude: 77.6245,
+        idempotencyKey: 'idem-visit-completed',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects check-in if date is outside approved visit window (VISIT_OUTSIDE_DATE_WINDOW)', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce({
+        ...mockVisit,
+        startDate: new Date('2026-01-01T00:00:00.000Z'),
+        endDate: new Date('2026-01-02T00:00:00.000Z'),
+      });
+
+      const dto: CheckInDto = {
+        latitude: 12.9352,
+        longitude: 77.6245,
+        idempotencyKey: 'idem-visit-out-date',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects check-in if device is outside approved destination radius (OUTSIDE_APPROVED_AREA)', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(mockVisit);
+
+      const dto: CheckInDto = {
+        latitude: 13.0827, // Chennai (~300km away from Bangalore destination)
+        longitude: 80.2707,
+        idempotencyKey: 'idem-visit-outside',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('accepts check-in with documented GPS exception for indoor/remote sites', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(mockVisit);
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-visit-exception',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+        gpsExceptionReason: 'Client site underground data vault with zero satellite reception',
+      };
+
+      const result = await service.checkIn(mockUser, dto);
+      expect(result.success).toBe(true);
+      expect((result.data as any)?.event?.geofenceStatus).toBe('EXEMPT');
+      expect((result.data as any)?.officialVisit?.isException).toBe(true);
+
+      expect(prisma.visitLocationVerification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            outcome: 'GPS_EXCEPTION_DOCUMENTED',
+            isException: true,
+          }),
+        }),
+      );
+    });
+
+    it('rejects check-in without coordinates when GPS exception reason is missing or < 10 chars', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(mockVisit);
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-visit-short-reason',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+        gpsExceptionReason: 'short',
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('concurrency: rejects concurrent check-in collision (P2002)', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(mockVisit);
+      prisma.$transaction.mockRejectedValueOnce({ code: 'P2002' });
+
+      const dto: CheckInDto = {
+        latitude: 12.9352,
+        longitude: 77.6245,
+        idempotencyKey: 'idem-visit-collision',
+        attendanceMode: 'OFFICIAL_VISIT',
+        officialVisitId: mockVisit.id,
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(ConflictException);
+    });
+  });
+
+  describe('Official Visit Check-Out Flow & Summary Reconciliation (Phase 5 Step 6)', () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayMidnight = new Date(`${todayStr}T00:00:00.000Z`);
+
+    const openVisitSession = {
+      id: 'sess-visit-open',
+      organizationId: mockOrgId,
+      employeeId: mockEmployeeId,
+      attendanceMode: 'OFFICIAL_VISIT',
+      officialVisitId: 'visit-approved-1',
+      date: todayMidnight,
+      checkInTime: new Date(Date.now() - 4 * 3600 * 1000), // 4 hours ago
+      status: 'OPEN',
+      events: [
+        {
+          id: 'evt-visit-in',
+          eventType: 'CHECK_IN',
+          eventTimestamp: new Date(Date.now() - 4 * 3600 * 1000),
+          attendanceMode: 'OFFICIAL_VISIT',
+        },
+      ],
+    };
+
+    it('checks out of official visit session, bypasses office geofence and marks visit COMPLETED', async () => {
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce(openVisitSession);
+      prisma.attendanceEvent.findMany.mockResolvedValueOnce(openVisitSession.events);
+      prisma.officialVisit.findUnique.mockResolvedValueOnce({
+        id: 'visit-approved-1',
+        status: 'IN_PROGRESS',
+        startDate: todayMidnight,
+        endDate: todayMidnight, // 1-day visit ending today
+      });
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([openVisitSession]);
+
+      const dto: CheckOutDto = {
+        latitude: 12.9352,
+        longitude: 77.6245,
+        idempotencyKey: 'idem-visit-checkout-1',
+      };
+
+      const result = await service.checkOut(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect((result.data as any)?.session?.status).toBe('COMPLETED');
+      expect((result.data as any)?.event?.attendanceMode).toBe('OFFICIAL_VISIT');
+      expect((result.data as any)?.event?.officialVisitId).toBe('visit-approved-1');
+
+      // Verify visit transitioned to COMPLETED
+      expect(prisma.officialVisit.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'visit-approved-1' },
+          data: { status: 'COMPLETED' },
+        }),
+      );
+
+      // Verify daily summary was recalculated with OFFICIAL_VISIT
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            primaryAttendanceMode: 'OFFICIAL_VISIT',
+            officialVisitId: 'visit-approved-1',
+          }),
+        }),
+      );
+    });
+
+    it('recalculates daily summary and preserves event history and OFFICIAL_VISIT mode', async () => {
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([
+        {
+          ...openVisitSession,
+          status: 'COMPLETED',
+          checkOutTime: new Date(),
+          totalWorkMinutes: 240,
+          totalBreakMinutes: 0,
+        },
+      ]);
+
+      await service.recalculateDailySummary(
+        prisma,
+        mockEmployeeId,
+        mockOrgId,
+        todayMidnight,
+        mockPolicy,
+        mockShift,
+      );
+
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            primaryAttendanceMode: 'OFFICIAL_VISIT',
+            officialVisitId: 'visit-approved-1',
+          }),
+          update: expect.objectContaining({
+            primaryAttendanceMode: 'OFFICIAL_VISIT',
+            officialVisitId: 'visit-approved-1',
+          }),
+        }),
+      );
     });
   });
 });
