@@ -787,6 +787,52 @@ export const attendanceApi = {
     });
     return res;
   },
+
+  async getManagerDashboard(date?: string) {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    const res = await fetchWithAuth<any>(`/attendance/manager/dashboard${qs}`);
+    return res.data;
+  },
+
+  async getManagerRecords(query?: {
+    date?: string;
+    search?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.date) params.append('date', query.date);
+    if (query?.search) params.append('search', query.search);
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString();
+    const res = await fetchWithAuth<any>(`/attendance/manager/records${qs ? `?${qs}` : ''}`);
+    return res;
+  },
+
+  async getManagerCorrections() {
+    const res = await fetchWithAuth<any>('/attendance/manager/corrections');
+    return res.data;
+  },
+
+  async decideCorrectionRequest(
+    requestId: string,
+    payload: { decision: 'APPROVED' | 'REJECTED'; reviewNotes?: string },
+  ) {
+    const res = await fetchWithAuth<any>(`/attendance/manager/corrections/${requestId}/decide`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async getManagerEmployeeDetail(employeeId: string, date?: string) {
+    const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+    const res = await fetchWithAuth<any>(`/attendance/manager/records/${employeeId}${qs}`);
+    return res.data;
+  },
 };
 
 export const attendancePoliciesApi = {

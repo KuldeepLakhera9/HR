@@ -41,7 +41,10 @@ import {
 import { attendanceApi } from '../../lib/api-client';
 import { useGeolocation, GeolocationPositionData } from '../../hooks/useGeolocation';
 import { AttendanceDayStatus } from '@hrms/types';
+import { useRole } from '../../context/RoleContext';
+import { useAuth } from '../../context/AuthContext';
 import { HRAttendanceDashboard } from '../../features/attendance/components/HRAttendanceDashboard';
+import { ManagerTeamAttendance } from '../../features/attendance/components/ManagerTeamAttendance';
 
 // Helper: safe UUID generator for idempotency keys
 function generateIdempotencyKey(): string {
@@ -67,7 +70,27 @@ function calculateHaversineMeters(lat1: number, lon1: number, lat2: number, lon2
 }
 
 export default function AttendancePage() {
-  const [activeTab, setActiveTab] = useState<'my' | 'operations'>('my');
+  const { role } = useRole();
+  const { roles } = useAuth();
+  const canViewOrg =
+    role === 'ADMIN' || role === 'HR' || roles?.includes('ADMIN') || roles?.includes('HR');
+  const canViewTeam =
+    role === 'MANAGER' ||
+    role === 'ADMIN' ||
+    role === 'HR' ||
+    roles?.includes('MANAGER') ||
+    roles?.includes('ADMIN') ||
+    roles?.includes('HR');
+
+  const [activeTab, setActiveTab] = useState<'my' | 'team' | 'operations'>(
+    role === 'MANAGER' ? 'team' : 'my',
+  );
+
+  useEffect(() => {
+    if (role === 'MANAGER' && activeTab === 'operations') {
+      setActiveTab('team');
+    }
+  }, [role, activeTab]);
 
   // Live Clock State
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -487,16 +510,30 @@ export default function AttendancePage() {
             >
               My Attendance
             </button>
-            <button
-              onClick={() => setActiveTab('operations')}
-              className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
-                activeTab === 'operations'
-                  ? 'bg-white text-stone-900 shadow-2xs'
-                  : 'text-stone-500 hover:text-stone-900'
-              }`}
-            >
-              Organization Overview
-            </button>
+            {canViewTeam && (
+              <button
+                onClick={() => setActiveTab('team')}
+                className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  activeTab === 'team'
+                    ? 'bg-white text-stone-900 shadow-2xs'
+                    : 'text-stone-500 hover:text-stone-900'
+                }`}
+              >
+                Team Attendance
+              </button>
+            )}
+            {canViewOrg && (
+              <button
+                onClick={() => setActiveTab('operations')}
+                className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${
+                  activeTab === 'operations'
+                    ? 'bg-white text-stone-900 shadow-2xs'
+                    : 'text-stone-500 hover:text-stone-900'
+                }`}
+              >
+                Organization Overview
+              </button>
+            )}
           </div>
         </div>
 
@@ -1061,9 +1098,14 @@ export default function AttendancePage() {
               </div>
             )}
           </div>
+        ) : activeTab === 'team' ? (
+          /* =======================================================================
+           * MANAGER TEAM ATTENDANCE TAB
+           * ======================================================================= */
+          <ManagerTeamAttendance onRefreshNeeded={loadTodayStatus} />
         ) : (
           /* =======================================================================
-           * ORGANIZATION OVERVIEW TAB (ADMIN / MANAGERS)
+           * ORGANIZATION OVERVIEW TAB (ADMIN / HR)
            * ======================================================================= */
           <HRAttendanceDashboard onRefreshNeeded={loadTodayStatus} />
         )}

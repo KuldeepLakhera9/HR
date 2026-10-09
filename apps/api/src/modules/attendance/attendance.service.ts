@@ -24,6 +24,8 @@ import { calculateDailyAttendance } from './utils/daily-attendance-calculator.ut
 import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
 import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.dto';
+import { DecideCorrectionRequestDto } from './dto/decide-correction.dto';
+import { HierarchyService } from '../employees/hierarchy.service';
 import { AttendanceDayStatus } from '@hrms/types';
 
 @Injectable()
@@ -34,6 +36,7 @@ export class AttendanceService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly policiesService: AttendancePoliciesService,
+    private readonly hierarchyService: HierarchyService,
   ) {}
 
   // ===========================================================================
@@ -2173,5 +2176,661 @@ export class AttendanceService {
       gracePeriodMinutes: 15,
       geofenceValidationEnabled: true,
     };
+  }
+
+  // ===========================================================================
+  // 9. MANAGER TEAM ATTENDANCE (PHASE 4 STEP 10)
+  // ===========================================================================
+
+  /**
+   * Resolves the current manager's employee profile and their authorized direct/team reporting tree
+   * according to Phase 3 hierarchy rules.
+   */
+  async resolveManagerTeam(user: AuthenticatedUser) {
+    const managerEmployee = await this.prisma.employee.findFirst({
+      where: {
+        userId: user.id,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+      include: {
+        employment: true,
+      },
+    });
+
+    if (!managerEmployee) {
+      return {
+        managerEmployee: null,
+        teamMemberIds: [],
+        directReports: [],
+      };
+    }
+
+    const team = await this.hierarchyService.getTeam(managerEmployee.id, user.organizationId);
+
+    return {
+      managerEmployee,
+      teamMemberIds: team.allMemberIds,
+      directReports: team.directReports,
+    };
+  }
+
+  /**
+   * Retrieves scoped manager team attendance summary, headcount status, and pending corrections count.
+   */
+  async getManagerTeamDashboard(user: AuthenticatedUser, dateStr?: string) {
+    const { managerEmployee, teamMemberIds } = await this.resolveManagerTeam(user);
+
+    const defaultResolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      managerEmployee?.id || 'default',
+      new Date(),
+      user.organizationId,
+    );
+    const timezone = defaultResolution.policy?.timezone || 'Asia/Kolkata';
+    const cutoffHour = defaultResolution.policy?.workingDayStartHour ?? 5;
+
+    const workingDateStr =
+      dateStr || resolveWorkingDay(new Date(), cutoffHour, timezone).workingDateStr;
+    const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
+
+    if (!managerEmployee || teamMemberIds.length === 0) {
+      return {
+        success: true,
+        message: 'Manager team attendance dashboard retrieved.',
+        data: {
+          date: workingDateStr,
+          reportingTimestamp: new Date().toISOString(),
+          timezone,
+          cutoffHour,
+          teamSize: 0,
+          headcount: {
+            totalTeamMembers: 0,
+            checkedInNow: 0,
+            present: 0,
+            lateArrivals: 0,
+            halfDay: 0,
+            absent: 0,
+            onLeave: 0,
+            incomplete: 0,
+            pendingReview: 0,
+            notScheduled: 0,
+            unresolvedExceptions: 0,
+          },
+          pendingCorrectionsCount: 0,
+        },
+      };
+    }
+
+    // Daily summaries strictly scoped to team member IDs
+    const summaries = await this.prisma.attendanceDailySummary.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        employeeId: { in: teamMemberIds },
+      },
+      include: {
+        shift: true,
+      },
+    });
+
+    let present = 0;
+    let lateArrivals = 0;
+    let halfDay = 0;
+    let absent = 0;
+    let onLeave = 0;
+    let incomplete = 0;
+    let pendingReview = 0;
+    let notScheduled = 0;
+
+    for (const s of summaries) {
+      if (s.status === 'PRESENT' || s.status === 'LATE') present++;
+      if (s.lateMinutes > 0) lateArrivals++;
+      if (s.status === 'HALF_DAY') halfDay++;
+      if (s.status === 'ABSENT') absent++;
+      if (s.status === 'ON_LEAVE') onLeave++;
+      if (s.status === 'INCOMPLETE') incomplete++;
+      if (s.status === 'PENDING_REVIEW') pendingReview++;
+      if (s.status === 'NOT_SCHEDULED') notScheduled++;
+    }
+
+    // Checked-in now count for team
+    const checkedInNow = await this.prisma.attendanceSession.count({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        status: 'OPEN',
+        employeeId: { in: teamMemberIds },
+      },
+    });
+
+    // Unresolved exceptions for team
+    const unresolvedExceptions = await this.prisma.attendanceException.count({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        resolved: false,
+        employeeId: { in: teamMemberIds },
+      },
+    });
+
+    // Pending correction requests specifically for this manager's team
+    const pendingCorrectionsCount = await this.prisma.attendanceCorrectionRequest.count({
+      where: {
+        organizationId: user.organizationId,
+        status: 'PENDING',
+        employeeId: { in: teamMemberIds },
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Manager team attendance dashboard retrieved.',
+      data: {
+        date: workingDateStr,
+        reportingTimestamp: new Date().toISOString(),
+        timezone,
+        cutoffHour,
+        teamSize: teamMemberIds.length,
+        headcount: {
+          totalTeamMembers: teamMemberIds.length,
+          checkedInNow,
+          present,
+          lateArrivals,
+          halfDay,
+          absent,
+          onLeave,
+          incomplete,
+          pendingReview,
+          notScheduled,
+          unresolvedExceptions,
+        },
+        pendingCorrectionsCount,
+      },
+    };
+  }
+
+  /**
+   * Retrieves paginated attendance records strictly scoped to authorized team members
+   * with search, filtering, and GPS coordinate privacy protection.
+   */
+  async getManagerTeamRecords(user: AuthenticatedUser, query: AttendanceOperationsQueryDto) {
+    const { managerEmployee, teamMemberIds } = await this.resolveManagerTeam(user);
+
+    const defaultResolution = await this.policiesService.resolveEffectivePolicyAndShift(
+      managerEmployee?.id || 'default',
+      new Date(),
+      user.organizationId,
+    );
+    const timezone = defaultResolution.policy?.timezone || 'Asia/Kolkata';
+    const cutoffHour = defaultResolution.policy?.workingDayStartHour ?? 5;
+
+    const workingDateStr =
+      query.date || resolveWorkingDay(new Date(), cutoffHour, timezone).workingDateStr;
+    const workingDateUtc = new Date(`${workingDateStr}T00:00:00.000Z`);
+
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    if (!managerEmployee || teamMemberIds.length === 0) {
+      return {
+        success: true,
+        message: 'No team members reporting to current user.',
+        data: [],
+        pagination: { page, limit, total: 0, totalPages: 1 },
+      };
+    }
+
+    // Scoped strictly to team members
+    const employeeWhere: any = {
+      id: { in: teamMemberIds },
+      organizationId: user.organizationId,
+      deletedAt: null,
+      isActive: true,
+    };
+
+    if (query.search?.trim()) {
+      const term = query.search.trim();
+      employeeWhere.OR = [
+        { displayName: { contains: term, mode: 'insensitive' } },
+        { employeeCode: { contains: term, mode: 'insensitive' } },
+        { firstName: { contains: term, mode: 'insensitive' } },
+        { lastName: { contains: term, mode: 'insensitive' } },
+      ];
+    }
+
+    if (query.status && query.status !== 'ALL') {
+      const matchingSummaries = await this.prisma.attendanceDailySummary.findMany({
+        where: {
+          organizationId: user.organizationId,
+          date: workingDateUtc,
+          employeeId: { in: teamMemberIds },
+          status: query.status as any,
+        },
+        select: { employeeId: true },
+      });
+      employeeWhere.id = { in: matchingSummaries.map((s) => s.employeeId) };
+    }
+
+    const totalCount = await this.prisma.employee.count({ where: employeeWhere });
+
+    const employees = await this.prisma.employee.findMany({
+      where: employeeWhere,
+      skip,
+      take: limit,
+      orderBy: { displayName: 'asc' },
+      include: {
+        employment: {
+          include: {
+            branch: true,
+            department: true,
+            designation: true,
+          },
+        },
+      },
+    });
+
+    const pageEmployeeIds = employees.map((e) => e.id);
+
+    const summaries = await this.prisma.attendanceDailySummary.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        employeeId: { in: pageEmployeeIds },
+      },
+    });
+
+    const sessions = await this.prisma.attendanceSession.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        employeeId: { in: pageEmployeeIds },
+      },
+      orderBy: { sessionNumber: 'asc' },
+      include: {
+        events: {
+          orderBy: { eventTimestamp: 'asc' },
+          include: { officeLocation: true },
+        },
+      },
+    });
+
+    const exceptions = await this.prisma.attendanceException.findMany({
+      where: {
+        organizationId: user.organizationId,
+        date: workingDateUtc,
+        employeeId: { in: pageEmployeeIds },
+      },
+    });
+
+    // Precise GPS privacy enforcement
+    const canViewPreciseGps =
+      user.roles?.includes('ADMIN' as any) ||
+      user.permissions?.includes('ATTENDANCE_VIEW_GPS') ||
+      false;
+
+    const records = employees.map((emp) => {
+      const summary = summaries.find((s) => s.employeeId === emp.id) || null;
+      const empSessions = sessions.filter((s) => s.employeeId === emp.id);
+      const activeSession = empSessions.find((s) => s.status === 'OPEN') || null;
+      const empExceptions = exceptions.filter((e) => e.employeeId === emp.id);
+
+      const latestCheckInEvent = empSessions
+        .flatMap((s) => s.events)
+        .filter((e) => e.eventType === 'CHECK_IN')
+        .pop();
+
+      return {
+        employee: {
+          id: emp.id,
+          employeeCode: emp.employeeCode,
+          displayName: emp.displayName,
+          designation: emp.employment?.designation?.title || 'Staff',
+          department: emp.employment?.department?.name || 'General',
+          branch: emp.employment?.branch?.name || 'Main Office',
+        },
+        summary: summary
+          ? {
+              status: summary.status,
+              firstCheckIn: summary.firstCheckIn,
+              lastCheckOut: summary.lastCheckOut,
+              totalWorkMinutes: summary.totalWorkMinutes,
+              totalBreakMinutes: summary.totalBreakMinutes,
+              netHours: Math.round((summary.totalWorkMinutes / 60) * 100) / 100,
+              lateMinutes: summary.lateMinutes,
+              earlyExitMinutes: summary.earlyExitMinutes,
+              overtimeMinutes: summary.overtimeMinutes,
+              isCorrected: summary.isCorrected,
+            }
+          : {
+              status: 'NOT_SCHEDULED',
+              firstCheckIn: null,
+              lastCheckOut: null,
+              totalWorkMinutes: 0,
+              totalBreakMinutes: 0,
+              netHours: 0,
+              lateMinutes: 0,
+              earlyExitMinutes: 0,
+              overtimeMinutes: 0,
+              isCorrected: false,
+            },
+        activeSession: activeSession
+          ? {
+              id: activeSession.id,
+              sessionNumber: activeSession.sessionNumber,
+              checkInTime: activeSession.checkInTime,
+              status: activeSession.status,
+            }
+          : null,
+        sessionCount: empSessions.length,
+        exceptionCount: empExceptions.length,
+        locationVerification: latestCheckInEvent
+          ? {
+              officeName: latestCheckInEvent.officeLocation?.name || 'Office',
+              geofenceStatus: latestCheckInEvent.geofenceStatus,
+              distanceMeters: latestCheckInEvent.distanceFromOfficeMeters,
+              latitude: canViewPreciseGps ? latestCheckInEvent.latitude : null,
+              longitude: canViewPreciseGps ? latestCheckInEvent.longitude : null,
+              isGpsRedacted: !canViewPreciseGps,
+            }
+          : null,
+      };
+    });
+
+    return {
+      success: true,
+      message: 'Manager team attendance records retrieved successfully.',
+      data: records,
+      pagination: {
+        page,
+        limit,
+        total: totalCount,
+        totalPages: Math.ceil(totalCount / limit) || 1,
+      },
+    };
+  }
+
+  /**
+   * Retrieves pending attendance correction requests submitted by manager's team members.
+   */
+  async getManagerTeamCorrections(user: AuthenticatedUser) {
+    const { managerEmployee, teamMemberIds } = await this.resolveManagerTeam(user);
+
+    if (!managerEmployee || teamMemberIds.length === 0) {
+      return {
+        success: true,
+        message: 'No pending correction requests for current manager.',
+        data: [],
+      };
+    }
+
+    const requests = await this.prisma.attendanceCorrectionRequest.findMany({
+      where: {
+        organizationId: user.organizationId,
+        employeeId: { in: teamMemberIds },
+      },
+      orderBy: { submittedAt: 'desc' },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            displayName: true,
+            employment: {
+              include: {
+                designation: true,
+                department: true,
+              },
+            },
+          },
+        },
+        decision: true,
+      },
+    });
+
+    return {
+      success: true,
+      message: 'Manager team correction requests retrieved successfully.',
+      data: requests,
+    };
+  }
+
+  /**
+   * Approves or rejects an attendance correction request.
+   * Strictly enforces cross-team hierarchy boundary: caller MUST be an ancestor/manager of the employee.
+   */
+  async decideCorrectionRequest(
+    user: AuthenticatedUser,
+    requestId: string,
+    dto: DecideCorrectionRequestDto,
+  ) {
+    // 1. Cross-org check
+    const request = await this.prisma.attendanceCorrectionRequest.findFirst({
+      where: {
+        id: requestId,
+        organizationId: user.organizationId,
+      },
+      include: {
+        employee: true,
+      },
+    });
+
+    if (!request) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Attendance correction request not found in this organization.',
+        code: 'CORRECTION_REQUEST_NOT_FOUND',
+      });
+    }
+
+    // 2. Cross-team & hierarchy validation
+    const isGlobalOrAdmin =
+      user.roles?.includes('ADMIN' as any) || user.roles?.includes('HR' as any);
+
+    if (!isGlobalOrAdmin) {
+      const managerEmployee = await this.prisma.employee.findFirst({
+        where: {
+          userId: user.id,
+          organizationId: user.organizationId,
+          deletedAt: null,
+        },
+      });
+
+      if (!managerEmployee) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: 'No manager employee profile linked to current user account.',
+          code: 'FORBIDDEN_NOT_MANAGER',
+        });
+      }
+
+      const isSubordinate = await this.hierarchyService.isManagerOf(
+        managerEmployee.id,
+        request.employeeId,
+        user.organizationId,
+      );
+
+      if (!isSubordinate) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message:
+            'Access denied: You are not authorized to decide correction requests for employees outside your reporting hierarchy.',
+          code: 'FORBIDDEN_OUTSIDE_HIERARCHY',
+        });
+      }
+    }
+
+    if (request.status !== 'PENDING') {
+      throw new ConflictException({
+        statusCode: 409,
+        message: `This correction request has already been ${request.status.toLowerCase()}.`,
+        code: 'CORRECTION_ALREADY_DECIDED',
+      });
+    }
+
+    const summary = await this.prisma.attendanceDailySummary.findUnique({
+      where: {
+        organizationId_employeeId_date: {
+          organizationId: user.organizationId,
+          employeeId: request.employeeId,
+          date: request.targetDate,
+        },
+      },
+    });
+
+    const originalWorkMinutes = summary?.totalWorkMinutes ?? 0;
+    let correctedWorkMinutes = originalWorkMinutes;
+
+    if (dto.decision === 'APPROVED') {
+      if (request.requestedCheckIn && request.requestedCheckOut) {
+        const inMs = new Date(request.requestedCheckIn).getTime();
+        const outMs = new Date(request.requestedCheckOut).getTime();
+        correctedWorkMinutes = Math.max(0, Math.round((outMs - inMs) / 60000));
+      } else if (originalWorkMinutes === 0) {
+        correctedWorkMinutes = 480;
+      }
+
+      const dateStr = request.targetDate.toISOString().split('T')[0];
+      await this.prisma.attendanceDailySummary.upsert({
+        where: {
+          organizationId_employeeId_date: {
+            organizationId: user.organizationId,
+            employeeId: request.employeeId,
+            date: request.targetDate,
+          },
+        },
+        create: {
+          organizationId: user.organizationId,
+          employeeId: request.employeeId,
+          date: request.targetDate,
+          status: 'PRESENT',
+          firstCheckIn: request.requestedCheckIn || new Date(`${dateStr}T09:00:00.000Z`),
+          lastCheckOut: request.requestedCheckOut || new Date(`${dateStr}T18:00:00.000Z`),
+          totalWorkMinutes: correctedWorkMinutes,
+          totalBreakMinutes: 60,
+          isCorrected: true,
+          correctionNotes: dto.reviewNotes || 'Approved by manager',
+        },
+        update: {
+          status: 'PRESENT',
+          firstCheckIn: request.requestedCheckIn || undefined,
+          lastCheckOut: request.requestedCheckOut || undefined,
+          totalWorkMinutes: correctedWorkMinutes,
+          isCorrected: true,
+          correctionNotes: dto.reviewNotes || 'Approved by manager',
+        },
+      });
+    }
+
+    // Upsert decision record
+    await this.prisma.attendanceCorrectionDecision.upsert({
+      where: { requestId: request.id },
+      create: {
+        requestId: request.id,
+        reviewerId: user.id,
+        decision: dto.decision as any,
+        originalWorkMinutes,
+        correctedWorkMinutes: dto.decision === 'APPROVED' ? correctedWorkMinutes : 0,
+        reviewNotes: dto.reviewNotes || `${dto.decision} by manager`,
+      },
+      update: {
+        reviewerId: user.id,
+        decision: dto.decision as any,
+        originalWorkMinutes,
+        correctedWorkMinutes: dto.decision === 'APPROVED' ? correctedWorkMinutes : 0,
+        reviewNotes: dto.reviewNotes || `${dto.decision} by manager`,
+        decidedAt: new Date(),
+      },
+    });
+
+    const updatedRequest = await this.prisma.attendanceCorrectionRequest.update({
+      where: { id: request.id },
+      data: { status: dto.decision as any },
+      include: {
+        decision: true,
+        employee: true,
+      },
+    });
+
+    await this.auditService.record({
+      action: 'ATTENDANCE_CORRECTION_DECIDED',
+      entity: 'AttendanceCorrectionRequest',
+      entityId: request.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        employeeId: request.employeeId,
+        decision: dto.decision,
+        reviewNotes: dto.reviewNotes,
+      },
+    });
+
+    return {
+      success: true,
+      message: `Correction request ${dto.decision.toLowerCase()} successfully.`,
+      data: updatedRequest,
+    };
+  }
+
+  /**
+   * Retrieves detailed timeline for a team employee, strictly validating manager hierarchy authorization.
+   */
+  async getManagerEmployeeDetail(user: AuthenticatedUser, employeeId: string, dateStr?: string) {
+    // 1. Cross-org check
+    const targetEmployee = await this.prisma.employee.findFirst({
+      where: {
+        id: employeeId,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+    });
+
+    if (!targetEmployee) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Employee not found in this organization.',
+        code: 'EMPLOYEE_NOT_FOUND',
+      });
+    }
+
+    // 2. Cross-team & hierarchy validation
+    const isGlobalOrAdmin =
+      user.roles?.includes('ADMIN' as any) || user.roles?.includes('HR' as any);
+
+    if (!isGlobalOrAdmin) {
+      const managerEmployee = await this.prisma.employee.findFirst({
+        where: {
+          userId: user.id,
+          organizationId: user.organizationId,
+          deletedAt: null,
+        },
+      });
+
+      if (!managerEmployee) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: 'No manager profile linked to current user account.',
+          code: 'FORBIDDEN_NOT_MANAGER',
+        });
+      }
+
+      const isSubordinate = await this.hierarchyService.isManagerOf(
+        managerEmployee.id,
+        employeeId,
+        user.organizationId,
+      );
+
+      if (!isSubordinate) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message:
+            'Access denied: You are not authorized to view attendance details for an employee outside your reporting hierarchy.',
+          code: 'FORBIDDEN_OUTSIDE_HIERARCHY',
+        });
+      }
+    }
+
+    // Return sanitized operations employee detail
+    return this.getOperationsEmployeeDetail(user, employeeId, dateStr);
   }
 }

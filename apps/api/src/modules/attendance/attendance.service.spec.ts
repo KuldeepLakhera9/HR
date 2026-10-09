@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { AttendanceService } from './attendance.service';
 import { AttendancePoliciesService } from './attendance-policies.service';
+import { HierarchyService } from '../employees/hierarchy.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
@@ -17,6 +18,7 @@ describe('AttendanceService', () => {
   let prisma: any;
   let audit: any;
   let policiesService: any;
+  let hierarchyService: any;
 
   const mockOrgId = 'org-corp-1';
   const mockUserId = 'user-emp-1';
@@ -123,6 +125,22 @@ describe('AttendanceService', () => {
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),
       },
+      attendanceCorrectionRequest: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) => Promise.resolve({ id: 'req-corr-1', ...data })),
+        update: jest
+          .fn()
+          .mockImplementation(({ where, data }) => Promise.resolve({ id: where.id, ...data })),
+        count: jest.fn().mockResolvedValue(0),
+      },
+      attendanceCorrectionDecision: {
+        upsert: jest
+          .fn()
+          .mockImplementation(({ create }) => Promise.resolve({ id: 'dec-1', ...create })),
+      },
       employee: {
         findFirst: jest.fn().mockResolvedValue(mockEmployee),
         findMany: jest.fn().mockResolvedValue([mockEmployee]),
@@ -148,12 +166,24 @@ describe('AttendanceService', () => {
       }),
     };
 
+    hierarchyService = {
+      getTeam: jest.fn().mockResolvedValue({
+        manager: mockEmployee,
+        directReports: [mockEmployee],
+        indirectReports: [],
+        allMemberIds: [mockEmployeeId],
+        totalTeamSize: 1,
+      }),
+      isManagerOf: jest.fn().mockResolvedValue(true),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AttendanceService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: AttendancePoliciesService, useValue: policiesService },
+        { provide: HierarchyService, useValue: hierarchyService },
       ],
     }).compile();
 
@@ -999,6 +1029,327 @@ describe('AttendanceService', () => {
       expect(event.longitude).toBeNull();
       expect(event.distanceFromOfficeMeters).toBe(30);
       expect(res.data.exceptions.length).toBe(1);
+    });
+  });
+
+  describe('Manager Team Attendance & Access-Scope Security (Phase 4 Step 10)', () => {
+    const mockManagerUser: AuthenticatedUser = {
+      id: 'user-manager-1',
+      email: 'sarah.manager@company.com',
+      organizationId: mockOrgId,
+      branchId: mockBranchId,
+      departmentId: 'dept-eng',
+      firstName: 'Sarah',
+      lastName: 'Connor',
+      employeeCode: 'MGR001',
+      status: 'ACTIVE' as any,
+      roles: ['MANAGER' as any],
+      permissions: ['ATTENDANCE_VIEW'],
+      sessionId: 'session-mgr-1',
+    };
+
+    const mockSubordinateEmpId = 'emp-subordinate-1';
+    const mockOutsiderEmpId = 'emp-outsider-999';
+
+    const mockManagerEmployeeProfile = {
+      id: 'emp-mgr-1',
+      userId: mockManagerUser.id,
+      organizationId: mockOrgId,
+      employeeCode: 'MGR001',
+      displayName: 'Sarah Connor',
+      status: 'ACTIVE',
+      isActive: true,
+      deletedAt: null,
+    };
+
+    const mockSubordinateProfile = {
+      id: mockSubordinateEmpId,
+      userId: 'user-sub-1',
+      organizationId: mockOrgId,
+      employeeCode: 'EMP201',
+      displayName: 'Kyle Reese',
+      status: 'ACTIVE',
+      isActive: true,
+      deletedAt: null,
+      employment: {
+        designation: { title: 'Software Engineer' },
+        department: { name: 'Engineering' },
+        branch: { name: 'Bangalore Tech Center' },
+      },
+    };
+
+    beforeEach(() => {
+      prisma.employee.findFirst.mockImplementation(({ where }: any) => {
+        if (where.userId === mockManagerUser.id) {
+          return Promise.resolve(mockManagerEmployeeProfile);
+        }
+        if (where.id === mockSubordinateEmpId && where.organizationId === mockOrgId) {
+          return Promise.resolve(mockSubordinateProfile);
+        }
+        if (where.id === mockOutsiderEmpId && where.organizationId === mockOrgId) {
+          return Promise.resolve({
+            id: mockOutsiderEmpId,
+            organizationId: mockOrgId,
+            displayName: 'Other Team Member',
+          });
+        }
+        return Promise.resolve(null);
+      });
+
+      hierarchyService.getTeam.mockResolvedValue({
+        manager: mockManagerEmployeeProfile,
+        directReports: [mockSubordinateProfile],
+        indirectReports: [],
+        allMemberIds: [mockSubordinateEmpId],
+        totalTeamSize: 1,
+      });
+    });
+
+    it('1. retrieves manager team attendance dashboard scoped strictly to team reports', async () => {
+      prisma.attendanceDailySummary.findMany.mockResolvedValueOnce([
+        {
+          id: 'sum-1',
+          employeeId: mockSubordinateEmpId,
+          status: 'PRESENT',
+          lateMinutes: 10,
+          totalWorkMinutes: 480,
+          shift: mockShift,
+        },
+      ]);
+      prisma.attendanceSession.count.mockResolvedValueOnce(1); // checkedInNow
+      prisma.attendanceException.count.mockResolvedValueOnce(1); // unresolvedExceptions
+      prisma.attendanceCorrectionRequest.count.mockResolvedValueOnce(1); // pendingCorrectionsCount
+
+      const result = await service.getManagerTeamDashboard(mockManagerUser, '2026-10-09');
+
+      expect(result.success).toBe(true);
+      expect(result.data.teamSize).toBe(1);
+      expect(result.data.headcount.totalTeamMembers).toBe(1);
+      expect(result.data.headcount.present).toBe(1);
+      expect(result.data.headcount.lateArrivals).toBe(1);
+      expect(result.data.headcount.checkedInNow).toBe(1);
+      expect(result.data.pendingCorrectionsCount).toBe(1);
+
+      // Verify Prisma query was strictly filtered by team member IDs
+      expect(prisma.attendanceDailySummary.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            employeeId: { in: [mockSubordinateEmpId] },
+          }),
+        }),
+      );
+    });
+
+    it('2. handles manager with empty team safely', async () => {
+      hierarchyService.getTeam.mockResolvedValueOnce({
+        manager: mockManagerEmployeeProfile,
+        directReports: [],
+        indirectReports: [],
+        allMemberIds: [],
+        totalTeamSize: 0,
+      });
+
+      const result = await service.getManagerTeamDashboard(mockManagerUser, '2026-10-09');
+
+      expect(result.success).toBe(true);
+      expect(result.data.teamSize).toBe(0);
+      expect(result.data.headcount.checkedInNow).toBe(0);
+      expect(result.data.pendingCorrectionsCount).toBe(0);
+    });
+
+    it('3. retrieves paginated team records with strict GPS privacy redaction', async () => {
+      prisma.employee.count.mockResolvedValueOnce(1);
+      prisma.employee.findMany.mockResolvedValueOnce([mockSubordinateProfile]);
+      prisma.attendanceDailySummary.findMany.mockResolvedValueOnce([
+        {
+          employeeId: mockSubordinateEmpId,
+          status: 'PRESENT',
+          firstCheckIn: new Date('2026-10-09T03:30:00.000Z'),
+          lastCheckOut: new Date('2026-10-09T12:30:00.000Z'),
+          totalWorkMinutes: 480,
+          totalBreakMinutes: 60,
+          lateMinutes: 0,
+          earlyExitMinutes: 0,
+          overtimeMinutes: 0,
+          isCorrected: false,
+        },
+      ]);
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([
+        {
+          id: 'sess-team-1',
+          employeeId: mockSubordinateEmpId,
+          sessionNumber: 1,
+          status: 'CLOSED',
+          events: [
+            {
+              id: 'evt-team-1',
+              eventType: 'CHECK_IN',
+              geofenceStatus: 'VERIFIED',
+              distanceFromOfficeMeters: 45,
+              latitude: 12.9716,
+              longitude: 77.5946,
+              officeLocation: { name: 'Bangalore HQ' },
+            },
+          ],
+        },
+      ]);
+      prisma.attendanceException.findMany.mockResolvedValueOnce([]);
+
+      const result = await service.getManagerTeamRecords(mockManagerUser, {
+        date: '2026-10-09',
+        page: 1,
+        limit: 20,
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.data.length).toBe(1);
+      const record = result.data[0];
+      expect(record.employee.id).toBe(mockSubordinateEmpId);
+      expect(record.locationVerification).toBeDefined();
+      expect(record.locationVerification?.officeName).toBe('Bangalore HQ');
+      expect(record.locationVerification?.distanceMeters).toBe(45);
+
+      // Verify GPS coordinates are redacted for manager
+      expect(record.locationVerification?.isGpsRedacted).toBe(true);
+      expect(record.locationVerification?.latitude).toBeNull();
+      expect(record.locationVerification?.longitude).toBeNull();
+    });
+
+    it('4. retrieves pending correction requests for team members', async () => {
+      const mockCorrection = {
+        id: 'corr-req-1',
+        organizationId: mockOrgId,
+        employeeId: mockSubordinateEmpId,
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        reason: 'Network outage during check-out',
+        employee: mockSubordinateProfile,
+      };
+
+      prisma.attendanceCorrectionRequest.findMany.mockResolvedValueOnce([mockCorrection]);
+
+      const result = await service.getManagerTeamCorrections(mockManagerUser);
+
+      expect(result.success).toBe(true);
+      expect(result.data.length).toBe(1);
+      expect(result.data[0].id).toBe('corr-req-1');
+    });
+
+    it('5. manager approves legitimate subordinate correction request', async () => {
+      const mockCorrection = {
+        id: 'corr-req-1',
+        organizationId: mockOrgId,
+        employeeId: mockSubordinateEmpId,
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        requestedCheckIn: new Date('2026-10-08T03:30:00.000Z'),
+        requestedCheckOut: new Date('2026-10-08T12:30:00.000Z'),
+        employee: mockSubordinateProfile,
+      };
+
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(mockCorrection);
+      hierarchyService.isManagerOf.mockResolvedValueOnce(true);
+      prisma.attendanceDailySummary.findUnique.mockResolvedValueOnce(null);
+
+      const result = await service.decideCorrectionRequest(mockManagerUser, 'corr-req-1', {
+        decision: 'APPROVED',
+        reviewNotes: 'Verified and approved with team lead',
+      });
+
+      expect(result.success).toBe(true);
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            isCorrected: true,
+            status: 'PRESENT',
+          }),
+        }),
+      );
+      expect(prisma.attendanceCorrectionDecision.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            decision: 'APPROVED',
+            reviewerId: mockManagerUser.id,
+          }),
+        }),
+      );
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'ATTENDANCE_CORRECTION_DECIDED',
+        }),
+      );
+    });
+
+    it('6. SECURITY: blocks manager from deciding correction request for employee outside their team', async () => {
+      const mockCorrection = {
+        id: 'corr-req-outsider',
+        organizationId: mockOrgId,
+        employeeId: mockOutsiderEmpId,
+        status: 'PENDING',
+        targetDate: new Date('2026-10-08T00:00:00.000Z'),
+        employee: { id: mockOutsiderEmpId },
+      };
+
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(mockCorrection);
+      // isManagerOf returns false -> outside hierarchy!
+      hierarchyService.isManagerOf.mockResolvedValueOnce(false);
+
+      await expect(
+        service.decideCorrectionRequest(mockManagerUser, 'corr-req-outsider', {
+          decision: 'APPROVED',
+        }),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('7. SECURITY: blocks deciding correction request belonging to another organization', async () => {
+      // Cross-organization query returns null due to orgId filter
+      prisma.attendanceCorrectionRequest.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.decideCorrectionRequest(mockManagerUser, 'corr-other-org', {
+          decision: 'APPROVED',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('8. SECURITY: blocks manager from viewing attendance detail of employee outside their team', async () => {
+      // isManagerOf returns false -> employee belongs to another team
+      hierarchyService.isManagerOf.mockResolvedValueOnce(false);
+
+      await expect(
+        service.getManagerEmployeeDetail(mockManagerUser, mockOutsiderEmpId, '2026-10-09'),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('9. SECURITY: blocks manager from viewing employee from another organization', async () => {
+      // Target employee not found in manager's organization
+      prisma.employee.findFirst.mockResolvedValueOnce(null);
+
+      await expect(
+        service.getManagerEmployeeDetail(mockManagerUser, 'emp-foreign-org', '2026-10-09'),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('10. allows manager to view detailed attendance of legitimate subordinate', async () => {
+      hierarchyService.isManagerOf.mockResolvedValueOnce(true);
+
+      // Mock operations detail responses
+      prisma.attendanceDailySummary.findUnique.mockResolvedValueOnce({
+        employeeId: mockSubordinateEmpId,
+        status: 'PRESENT',
+        totalWorkMinutes: 480,
+      });
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([]);
+      prisma.attendanceException.findMany.mockResolvedValueOnce([]);
+
+      const result = await service.getManagerEmployeeDetail(
+        mockManagerUser,
+        mockSubordinateEmpId,
+        '2026-10-09',
+      );
+
+      expect(result.success).toBe(true);
+      expect(result.data.employee.id).toBe(mockSubordinateEmpId);
     });
   });
 });

@@ -24,6 +24,8 @@ import { BreakDto } from './dto/break.dto';
 import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
 import { AttendanceOperationsQueryDto } from './dto/attendance-operations-query.dto';
+import { DecideCorrectionRequestDto } from './dto/decide-correction.dto';
+import { EmployeesModule } from '../employees/employees.module';
 import {
   OfficeLocationsController,
   OfficeLocationsAliasController,
@@ -196,6 +198,69 @@ export class AttendanceController {
     return this.attendanceService.getOperationsEmployeeDetail(user, employeeId, date);
   }
 
+  // ===========================================================================
+  // MANAGER TEAM ATTENDANCE ENDPOINTS
+  // ===========================================================================
+
+  @Get('manager/dashboard')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get manager team attendance summary, headcount, and pending corrections count',
+  })
+  async getManagerDashboard(@CurrentUser() user: AuthenticatedUser, @Query('date') date?: string) {
+    return this.attendanceService.getManagerTeamDashboard(user, date);
+  }
+
+  @Get('manager/records')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary:
+      'Get scoped paginated attendance records strictly for manager team direct and indirect reports',
+  })
+  async getManagerRecords(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AttendanceOperationsQueryDto,
+  ) {
+    return this.attendanceService.getManagerTeamRecords(user, query);
+  }
+
+  @Get('manager/corrections')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary: 'Get pending attendance correction requests from manager team members',
+  })
+  async getManagerCorrections(@CurrentUser() user: AuthenticatedUser) {
+    return this.attendanceService.getManagerTeamCorrections(user);
+  }
+
+  @Post('manager/corrections/:requestId/decide')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({
+    summary:
+      'Manager approves or rejects an attendance correction request for their reporting employee',
+  })
+  async decideCorrectionRequest(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('requestId') requestId: string,
+    @Body() dto: DecideCorrectionRequestDto,
+  ) {
+    return this.attendanceService.decideCorrectionRequest(user, requestId, dto);
+  }
+
+  @Get('manager/records/:employeeId')
+  @RequirePermissions('ATTENDANCE_VIEW')
+  @ApiOperation({
+    summary:
+      'Get employee attendance timeline with hierarchy validation strictly enforcing team reporting scope',
+  })
+  async getManagerEmployeeDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('employeeId') employeeId: string,
+    @Query('date') date?: string,
+  ) {
+    return this.attendanceService.getManagerEmployeeDetail(user, employeeId, date);
+  }
+
   @Get('summary')
   @RequirePermissions('ATTENDANCE_VIEW')
   @ApiOperation({ summary: 'Get current daily attendance summary across organization' })
@@ -222,6 +287,7 @@ export class AttendanceController {
 }
 
 @Module({
+  imports: [EmployeesModule],
   controllers: [
     AttendanceController,
     OfficeLocationsController,
