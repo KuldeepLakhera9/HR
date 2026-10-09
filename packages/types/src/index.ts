@@ -31,11 +31,19 @@ export interface PermissionDefinition {
   description?: string;
 }
 
-// 2. Attendance Modes (Requirement 25)
-export type AttendanceMode = 'OFFICE' | 'OFFICIAL_VISIT' | 'WORK_FROM_HOME';
+// 2. Attendance Modes & Statuses
+export type AttendanceMode = 'OFFICE' | 'OFFICIAL_VISIT' | 'WFH' | 'WORK_FROM_HOME';
 
 export type AttendanceStatus =
-  'PRESENT' | 'ABSENT' | 'HALF_DAY' | 'ON_LEAVE' | 'HOLIDAY' | 'WEEK_OFF';
+  | 'PRESENT'
+  | 'ABSENT'
+  | 'HALF_DAY'
+  | 'LATE'
+  | 'ON_LEAVE'
+  | 'HOLIDAY'
+  | 'WEEK_OFF'
+  | 'WEEKEND_OFF'
+  | 'PENDING';
 
 // 3. User & Auth Profile
 export type UserStatus = 'ACTIVE' | 'INACTIVE' | 'SUSPENDED' | 'LOCKED';
@@ -583,4 +591,167 @@ export interface EmployeeImportPreviewResult {
   errorRowsCount: number;
   errors: EmployeeImportRowError[];
   previewData: EmployeeImportRow[];
+}
+
+// -----------------------------------------------------------------------------
+// 12. Phase 4: Attendance Engine Types & DTOs
+// -----------------------------------------------------------------------------
+
+export type AttendanceEventType = 'CHECK_IN' | 'CHECK_OUT' | 'BREAK_START' | 'BREAK_END';
+
+export type GeofenceVerificationStatus =
+  'VERIFIED' | 'OUTSIDE_GEOFENCE' | 'LOW_ACCURACY' | 'EXEMPT' | 'FAILED';
+
+export type AttendanceDayStatus =
+  'PRESENT' | 'HALF_DAY' | 'LATE' | 'ABSENT' | 'ON_LEAVE' | 'HOLIDAY' | 'WEEKEND_OFF' | 'PENDING';
+
+export type CorrectionStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export type AttendanceExceptionType =
+  | 'OUTSIDE_GEOFENCE'
+  | 'LOW_GPS_ACCURACY'
+  | 'MISSING_CHECKOUT'
+  | 'OVERLAPPING_SESSION'
+  | 'SUSPICIOUS_TIMING'
+  | 'POLICY_VIOLATION';
+
+export type SessionStatus = 'OPEN' | 'COMPLETED' | 'AUTO_CLOSED';
+
+export interface AttendancePolicyDto {
+  id: string;
+  organizationId: string;
+  branchId?: string | null;
+  name: string;
+  code: string;
+  description?: string | null;
+  isDefault: boolean;
+  standardWorkMinutes: number;
+  halfDayThresholdMinutes: number;
+  fullDayThresholdMinutes: number;
+  gracePeriodMinutes: number;
+  maxCheckInDelayMinutes: number;
+  maxDailyBreakMinutes: number;
+  maxSingleBreakMinutes: number;
+  allowMultipleSessions: boolean;
+  overnightShiftAllowed: boolean;
+  workingDayStartHour: number;
+  timezone: string;
+  geofenceEnforcement: boolean;
+  maxGpsAccuracyMeters: number;
+  version: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  isActive: boolean;
+}
+
+export interface ShiftDto {
+  id: string;
+  organizationId: string;
+  policyId?: string | null;
+  name: string;
+  code: string;
+  description?: string | null;
+  startTime: string; // "HH:mm"
+  endTime: string; // "HH:mm"
+  isOvernight: boolean;
+  workDays: number[];
+  breakDurationMinutes: number;
+  color?: string | null;
+  isActive: boolean;
+}
+
+export interface ShiftAssignmentDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  shiftId: string;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  shift?: ShiftDto;
+}
+
+export interface AttendanceSessionDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  date: string;
+  sessionNumber: number;
+  checkInTime: string;
+  checkOutTime?: string | null;
+  totalWorkMinutes: number;
+  totalBreakMinutes: number;
+  status: SessionStatus;
+}
+
+export interface AttendanceEventDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  sessionId?: string | null;
+  eventType: AttendanceEventType;
+  eventTimestamp: string;
+  attendanceMode: AttendanceMode;
+  latitude?: number | null;
+  longitude?: number | null;
+  accuracyMeters?: number | null;
+  branchId?: string | null;
+  distanceFromOfficeMeters?: number | null;
+  geofenceStatus: GeofenceVerificationStatus;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface AttendanceDailySummaryDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  date: string;
+  firstCheckIn?: string | null;
+  lastCheckOut?: string | null;
+  totalWorkMinutes: number;
+  totalBreakMinutes: number;
+  lateMinutes: number;
+  earlyExitMinutes: number;
+  overtimeMinutes: number;
+  status: AttendanceDayStatus;
+  shiftId?: string | null;
+  policyId?: string | null;
+  isCorrected: boolean;
+  correctionNotes?: string | null;
+}
+
+export interface AttendanceCorrectionRequestDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  targetDate: string;
+  requestedCheckIn?: string | null;
+  requestedCheckOut?: string | null;
+  reason: string;
+  status: CorrectionStatus;
+  submittedAt: string;
+  decision?: {
+    reviewerName?: string;
+    decision: CorrectionStatus;
+    reviewNotes?: string;
+    decidedAt: string;
+  } | null;
+}
+
+export interface PunchRequestDto {
+  eventType: AttendanceEventType;
+  latitude?: number;
+  longitude?: number;
+  accuracyMeters?: number;
+  timestamp?: string; // Client timestamp for freshness skew check
+  idempotencyKey: string;
+  deviceInfo?: string;
+}
+
+export interface PunchResponseDto {
+  success: boolean;
+  message: string;
+  event: AttendanceEventDto;
+  session: AttendanceSessionDto;
+  summary?: AttendanceDailySummaryDto | null;
 }

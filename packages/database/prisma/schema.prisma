@@ -46,6 +46,14 @@ model Organization {
   auditLogs      AuditLog[]
   systemSettings SystemSetting[]
   employees      Employee[]
+  attendancePolicies           AttendancePolicy[]
+  shifts                       Shift[]
+  shiftAssignments             ShiftAssignment[]
+  attendanceSessions           AttendanceSession[]
+  attendanceEvents             AttendanceEvent[]
+  attendanceDailySummaries     AttendanceDailySummary[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
+  attendanceExceptions         AttendanceException[]
 
   @@index([code])
   @@index([isActive])
@@ -81,6 +89,8 @@ model Branch {
 
   users                 User[]
   employments           EmployeeEmployment[]
+  attendancePolicies    AttendancePolicy[]
+  attendanceEvents      AttendanceEvent[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -198,7 +208,11 @@ model User {
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
   employee            Employee?
-  performedHistories  EmployeeHistory[]    @relation("HistoryActor")
+  performedHistories  EmployeeHistory[]              @relation("HistoryActor")
+  assignedShifts      ShiftAssignment[]              @relation("ShiftAssigner")
+  recordedAttendanceEvents AttendanceEvent[]          @relation("AttendanceActor")
+  decidedCorrections  AttendanceCorrectionDecision[] @relation("CorrectionReviewer")
+  resolvedAttendanceExceptions AttendanceException[]  @relation("ExceptionResolver")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -452,6 +466,12 @@ model Employee {
   documents          EmployeeDocumentMetadata[]
   headedDepartments  Department[]             @relation("DepartmentHead")
   managedEmployments EmployeeEmployment[]      @relation("EmployeeManager")
+  shiftAssignments             ShiftAssignment[]
+  attendanceSessions           AttendanceSession[]
+  attendanceEvents             AttendanceEvent[]
+  attendanceDailySummaries     AttendanceDailySummary[]
+  attendanceCorrectionRequests AttendanceCorrectionRequest[]
+  attendanceExceptions         AttendanceException[]
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -590,4 +610,343 @@ model EmployeeDocumentMetadata {
   @@index([documentType])
   @@index([isVerified])
   @@map("employee_documents_metadata")
+}
+
+// -----------------------------------------------------------------------------
+// 6. Phase 4: Attendance Engine Enums & Models
+// -----------------------------------------------------------------------------
+
+enum AttendanceMode {
+  OFFICE
+  OFFICIAL_VISIT
+  WFH
+}
+
+enum AttendanceEventType {
+  CHECK_IN
+  CHECK_OUT
+  BREAK_START
+  BREAK_END
+}
+
+enum GeofenceVerificationStatus {
+  VERIFIED
+  OUTSIDE_GEOFENCE
+  LOW_ACCURACY
+  EXEMPT
+  FAILED
+}
+
+enum AttendanceDayStatus {
+  PRESENT
+  HALF_DAY
+  LATE
+  ABSENT
+  ON_LEAVE
+  HOLIDAY
+  WEEKEND_OFF
+  PENDING
+}
+
+enum CorrectionStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum AttendanceExceptionType {
+  OUTSIDE_GEOFENCE
+  LOW_GPS_ACCURACY
+  MISSING_CHECKOUT
+  OVERLAPPING_SESSION
+  SUSPICIOUS_TIMING
+  POLICY_VIOLATION
+}
+
+enum SessionStatus {
+  OPEN
+  COMPLETED
+  AUTO_CLOSED
+}
+
+model AttendancePolicy {
+  id                      String                  @id @default(uuid())
+  organizationId          String
+  organization            Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId                String?
+  branch                  Branch?                 @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  name                    String
+  code                    String
+  description             String?
+  isDefault               Boolean                 @default(false)
+
+  // Working hour rules in minutes
+  standardWorkMinutes     Int                     @default(480)
+  halfDayThresholdMinutes Int                     @default(240)
+  fullDayThresholdMinutes Int                     @default(420)
+  gracePeriodMinutes      Int                     @default(15)
+  maxCheckInDelayMinutes  Int                     @default(120)
+
+  // Break rules
+  maxDailyBreakMinutes    Int                     @default(60)
+  maxSingleBreakMinutes   Int                     @default(45)
+
+  // Working day boundary and overnight strategy
+  allowMultipleSessions   Boolean                 @default(true)
+  overnightShiftAllowed   Boolean                 @default(false)
+  workingDayStartHour     Int                     @default(5) // 05:00 AM cutoff
+
+  // Geofence enforcement
+  timezone                String                  @default("Asia/Kolkata")
+  geofenceEnforcement     Boolean                 @default(true)
+  maxGpsAccuracyMeters    Int                     @default(100)
+
+  // Policy versioning & effective dates
+  version                 Int                     @default(1)
+  effectiveFrom           DateTime                @default(now())
+  effectiveTo             DateTime?
+  isActive                Boolean                 @default(true)
+
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  shifts                  Shift[]
+  dailySummaries          AttendanceDailySummary[]
+
+  @@unique([organizationId, code, version])
+  @@index([organizationId])
+  @@index([branchId])
+  @@index([effectiveFrom, effectiveTo])
+  @@index([isActive])
+  @@map("attendance_policies")
+}
+
+model Shift {
+  id                   String                   @id @default(uuid())
+  organizationId       String
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  policyId             String?
+  policy               AttendancePolicy?        @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  name                 String
+  code                 String
+  description          String?
+  startTime            String                   // "09:00" in 24h format
+  endTime              String                   // "18:00" in 24h format
+  isOvernight          Boolean                  @default(false)
+  workDays             Int[]                    @default([1, 2, 3, 4, 5]) // 1=Mon, 7=Sun
+  breakDurationMinutes Int                      @default(60)
+  color                String?                  @default("#3b82f6")
+  isActive             Boolean                  @default(true)
+
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  assignments          ShiftAssignment[]
+  dailySummaries       AttendanceDailySummary[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([policyId])
+  @@index([isActive])
+  @@map("shifts")
+}
+
+model ShiftAssignment {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  shiftId        String
+  shift          Shift         @relation(fields: [shiftId], references: [id], onDelete: Cascade)
+
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  assignedById   String?
+  assignedBy     User?         @relation("ShiftAssigner", fields: [assignedById], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([shiftId])
+  @@index([effectiveFrom, effectiveTo])
+  @@map("shift_assignments")
+}
+
+model AttendanceSession {
+  id                String            @id @default(uuid())
+  organizationId    String
+  organization      Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee          @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  date              DateTime          // Normalized working day (UTC midnight)
+  sessionNumber     Int               @default(1)
+
+  checkInTime       DateTime          // UTC authoritative
+  checkOutTime      DateTime?         // UTC authoritative
+  totalWorkMinutes  Int               @default(0)
+  totalBreakMinutes Int               @default(0)
+  status            SessionStatus     @default(OPEN)
+
+  events            AttendanceEvent[]
+
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@unique([employeeId, date, sessionNumber])
+  @@index([organizationId])
+  @@index([employeeId, date])
+  @@index([status])
+  @@map("attendance_sessions")
+}
+
+model AttendanceEvent {
+  id                       String                     @id @default(uuid())
+  organizationId           String
+  organization             Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId               String
+  employee                 Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  sessionId                String?
+  session                  AttendanceSession?         @relation(fields: [sessionId], references: [id], onDelete: SetNull)
+
+  eventType                AttendanceEventType
+  eventTimestamp           DateTime                   @default(now()) // Authoritative server UTC
+  attendanceMode           AttendanceMode             @default(OFFICE)
+
+  // Geolocation & geofence verification snapshot
+  latitude                 Float?
+  longitude                Float?
+  accuracyMeters           Float?
+  branchId                 String?
+  branch                   Branch?                    @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  distanceFromOfficeMeters  Float?
+  geofenceStatus           GeofenceVerificationStatus @default(VERIFIED)
+
+  // Anti-replay & integrity
+  idempotencyKey           String                     @unique
+  deviceInfo               String?
+  ipAddress                String?
+  actorUserId              String
+  actorUser                User                       @relation("AttendanceActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  metadata                 Json?
+
+  createdAt                DateTime                   @default(now()) // Append-only immutable log
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([sessionId])
+  @@index([eventTimestamp])
+  @@index([idempotencyKey])
+  @@map("attendance_events")
+}
+
+model AttendanceDailySummary {
+  id                String              @id @default(uuid())
+  organizationId    String
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId        String
+  employee          Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date              DateTime            // Normalized working day (UTC midnight)
+
+  firstCheckIn      DateTime?
+  lastCheckOut      DateTime?
+  totalWorkMinutes  Int                 @default(0)
+  totalBreakMinutes Int                 @default(0)
+  lateMinutes       Int                 @default(0)
+  earlyExitMinutes  Int                 @default(0)
+  overtimeMinutes   Int                 @default(0)
+
+  status            AttendanceDayStatus @default(PENDING)
+  shiftId           String?
+  shift             Shift?              @relation(fields: [shiftId], references: [id], onDelete: SetNull)
+  policyId          String?
+  policy            AttendancePolicy?   @relation(fields: [policyId], references: [id], onDelete: SetNull)
+
+  isCorrected       Boolean             @default(false)
+  correctionNotes   String?
+
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([organizationId, employeeId, date])
+  @@index([organizationId, date])
+  @@index([employeeId, date])
+  @@index([status])
+  @@map("attendance_daily_summaries")
+}
+
+model AttendanceCorrectionRequest {
+  id                 String                        @id @default(uuid())
+  organizationId     String
+  organization       Organization                  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId         String
+  employee           Employee                      @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  targetDate         DateTime
+  requestedCheckIn   DateTime?
+  requestedCheckOut  DateTime?
+  reason             String
+  status             CorrectionStatus              @default(PENDING)
+
+  decision           AttendanceCorrectionDecision?
+
+  submittedAt        DateTime                      @default(now())
+  updatedAt          DateTime                      @updatedAt
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([status])
+  @@index([targetDate])
+  @@map("attendance_correction_requests")
+}
+
+model AttendanceCorrectionDecision {
+  id                   String                      @id @default(uuid())
+  requestId            String                      @unique
+  request              AttendanceCorrectionRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  reviewerId           String
+  reviewer             User                        @relation("CorrectionReviewer", fields: [reviewerId], references: [id], onDelete: Restrict)
+
+  decision             CorrectionStatus
+  originalWorkMinutes  Int
+  correctedWorkMinutes Int
+  reviewNotes          String
+  decidedAt            DateTime                    @default(now())
+
+  @@index([reviewerId])
+  @@index([decidedAt])
+  @@map("attendance_correction_decisions")
+}
+
+model AttendanceException {
+  id             String                  @id @default(uuid())
+  organizationId String
+  organization   Organization            @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee                @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date           DateTime
+
+  exceptionType  AttendanceExceptionType
+  severity       String                  @default("MEDIUM") // LOW, MEDIUM, HIGH
+  details        Json
+  resolved       Boolean                 @default(false)
+  resolvedAt     DateTime?
+  resolvedById   String?
+  resolvedBy     User?                   @relation("ExceptionResolver", fields: [resolvedById], references: [id], onDelete: SetNull)
+
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([exceptionType])
+  @@index([resolved])
+  @@map("attendance_exceptions")
 }
