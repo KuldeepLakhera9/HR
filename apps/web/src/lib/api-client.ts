@@ -756,6 +756,21 @@ export const visitsApi = {
     return res;
   },
 
+  async getTeamVisits(params?: {
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams({ scope: 'team' });
+    if (params?.status) query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const res = await fetchWithAuth<any>(`/visits?${query.toString()}`);
+    return res;
+  },
+
   async getOrganizationVisits(params?: {
     status?: string;
     search?: string;

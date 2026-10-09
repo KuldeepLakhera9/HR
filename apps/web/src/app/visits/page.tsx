@@ -5,6 +5,7 @@ import { AppShell } from '../../layouts/AppShell';
 import { useAuth } from '../../context/AuthContext';
 import { visitsApi, attendanceApi } from '../../lib/api-client';
 import { useGeolocation } from '../../hooks/useGeolocation';
+import { ManagerVisitInbox } from '../../features/visits/components/ManagerVisitInbox';
 import {
   Button,
   Badge,
@@ -1326,106 +1327,7 @@ export default function VisitsPage() {
         {/* ======================================================== */}
         {activeTab === 'approvals' && isManager && (
           <div className="space-y-4">
-            {pendingVisits.length === 0 ? (
-              <EmptyState
-                title="Inbox Zero"
-                description="All official visit requests from your reporting team have been reviewed."
-                icon={<CheckCircle2 className="h-6 w-6 text-emerald-600" />}
-              />
-            ) : (
-              <div className="space-y-3">
-                {pendingVisits.map((visit) => {
-                  const isSelfRequest =
-                    visit.employee?.id === user?.employeeCode || visit.employeeId === user?.id;
-
-                  return (
-                    <Card
-                      key={visit.id}
-                      className="p-4 sm:p-5 border-stone-200 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
-                    >
-                      <div className="space-y-2 max-w-3xl">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-stone-900 text-sm sm:text-base">
-                            {visit.employee?.displayName || 'Team Member'}
-                          </span>
-                          <span className="text-xs px-2 py-0.5 rounded bg-stone-100 text-stone-600 font-mono">
-                            {visit.employee?.employeeCode}
-                          </span>
-                          {renderStatusBadge(visit.status)}
-                          {isSelfRequest && (
-                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded bg-rose-100 text-rose-800">
-                              Self-Request (Cannot Review)
-                            </span>
-                          )}
-                        </div>
-
-                        <div>
-                          <h4 className="font-semibold text-stone-800 text-sm">{visit.title}</h4>
-                          <p className="text-xs text-stone-600 mt-0.5">{visit.purpose}</p>
-                        </div>
-
-                        <div className="flex flex-wrap items-center gap-3 text-xs text-stone-500 pt-1">
-                          <span className="flex items-center gap-1.5">
-                            <Calendar className="h-3.5 w-3.5 text-stone-400" />
-                            {visit.startDate.slice(0, 10)} to {visit.endDate.slice(0, 10)} (
-                            {visit.expectedDurationDays} days)
-                          </span>
-
-                          {visit.destinations.map((d, i) => (
-                            <span
-                              key={i}
-                              className="flex items-center gap-1.5 text-stone-700 bg-amber-50/60 px-2 py-0.5 rounded border border-amber-100"
-                            >
-                              <MapPin className="h-3.5 w-3.5 text-amber-600" />
-                              {d.destinationName} ({d.city || 'Site'}) • {d.radiusMeters}m
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {/* Review Buttons */}
-                      <div className="flex items-center gap-2 self-end lg:self-center shrink-0">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={isSelfRequest}
-                          className="border-rose-300 text-rose-700 hover:bg-rose-50"
-                          leftIcon={<XCircle className="h-4 w-4" />}
-                          onClick={() =>
-                            setDecisionModal({
-                              isOpen: true,
-                              visit,
-                              decision: 'REJECTED',
-                              comments: '',
-                              isSubmitting: false,
-                            })
-                          }
-                        >
-                          Reject
-                        </Button>
-                        <Button
-                          size="sm"
-                          disabled={isSelfRequest}
-                          className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                          leftIcon={<CheckCircle2 className="h-4 w-4" />}
-                          onClick={() =>
-                            setDecisionModal({
-                              isOpen: true,
-                              visit,
-                              decision: 'APPROVED',
-                              comments: '',
-                              isSubmitting: false,
-                            })
-                          }
-                        >
-                          Approve Visit
-                        </Button>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
+            <ManagerVisitInbox />
           </div>
         )}
 
