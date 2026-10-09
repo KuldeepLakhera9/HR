@@ -81,4 +81,12 @@ export class CheckOutDto {
   })
   @IsOptional()
   isVisitConcluded?: boolean;
+
+  @ApiPropertyOptional({
+    description: 'Supporting approved WFH request ID if checking out of a WFH session',
+    example: 'b1c2d3e4-f5a6-7890-1234-bcdef0123456',
+  })
+  @IsString()
+  @IsOptional()
+  wfhRequestId?: string;
 }

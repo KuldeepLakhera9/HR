@@ -20,7 +20,11 @@ import {
   validateGpsAccuracy,
   validateTimestampFreshness,
 } from './utils/geofence.util';
-import { resolveWorkingDay, calculateShiftWindow } from './utils/policy-evaluator.util';
+import {
+  resolveWorkingDay,
+  calculateShiftWindow,
+  getTimezoneParts,
+} from './utils/policy-evaluator.util';
 import { calculateDailyAttendance } from './utils/daily-attendance-calculator.util';
 import { RecalculateAttendanceDto } from './dto/recalculate-attendance.dto';
 import { SubmitCorrectionRequestDto } from './dto/correction-request.dto';
@@ -31,7 +35,15 @@ import { ResolveExceptionDto } from './dto/resolve-exception.dto';
 import { HierarchyService } from '../employees/hierarchy.service';
 import { NotificationsService } from '../notifications/notifications.module';
 import { AttendanceDayStatus, AttendanceExceptionType } from '@hrms/types';
-import { VisitStatus, AttendanceMode, OfficialVisit, VisitDestination } from '@hrms/database';
+import {
+  VisitStatus,
+  AttendanceMode,
+  OfficialVisit,
+  VisitDestination,
+  WfhStatus,
+  WfhDurationType,
+  WfhRequest,
+} from '@hrms/database';
 
 export function formatCorrectionReason(
   category: string,
@@ -277,12 +289,13 @@ export class AttendanceService {
 
     // 2. Resolve requested attendance mode
     const mode = (
-      dto.attendanceMode || (dto.officialVisitId ? 'OFFICIAL_VISIT' : 'OFFICE')
+      dto.attendanceMode ||
+      (dto.officialVisitId ? 'OFFICIAL_VISIT' : dto.wfhRequestId ? 'WFH' : 'OFFICE')
     ).toUpperCase();
-    if (mode !== 'OFFICE' && mode !== 'OFFICIAL_VISIT') {
+    if (mode !== 'OFFICE' && mode !== 'OFFICIAL_VISIT' && mode !== 'WFH') {
       throw new BadRequestException({
         statusCode: 400,
-        message: `Attendance mode '${mode}' is not permitted in this phase. Only verified OFFICE and OFFICIAL_VISIT punches are supported.`,
+        message: `Attendance mode '${mode}' is not permitted. Only verified OFFICE, OFFICIAL_VISIT, and WFH punches are supported.`,
         code: 'UNAPPROVED_ATTENDANCE_MODE',
       });
     }
@@ -377,6 +390,7 @@ export class AttendanceService {
     let distanceMeters: number | null = null;
     let officialVisit: (OfficialVisit & { destinations: VisitDestination[] }) | null = null;
     let matchedDest: VisitDestination | null = null;
+    let wfhRequest: WfhRequest | null = null;
     let isGpsException = false;
     let verificationOutcome = 'VERIFIED';
 
@@ -601,8 +615,154 @@ export class AttendanceService {
           }
         }
       }
+    } else if (mode === 'WFH') {
+      // 5B. WFH ATTENDANCE VALIDATION
+      // Resolve WFH request (never trust client-supplied status or employeeId)
+      if (dto.wfhRequestId) {
+        wfhRequest = await this.prisma.wfhRequest.findFirst({
+          where: {
+            id: dto.wfhRequestId,
+            organizationId: user.organizationId,
+          },
+        });
+
+        if (!wfhRequest) {
+          throw new NotFoundException({
+            statusCode: 404,
+            message: 'WFH request not found in organization.',
+            code: 'WFH_REQUEST_NOT_FOUND',
+          });
+        }
+      } else {
+        // Auto-resolve active approved WFH request for current working day
+        wfhRequest = await this.prisma.wfhRequest.findFirst({
+          where: {
+            organizationId: user.organizationId,
+            employeeId: employee.id,
+            status: WfhStatus.APPROVED,
+            startDate: { lte: workingDateUtc },
+            endDate: { gte: workingDateUtc },
+          },
+          orderBy: { startDate: 'asc' },
+        });
+
+        if (!wfhRequest) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: 'No approved WFH request active for today found for your employee profile.',
+            code: 'WFH_REQUEST_NOT_FOUND',
+          });
+        }
+      }
+
+      // Check ownership
+      if (wfhRequest.employeeId !== employee.id) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: "You are not authorized to check in for another employee's WFH request.",
+          code: 'WFH_NOT_OWNED',
+        });
+      }
+
+      // Check request status
+      if (wfhRequest.status === WfhStatus.CANCELLED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'WFH request has been cancelled.',
+          code: 'WFH_ALREADY_CANCELLED',
+        });
+      }
+      if (wfhRequest.status !== WfhStatus.APPROVED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: `WFH request status is "${wfhRequest.status}". Only APPROVED requests permit remote check-in.`,
+          code: 'WFH_NOT_APPROVED',
+        });
+      }
+
+      // Check date window
+      if (
+        workingDateUtc.getTime() < wfhRequest.startDate.getTime() ||
+        workingDateUtc.getTime() > wfhRequest.endDate.getTime()
+      ) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: `Current date is outside the approved WFH window (${wfhRequest.startDate.toISOString().split('T')[0]} to ${wfhRequest.endDate.toISOString().split('T')[0]}).`,
+          code: 'WFH_OUTSIDE_DATE_WINDOW',
+        });
+      }
+
+      // Check day portion / allowed time window against shift
+      if (
+        wfhRequest.durationType === WfhDurationType.FIRST_HALF ||
+        wfhRequest.durationType === WfhDurationType.SECOND_HALF
+      ) {
+        const nowParts = getTimezoneParts(now, timezone);
+        const [wY, wM, wD] = workingDateStr.split('-').map(Number);
+        const dayOffset = nowParts.day - wD;
+        const nowMinutes =
+          nowParts.hour * 60 + nowParts.minute + (dayOffset > 0 ? dayOffset * 24 * 60 : 0);
+
+        let startMinutes = 9 * 60;
+        let endMinutes = 18 * 60;
+        if (shift) {
+          const [sH, sM] = shift.startTime.split(':').map(Number);
+          const [eH, eM] = shift.endTime.split(':').map(Number);
+          startMinutes = sH * 60 + sM;
+          const isOvernight = shift.isOvernight || eH < sH || (eH === sH && eM < sM);
+          endMinutes = eH * 60 + eM + (isOvernight ? 24 * 60 : 0);
+        }
+        const shiftMidpointMinutes = startMinutes + Math.floor((endMinutes - startMinutes) / 2);
+        const midH = Math.floor((shiftMidpointMinutes % (24 * 60)) / 60);
+        const midM = shiftMidpointMinutes % 60;
+        const midpointFormatted = `${String(midH).padStart(2, '0')}:${String(midM).padStart(2, '0')}`;
+        const currentFormatted = `${String(nowParts.hour).padStart(2, '0')}:${String(nowParts.minute).padStart(2, '0')}`;
+
+        if (
+          wfhRequest.durationType === WfhDurationType.FIRST_HALF &&
+          nowMinutes > shiftMidpointMinutes
+        ) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: `Approved WFH request is for FIRST_HALF only. Current check-in time (${currentFormatted}) is past the shift midpoint (${midpointFormatted}).`,
+            code: 'WFH_HALF_DAY_MISMATCH',
+          });
+        }
+
+        if (
+          wfhRequest.durationType === WfhDurationType.SECOND_HALF &&
+          nowMinutes < shiftMidpointMinutes
+        ) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: `Approved WFH request is for SECOND_HALF only. Current check-in time (${currentFormatted}) is before the shift midpoint (${midpointFormatted}).`,
+            code: 'WFH_HALF_DAY_MISMATCH',
+          });
+        }
+      }
+
+      // Home GPS privacy: Do NOT collect home GPS by default.
+      if (
+        dto.latitude !== undefined &&
+        dto.longitude !== undefined &&
+        dto.latitude !== null &&
+        dto.longitude !== null
+      ) {
+        const coordCheck = validateCoordinates(dto.latitude, dto.longitude);
+        if (!coordCheck.valid) {
+          throw new BadRequestException({
+            statusCode: 400,
+            message: coordCheck.error || 'Invalid GPS coordinates provided.',
+            code: 'INVALID_COORDINATES',
+          });
+        }
+      }
+
+      // WFH punches are exempt from office geofencing
+      isGpsException = true;
+      verificationOutcome = 'WFH_VERIFIED';
     } else {
-      // 5B. OFFICE CHECK-IN VALIDATION
+      // 5C. OFFICE CHECK-IN VALIDATION
       if (
         dto.latitude === undefined ||
         dto.latitude === null ||
@@ -811,6 +971,7 @@ export class AttendanceService {
             status: 'OPEN',
             attendanceMode: mode as AttendanceMode,
             officialVisitId: officialVisit ? officialVisit.id : null,
+            wfhRequestId: wfhRequest ? wfhRequest.id : null,
             totalWorkMinutes: 0,
             totalBreakMinutes: 0,
           },
@@ -832,12 +993,13 @@ export class AttendanceService {
             officeLocationId: office?.id ?? null,
             distanceFromOfficeMeters:
               distanceMeters !== null && distanceMeters !== Infinity ? distanceMeters : null,
-            geofenceStatus: isGpsException ? 'EXEMPT' : 'VERIFIED',
+            geofenceStatus: mode === 'WFH' ? 'EXEMPT' : isGpsException ? 'EXEMPT' : 'VERIFIED',
             idempotencyKey: dto.idempotencyKey,
             deviceInfo: dto.deviceInfo ?? null,
             ipAddress: clientIp ?? null,
             actorUserId: user.id,
             officialVisitId: officialVisit ? officialVisit.id : null,
+            wfhRequestId: wfhRequest ? wfhRequest.id : null,
             metadata: {
               policyId: policy.id,
               shiftId: shift?.id ?? null,
@@ -846,6 +1008,10 @@ export class AttendanceService {
               officialVisitTitle: officialVisit?.title ?? null,
               destinationName: matchedDest?.destinationName ?? null,
               isException: isGpsException,
+              isWfh: mode === 'WFH',
+              wfhRequestId: wfhRequest?.id ?? null,
+              wfhDurationType: wfhRequest?.durationType ?? null,
+              wfhReason: wfhRequest?.reason ?? null,
             },
           },
         });
@@ -937,6 +1103,7 @@ export class AttendanceService {
             policyId: persistedPolicyId,
             primaryAttendanceMode: mode as AttendanceMode,
             officialVisitId: officialVisit ? officialVisit.id : null,
+            wfhRequestId: wfhRequest ? wfhRequest.id : null,
           },
           update: {
             status: dayStatus,
@@ -944,6 +1111,7 @@ export class AttendanceService {
             policyId: persistedPolicyId,
             primaryAttendanceMode: mode as AttendanceMode,
             officialVisitId: officialVisit ? officialVisit.id : null,
+            wfhRequestId: wfhRequest ? wfhRequest.id : null,
             ...(sessionCount === 0 ? { firstCheckIn: now, lateMinutes } : {}),
           },
         });
@@ -970,6 +1138,7 @@ export class AttendanceService {
           officeName: office?.name ?? null,
           officialVisitId: officialVisit?.id ?? null,
           destinationId: matchedDest?.id ?? null,
+          wfhRequestId: wfhRequest?.id ?? null,
           distanceMeters:
             distanceMeters !== null && distanceMeters !== Infinity
               ? Math.round(distanceMeters)
@@ -984,7 +1153,9 @@ export class AttendanceService {
       const successMessage =
         mode === 'OFFICIAL_VISIT'
           ? 'Official visit check-in verified and recorded successfully.'
-          : 'Office check-in verified and recorded successfully.';
+          : mode === 'WFH'
+            ? 'WFH check-in verified and recorded successfully.'
+            : 'Office check-in verified and recorded successfully.';
 
       return {
         success: true,
@@ -1129,6 +1300,7 @@ export class AttendanceService {
           eventTimestamp: serverNow,
           attendanceMode: activeSession.attendanceMode || 'OFFICE',
           officialVisitId: activeSession.officialVisitId ?? null,
+          wfhRequestId: activeSession.wfhRequestId ?? null,
           idempotencyKey: dto.idempotencyKey,
           deviceInfo: dto.deviceInfo ?? null,
           ipAddress: clientIp ?? null,
@@ -1152,6 +1324,7 @@ export class AttendanceService {
         employeeId: employee.id,
         sessionId: activeSession.id,
         eventId: event.id,
+        wfhRequestId: activeSession.wfhRequestId ?? null,
         reason: dto.reason,
       },
     });
@@ -1259,6 +1432,7 @@ export class AttendanceService {
             eventTimestamp: serverNow,
             attendanceMode: activeSession.attendanceMode || 'OFFICE',
             officialVisitId: activeSession.officialVisitId ?? null,
+            wfhRequestId: activeSession.wfhRequestId ?? null,
             idempotencyKey: dto.idempotencyKey,
             deviceInfo: dto.deviceInfo ?? null,
             ipAddress: clientIp ?? null,
@@ -1305,6 +1479,7 @@ export class AttendanceService {
         employeeId: employee.id,
         sessionId: activeSession.id,
         eventId: event.id,
+        wfhRequestId: activeSession.wfhRequestId ?? null,
         totalBreakMinutes,
       },
     });
@@ -1425,6 +1600,7 @@ export class AttendanceService {
 
         const isOfficialVisit =
           activeSession.attendanceMode === 'OFFICIAL_VISIT' || !!activeSession.officialVisitId;
+        const isWfh = activeSession.attendanceMode === 'WFH' || !!activeSession.wfhRequestId;
 
         // Optional Location validation under policy
         let checkoutDistanceMeters: number | null = null;
@@ -1484,7 +1660,7 @@ export class AttendanceService {
             }
           }
 
-          if (!isOfficialVisit) {
+          if (!isOfficialVisit && !isWfh) {
             const branchId = employee.employment?.branchId || null;
             const office = await this.resolveOfficeForEmployee(employee.organizationId, branchId);
             if (office) {
@@ -1542,8 +1718,9 @@ export class AttendanceService {
               sessionId: activeSession.id,
               eventType: 'BREAK_END',
               eventTimestamp: serverNow,
-              attendanceMode: isOfficialVisit ? 'OFFICIAL_VISIT' : 'OFFICE',
+              attendanceMode: isOfficialVisit ? 'OFFICIAL_VISIT' : isWfh ? 'WFH' : 'OFFICE',
               officialVisitId: activeSession.officialVisitId ?? null,
+              wfhRequestId: activeSession.wfhRequestId ?? null,
               idempotencyKey: `auto-break-end-${dto.idempotencyKey}`,
               deviceInfo: 'Auto-concluded on checkout',
               actorUserId: user.id,
@@ -1560,15 +1737,16 @@ export class AttendanceService {
             sessionId: activeSession.id,
             eventType: 'CHECK_OUT',
             eventTimestamp: serverNow,
-            attendanceMode: isOfficialVisit ? 'OFFICIAL_VISIT' : 'OFFICE',
+            attendanceMode: isOfficialVisit ? 'OFFICIAL_VISIT' : isWfh ? 'WFH' : 'OFFICE',
             officialVisitId: activeSession.officialVisitId ?? null,
+            wfhRequestId: activeSession.wfhRequestId ?? null,
             latitude: dto.latitude ?? null,
             longitude: dto.longitude ?? null,
             accuracyMeters: dto.accuracyMeters ?? null,
             branchId: employee.employment?.branchId ?? null,
             officeLocationId: officeLocationId,
             distanceFromOfficeMeters: checkoutDistanceMeters,
-            geofenceStatus: 'VERIFIED',
+            geofenceStatus: isWfh ? 'EXEMPT' : 'VERIFIED',
             idempotencyKey: dto.idempotencyKey,
             deviceInfo: dto.deviceInfo ?? null,
             ipAddress: clientIp ?? null,
@@ -1576,6 +1754,8 @@ export class AttendanceService {
             metadata: {
               workingDate: activeSession.date.toISOString().split('T')[0],
               isOfficialVisit,
+              isWfh,
+              wfhRequestId: activeSession.wfhRequestId ?? null,
             },
           },
         });
@@ -1666,6 +1846,8 @@ export class AttendanceService {
         eventId: event.id,
         mode: session.attendanceMode,
         officialVisitId: session.officialVisitId,
+        wfhRequestId: session.wfhRequestId,
+        isWfh: session.attendanceMode === 'WFH' || !!session.wfhRequestId,
         netWorkMinutes,
         grossMinutes,
         sessionBreakMinutes,
@@ -1689,9 +1871,16 @@ export class AttendanceService {
       }).catch(() => null);
     }
 
+    const successMessage =
+      session.attendanceMode === 'OFFICIAL_VISIT'
+        ? 'Official visit check-out verified and recorded successfully.'
+        : session.attendanceMode === 'WFH'
+          ? 'WFH check-out verified and recorded successfully.'
+          : 'Office check-out verified and recorded successfully.';
+
     return {
       success: true,
-      message: 'Office check-out verified and recorded successfully.',
+      message: successMessage,
       data: {
         session,
         event,
@@ -1854,8 +2043,10 @@ export class AttendanceService {
     const visitSession = allSessions.find(
       (s: any) => s.attendanceMode === 'OFFICIAL_VISIT' || s.officialVisitId,
     );
-    const primaryMode = visitSession ? 'OFFICIAL_VISIT' : 'OFFICE';
+    const wfhSession = allSessions.find((s: any) => s.attendanceMode === 'WFH' || s.wfhRequestId);
+    const primaryMode = visitSession ? 'OFFICIAL_VISIT' : wfhSession ? 'WFH' : 'OFFICE';
     const primaryVisitId = visitSession?.officialVisitId ?? null;
+    const primaryWfhId = wfhSession?.wfhRequestId ?? null;
 
     return tx.attendanceDailySummary.upsert({
       where: {
@@ -1881,6 +2072,7 @@ export class AttendanceService {
         policyId: persistedPolicyId,
         primaryAttendanceMode: primaryMode as AttendanceMode,
         officialVisitId: primaryVisitId,
+        wfhRequestId: primaryWfhId,
       },
       update: {
         firstCheckIn: calculation.firstCheckIn,
@@ -1895,6 +2087,7 @@ export class AttendanceService {
         policyId: persistedPolicyId,
         primaryAttendanceMode: primaryMode as AttendanceMode,
         officialVisitId: primaryVisitId,
+        wfhRequestId: primaryWfhId,
       },
     });
   }
@@ -2116,6 +2309,8 @@ export class AttendanceService {
         events: {
           orderBy: { eventTimestamp: 'asc' },
         },
+        officialVisit: true,
+        wfhRequest: true,
       },
     });
 
@@ -2256,6 +2451,8 @@ export class AttendanceService {
       take: limit,
       include: {
         shift: true,
+        officialVisit: true,
+        wfhRequest: true,
       },
     });
 
@@ -2270,6 +2467,8 @@ export class AttendanceService {
         events: {
           orderBy: { eventTimestamp: 'asc' },
         },
+        officialVisit: true,
+        wfhRequest: true,
       },
     });
 

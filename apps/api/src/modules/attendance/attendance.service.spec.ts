@@ -171,6 +171,11 @@ describe('AttendanceService', () => {
       visitLocationVerification: {
         create: jest.fn().mockResolvedValue({ id: 'loc-verif-1' }),
       },
+      wfhRequest: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        update: jest.fn().mockResolvedValue({ id: 'wfh-1', status: 'APPROVED' }),
+      },
       $transaction: jest.fn().mockImplementation(async (callback) => {
         return callback(prisma);
       }),
@@ -2279,6 +2284,155 @@ describe('AttendanceService', () => {
           update: expect.objectContaining({
             primaryAttendanceMode: 'OFFICIAL_VISIT',
             officialVisitId: 'visit-approved-1',
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('WFH Attendance Flow (Phase 5 Step 11)', () => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    const todayDate = new Date(`${todayStr}T00:00:00.000Z`);
+
+    const mockWfhRequest = {
+      id: 'wfh-req-1',
+      organizationId: mockOrgId,
+      employeeId: mockEmployeeId,
+      status: 'APPROVED',
+      startDate: todayDate,
+      endDate: todayDate,
+      durationType: 'FULL_DAY',
+      reason: 'Working from home due to home network upgrade',
+    };
+
+    it('successfully processes approved WFH check-in without requiring GPS', async () => {
+      prisma.wfhRequest.findFirst.mockResolvedValue(mockWfhRequest);
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-wfh-1',
+        attendanceMode: 'WFH',
+      };
+
+      const result = await service.checkIn(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('WFH check-in verified');
+      expect(prisma.attendanceSession.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            attendanceMode: 'WFH',
+            wfhRequestId: 'wfh-req-1',
+          }),
+        }),
+      );
+      expect(prisma.attendanceEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            attendanceMode: 'WFH',
+            wfhRequestId: 'wfh-req-1',
+            geofenceStatus: 'EXEMPT',
+          }),
+        }),
+      );
+    });
+
+    it('rejects WFH check-in if WFH request belongs to another employee', async () => {
+      prisma.wfhRequest.findFirst.mockResolvedValue({
+        ...mockWfhRequest,
+        employeeId: 'other-emp-id',
+      });
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-wfh-other',
+        wfhRequestId: 'wfh-req-1',
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(ForbiddenException);
+    });
+
+    it('rejects WFH check-in if request is not approved', async () => {
+      prisma.wfhRequest.findFirst.mockResolvedValue({
+        ...mockWfhRequest,
+        status: 'SUBMITTED',
+      });
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-wfh-pending',
+        wfhRequestId: 'wfh-req-1',
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects WFH check-in if request is cancelled', async () => {
+      prisma.wfhRequest.findFirst.mockResolvedValue({
+        ...mockWfhRequest,
+        status: 'CANCELLED',
+      });
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-wfh-cancelled',
+        wfhRequestId: 'wfh-req-1',
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('rejects WFH check-in if current date is outside approved date window', async () => {
+      const pastDate = new Date(Date.now() - 5 * 86400000);
+      prisma.wfhRequest.findFirst.mockResolvedValue({
+        ...mockWfhRequest,
+        startDate: pastDate,
+        endDate: pastDate,
+      });
+
+      const dto: CheckInDto = {
+        idempotencyKey: 'idem-wfh-expired',
+        wfhRequestId: 'wfh-req-1',
+      };
+
+      await expect(service.checkIn(mockUser, dto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('checks out of WFH session, bypasses office geofence and marks summary with WFH mode', async () => {
+      const openWfhSession = {
+        id: 'sess-wfh-1',
+        employeeId: mockEmployeeId,
+        date: todayDate,
+        status: 'OPEN',
+        attendanceMode: 'WFH',
+        wfhRequestId: 'wfh-req-1',
+        checkInTime: new Date(Date.now() - 4 * 3600000),
+        events: [
+          {
+            id: 'evt-in',
+            eventType: 'CHECK_IN',
+            eventTimestamp: new Date(Date.now() - 4 * 3600000),
+          },
+        ],
+      };
+
+      prisma.attendanceSession.findFirst.mockResolvedValue(openWfhSession);
+      prisma.attendanceEvent.findMany.mockResolvedValue(openWfhSession.events);
+      prisma.attendanceSession.update.mockResolvedValue({
+        ...openWfhSession,
+        status: 'COMPLETED',
+      });
+
+      const dto: CheckOutDto = {
+        idempotencyKey: 'idem-wfh-out-1',
+      };
+
+      const result = await service.checkOut(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(result.message).toContain('WFH check-out verified');
+      expect(prisma.attendanceEvent.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            attendanceMode: 'WFH',
+            wfhRequestId: 'wfh-req-1',
+            geofenceStatus: 'EXEMPT',
           }),
         }),
       );

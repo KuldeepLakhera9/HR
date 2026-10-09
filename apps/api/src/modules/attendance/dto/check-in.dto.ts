@@ -75,6 +75,14 @@ export class CheckInDto {
   officialVisitId?: string;
 
   @ApiPropertyOptional({
+    description: 'Supporting approved WFH request ID when checking in for work from home',
+    example: 'b1c2d3e4-f5a6-7890-1234-bcdef0123456',
+  })
+  @IsString()
+  @IsOptional()
+  wfhRequestId?: string;
+
+  @ApiPropertyOptional({
     description: 'Specific visit destination ID being attended',
     example: 'd1e2f3a4-b5c6-7890-1234-567890abcdef',
   })
