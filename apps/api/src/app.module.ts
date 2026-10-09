@@ -13,6 +13,7 @@ import { OrganizationModule } from './modules/organization/organization.module';
 import { EmployeesModule } from './modules/employees/employees.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { VisitsModule } from './modules/visits/visits.module';
+import { WfhModule } from './modules/wfh/wfh.module';
 import { LeaveModule } from './modules/leave/leave.module';
 import { ReportsModule } from './modules/reports/reports.module';
 import { DocumentsModule } from './modules/documents/documents.module';
@@ -47,6 +48,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     EmployeesModule,
     AttendanceModule,
     VisitsModule,
+    WfhModule,
     LeaveModule,
     ReportsModule,
     DocumentsModule,

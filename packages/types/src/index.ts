@@ -110,6 +110,7 @@ export interface ApiErrorResponse {
   success: false;
   message: string;
   statusCode: number;
+  code?: string;
   errors?: unknown;
   timestamp: string;
   path: string;

@@ -1,0 +1,1012 @@
+import {
+  BadRequestException,
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { HierarchyService } from '../employees/hierarchy.service';
+import { AttendancePoliciesService } from '../attendance/attendance-policies.service';
+import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
+import { CreateWfhRequestDto } from './dto/create-wfh-request.dto';
+import { UpdateWfhRequestDto } from './dto/update-wfh-request.dto';
+import { CancelWfhRequestDto } from './dto/cancel-wfh-request.dto';
+import { QueryWfhRequestsDto } from './dto/query-wfh-requests.dto';
+import { DecideWfhRequestDto } from './dto/decide-wfh-request.dto';
+import {
+  LeaveIntegrationService,
+  DefaultLeaveIntegrationService,
+} from './interfaces/leave-integration.interface';
+import { ApprovalDecision, Prisma, VisitStatus, WfhDurationType, WfhStatus } from '@prisma/client';
+
+@Injectable()
+export class WfhService {
+  private readonly leaveIntegration: LeaveIntegrationService;
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditService: AuditService,
+    private readonly hierarchyService: HierarchyService,
+    private readonly policiesService: AttendancePoliciesService,
+  ) {
+    this.leaveIntegration = new DefaultLeaveIntegrationService();
+  }
+
+  // Helper: Normalize ISO string to UTC Midnight
+  private normalizeDateToUtc(dateInput: string | Date): Date {
+    const d = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    if (isNaN(d.getTime())) {
+      throw new BadRequestException('Invalid date format provided');
+    }
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return new Date(`${year}-${month}-${day}T00:00:00.000Z`);
+  }
+
+  // Helper: Resolve active Employee record for authenticated user
+  private async resolveEmployee(user: AuthenticatedUser) {
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        organizationId: user.organizationId,
+        OR: [{ userId: user.id }, { employeeCode: user.employeeCode }],
+        deletedAt: null,
+      },
+      include: {
+        employment: true,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'No active employee profile linked to current user account.',
+        code: 'EMPLOYEE_NOT_FOUND',
+      });
+    }
+
+    const eligibleStatuses = ['ACTIVE', 'PROBATION', 'ON_NOTICE'];
+    if (!eligibleStatuses.includes(employee.status)) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message: `Employee is not in an active employment status (current status: ${employee.status}).`,
+        code: 'EMPLOYMENT_INACTIVE',
+      });
+    }
+
+    return employee;
+  }
+
+  // Helper: Overlap check across WFH, Official Visits, and Leave
+  private async checkOverlappingRequests(
+    tx: Prisma.TransactionClient,
+    employeeId: string,
+    organizationId: string,
+    startUtc: Date,
+    endUtc: Date,
+    excludeWfhId?: string,
+  ) {
+    // 1. Check existing WFH requests
+    const wfhWhere: Prisma.WfhRequestWhereInput = {
+      organizationId,
+      employeeId,
+      status: { in: [WfhStatus.SUBMITTED, WfhStatus.APPROVED] },
+      startDate: { lte: endUtc },
+      endDate: { gte: startUtc },
+    };
+    if (excludeWfhId) {
+      wfhWhere.id = { not: excludeWfhId };
+    }
+
+    const conflictingWfh = await tx.wfhRequest.findFirst({
+      where: wfhWhere,
+      select: {
+        id: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+        durationType: true,
+      },
+    });
+
+    if (conflictingWfh) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: `A work from home request is already ${conflictingWfh.status.toLowerCase()} for overlapping dates (${conflictingWfh.startDate.toISOString().slice(0, 10)} to ${conflictingWfh.endDate.toISOString().slice(0, 10)}).`,
+        code: 'WFH_OVERLAP_CONFLICT',
+      });
+    }
+
+    // 2. Check existing Official Visits
+    const conflictingVisit = await tx.officialVisit.findFirst({
+      where: {
+        organizationId,
+        employeeId,
+        status: { in: [VisitStatus.SUBMITTED, VisitStatus.APPROVED, VisitStatus.IN_PROGRESS] },
+        startDate: { lte: endUtc },
+        endDate: { gte: startUtc },
+      },
+      select: {
+        id: true,
+        title: true,
+        startDate: true,
+        endDate: true,
+        status: true,
+      },
+    });
+
+    if (conflictingVisit) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: `An official visit ("${conflictingVisit.title}") is already ${conflictingVisit.status.toLowerCase()} for overlapping dates.`,
+        code: 'OFFICIAL_VISIT_OVERLAP_CONFLICT',
+      });
+    }
+
+    // 3. Check Leave via explicit integration interface (do not fabricate fake leave data)
+    const leaveCheck = await this.leaveIntegration.checkOverlappingLeave(
+      employeeId,
+      organizationId,
+      startUtc,
+      endUtc,
+    );
+
+    if (leaveCheck.hasOverlap) {
+      throw new ConflictException({
+        statusCode: 409,
+        message: leaveCheck.reason || 'Approved leave already scheduled for overlapping dates.',
+        code: 'LEAVE_OVERLAP_CONFLICT',
+      });
+    }
+  }
+
+  /**
+   * 1. CREATE WFH REQUEST
+   */
+  async createWfhRequest(user: AuthenticatedUser, dto: CreateWfhRequestDto) {
+    const employee = await this.resolveEmployee(user);
+
+    const startUtc = this.normalizeDateToUtc(dto.startDate);
+    const endUtc = this.normalizeDateToUtc(dto.endDate);
+
+    if (startUtc > endUtc) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'End date must be on or after start date.',
+        code: 'INVALID_DATE_RANGE',
+      });
+    }
+
+    const durationType = dto.durationType || WfhDurationType.FULL_DAY;
+
+    // Validate duration type alignment
+    if (
+      durationType === WfhDurationType.FIRST_HALF ||
+      durationType === WfhDurationType.SECOND_HALF
+    ) {
+      if (startUtc.getTime() !== endUtc.getTime()) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message:
+            'Half-day WFH requests (FIRST_HALF or SECOND_HALF) can only be submitted for a single date.',
+          code: 'INVALID_HALF_DAY_RANGE',
+        });
+      }
+    } else if (durationType === WfhDurationType.CUSTOM_RANGE) {
+      if (startUtc.getTime() === endUtc.getTime()) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message:
+            'CUSTOM_RANGE duration type requires a multi-day date range (startDate < endDate). Use FULL_DAY for single days.',
+          code: 'INVALID_CUSTOM_RANGE',
+        });
+      }
+    }
+
+    // Policy & Shift Resolution
+    await this.policiesService.resolveEffectivePolicyAndShift(
+      employee.id,
+      startUtc,
+      user.organizationId,
+    );
+
+    // Atomic collision check and creation
+    const createdRequest = await this.prisma.$transaction(async (tx) => {
+      await this.checkOverlappingRequests(tx, employee.id, user.organizationId, startUtc, endUtc);
+
+      const request = await tx.wfhRequest.create({
+        data: {
+          organizationId: user.organizationId,
+          employeeId: employee.id,
+          startDate: startUtc,
+          endDate: endUtc,
+          durationType,
+          reason: dto.reason.trim(),
+          status: WfhStatus.SUBMITTED,
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+        },
+      });
+
+      return request;
+    });
+
+    // Record audit history
+    await this.auditService.record({
+      action: 'WFH_CREATED',
+      entity: 'WfhRequest',
+      entityId: createdRequest.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        startDate: createdRequest.startDate.toISOString(),
+        endDate: createdRequest.endDate.toISOString(),
+        durationType: createdRequest.durationType,
+        reason: createdRequest.reason,
+      },
+    });
+
+    return {
+      message: 'Work from home request submitted successfully',
+      data: createdRequest,
+    };
+  }
+
+  /**
+   * 2. LIST WFH REQUESTS (Scoped, Filtered, Paginated)
+   */
+  async getWfhRequests(user: AuthenticatedUser, query: QueryWfhRequestsDto) {
+    const employee = await this.resolveEmployee(user);
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    const isManager = user.roles.includes('MANAGER' as any);
+
+    const where: Prisma.WfhRequestWhereInput = {
+      organizationId: user.organizationId,
+    };
+
+    const scope = query.scope || 'my';
+
+    if (scope === 'organization') {
+      if (!isAdminOrHr) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: 'Organization-wide scope requires HR or Admin role',
+          code: 'FORBIDDEN_SCOPE',
+        });
+      }
+    } else if (scope === 'team') {
+      if (!isManager && !isAdminOrHr) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: 'Team scope requires Manager role',
+          code: 'FORBIDDEN_SCOPE',
+        });
+      }
+      const team = await this.hierarchyService.getTeam(employee.id, user.organizationId);
+      where.employeeId = { in: team.allMemberIds };
+    } else {
+      // scope === 'my'
+      where.employeeId = employee.id;
+    }
+
+    // Specific employee filter override
+    if (query.employeeId) {
+      if (query.employeeId === employee.id) {
+        where.employeeId = employee.id;
+      } else if (isAdminOrHr) {
+        where.employeeId = query.employeeId;
+      } else if (isManager) {
+        const isSubordinate = await this.hierarchyService.isManagerOf(
+          employee.id,
+          query.employeeId,
+          user.organizationId,
+        );
+        if (!isSubordinate) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            message: 'Employee is not within your reporting hierarchy',
+            code: 'FORBIDDEN_OUTSIDE_SCOPE',
+          });
+        }
+        where.employeeId = query.employeeId;
+      } else {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: 'Employees can only view their own WFH requests',
+          code: 'FORBIDDEN_OUTSIDE_SCOPE',
+        });
+      }
+    }
+
+    // Status filter
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    // Date range filter
+    if (query.startDate) {
+      const startUtc = this.normalizeDateToUtc(query.startDate);
+      where.endDate = { gte: startUtc };
+    }
+    if (query.endDate) {
+      const endUtc = this.normalizeDateToUtc(query.endDate);
+      where.startDate = { lte: endUtc };
+    }
+
+    // Search query on reason
+    if (query.search) {
+      where.reason = { contains: query.search.trim(), mode: 'insensitive' };
+    }
+
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.limit || 10));
+    const skip = (page - 1) * limit;
+
+    const [total, data] = await Promise.all([
+      this.prisma.wfhRequest.count({ where }),
+      this.prisma.wfhRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { startDate: 'desc' },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+          approvals: {
+            include: {
+              approver: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+            orderBy: { decidedAt: 'desc' },
+          },
+          cancelledBy: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      message: 'Work from home requests retrieved successfully',
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  /**
+   * 3. GET WFH REQUEST BY ID
+   */
+  async getWfhRequestById(user: AuthenticatedUser, id: string) {
+    const employee = await this.resolveEmployee(user);
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    const isManager = user.roles.includes('MANAGER' as any);
+
+    const request = await this.prisma.wfhRequest.findUnique({
+      where: { id },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+            managerId: true,
+          },
+        },
+        approvals: {
+          include: {
+            approver: {
+              select: {
+                id: true,
+                email: true,
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+          orderBy: { decidedAt: 'desc' },
+        },
+        cancelledBy: {
+          select: {
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    if (!request || request.organizationId !== user.organizationId) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Work from home request not found',
+        code: 'WFH_NOT_FOUND',
+      });
+    }
+
+    const isOwner = request.employeeId === employee.id;
+    if (!isOwner && !isAdminOrHr) {
+      if (isManager) {
+        const isSubordinate = await this.hierarchyService.isManagerOf(
+          employee.id,
+          request.employeeId,
+          user.organizationId,
+        );
+        if (!isSubordinate) {
+          throw new ForbiddenException({
+            statusCode: 403,
+            message: 'You are not authorized to view this WFH request',
+            code: 'FORBIDDEN_OUTSIDE_SCOPE',
+          });
+        }
+      } else {
+        throw new ForbiddenException({
+          statusCode: 403,
+          message: 'You are not authorized to view this WFH request',
+          code: 'FORBIDDEN_OUTSIDE_SCOPE',
+        });
+      }
+    }
+
+    return {
+      message: 'Work from home request retrieved successfully',
+      data: request,
+    };
+  }
+
+  /**
+   * 4. UPDATE WFH REQUEST (Handles Material Changes & Reapproval Trigger)
+   */
+  async updateWfhRequest(user: AuthenticatedUser, id: string, dto: UpdateWfhRequestDto) {
+    const employee = await this.resolveEmployee(user);
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+
+    const existing = await this.prisma.wfhRequest.findUnique({
+      where: { id },
+    });
+
+    if (!existing || existing.organizationId !== user.organizationId) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Work from home request not found',
+        code: 'WFH_NOT_FOUND',
+      });
+    }
+
+    const isOwner = existing.employeeId === employee.id;
+    if (!isOwner && !isAdminOrHr) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message: 'You are not authorized to modify this WFH request',
+        code: 'FORBIDDEN_OUTSIDE_SCOPE',
+      });
+    }
+
+    // Terminal status enforcement
+    const terminalStatuses: WfhStatus[] = [
+      WfhStatus.CANCELLED,
+      WfhStatus.REJECTED,
+      WfhStatus.COMPLETED,
+    ];
+    if (terminalStatuses.includes(existing.status)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: `Cannot update a WFH request in terminal status "${existing.status}"`,
+        code: 'INVALID_STATUS_TRANSITION',
+      });
+    }
+
+    const startUtc = dto.startDate ? this.normalizeDateToUtc(dto.startDate) : existing.startDate;
+    const endUtc = dto.endDate ? this.normalizeDateToUtc(dto.endDate) : existing.endDate;
+
+    if (startUtc > endUtc) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'End date must be on or after start date',
+        code: 'INVALID_DATE_RANGE',
+      });
+    }
+
+    const durationType = dto.durationType || existing.durationType;
+
+    if (
+      durationType === WfhDurationType.FIRST_HALF ||
+      durationType === WfhDurationType.SECOND_HALF
+    ) {
+      if (startUtc.getTime() !== endUtc.getTime()) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'Half-day WFH requests can only be configured for a single date.',
+          code: 'INVALID_HALF_DAY_RANGE',
+        });
+      }
+    } else if (durationType === WfhDurationType.CUSTOM_RANGE) {
+      if (startUtc.getTime() === endUtc.getTime()) {
+        throw new BadRequestException({
+          statusCode: 400,
+          message: 'CUSTOM_RANGE duration type requires a multi-day range (startDate < endDate).',
+          code: 'INVALID_CUSTOM_RANGE',
+        });
+      }
+    }
+
+    // Material Change Detection
+    const isMaterialChange =
+      startUtc.getTime() !== existing.startDate.getTime() ||
+      endUtc.getTime() !== existing.endDate.getTime() ||
+      durationType !== existing.durationType;
+
+    let targetStatus: WfhStatus = dto.status || existing.status;
+    let isReapprovalTriggered = false;
+
+    if (existing.status === WfhStatus.APPROVED && isMaterialChange) {
+      targetStatus = WfhStatus.SUBMITTED;
+      isReapprovalTriggered = true;
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      if (isMaterialChange) {
+        await this.checkOverlappingRequests(
+          tx,
+          existing.employeeId,
+          user.organizationId,
+          startUtc,
+          endUtc,
+          existing.id,
+        );
+      }
+
+      const res = await tx.wfhRequest.update({
+        where: { id: existing.id },
+        data: {
+          startDate: startUtc,
+          endDate: endUtc,
+          durationType,
+          reason: dto.reason ? dto.reason.trim() : existing.reason,
+          status: targetStatus,
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+          approvals: {
+            include: {
+              approver: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+            orderBy: { decidedAt: 'desc' },
+          },
+        },
+      });
+
+      return res;
+    });
+
+    // Write audit record
+    await this.auditService.record({
+      action: isReapprovalTriggered ? 'WFH_REAPPROVAL_TRIGGERED' : 'WFH_UPDATED',
+      entity: 'WfhRequest',
+      entityId: updated.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        previousStatus: existing.status,
+        newStatus: updated.status,
+        isReapprovalTriggered,
+        reason: updated.reason,
+      },
+    });
+
+    const responseMessage = isReapprovalTriggered
+      ? 'WFH request modified with material changes and returned to SUBMITTED for re-approval'
+      : 'WFH request updated successfully';
+
+    return {
+      message: responseMessage,
+      data: updated,
+      meta: { reapprovalTriggered: isReapprovalTriggered },
+    };
+  }
+
+  /**
+   * 5. CANCEL WFH REQUEST
+   */
+  async cancelWfhRequest(user: AuthenticatedUser, id: string, dto: CancelWfhRequestDto) {
+    const employee = await this.resolveEmployee(user);
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    const isManager = user.roles.includes('MANAGER' as any);
+
+    const request = await this.prisma.wfhRequest.findUnique({
+      where: { id },
+    });
+
+    if (!request || request.organizationId !== user.organizationId) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Work from home request not found',
+        code: 'WFH_NOT_FOUND',
+      });
+    }
+
+    if (request.status === WfhStatus.CANCELLED) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'WFH request is already cancelled',
+        code: 'WFH_ALREADY_CANCELLED',
+      });
+    }
+
+    const nonCancellableStatuses: WfhStatus[] = [WfhStatus.REJECTED, WfhStatus.COMPLETED];
+    if (nonCancellableStatuses.includes(request.status)) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: `Cannot cancel a WFH request in status "${request.status}"`,
+        code: 'WFH_ALREADY_TERMINAL',
+      });
+    }
+
+    const isOwner = request.employeeId === employee.id;
+    let isAuthorizedManager = false;
+    if (isManager && !isOwner) {
+      isAuthorizedManager = await this.hierarchyService.isManagerOf(
+        employee.id,
+        request.employeeId,
+        user.organizationId,
+      );
+    }
+
+    if (!isOwner && !isAdminOrHr && !isAuthorizedManager) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message: 'You are not authorized to cancel this WFH request',
+        code: 'FORBIDDEN_OUTSIDE_SCOPE',
+      });
+    }
+
+    // Commencement Policy: If today >= startDate, owning employee cannot self-cancel
+    const todayUtc = this.normalizeDateToUtc(new Date());
+    const hasCommenced = todayUtc.getTime() >= request.startDate.getTime();
+    if (hasCommenced && isOwner && !isAdminOrHr && !isAuthorizedManager) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message:
+          'WFH request has already commenced or is scheduled for today. Cancellation requires manager or HR authorization.',
+        code: 'WFH_ALREADY_COMMENCED',
+      });
+    }
+
+    const cancelledRequest = await this.prisma.wfhRequest.update({
+      where: { id: request.id },
+      data: {
+        status: WfhStatus.CANCELLED,
+        cancellationReason: dto.cancellationReason.trim(),
+        cancelledAt: new Date(),
+        cancelledById: user.id,
+      },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+          },
+        },
+      },
+    });
+
+    await this.auditService.record({
+      action: 'WFH_CANCELLED',
+      entity: 'WfhRequest',
+      entityId: cancelledRequest.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        reason: dto.cancellationReason,
+        cancelledBy: user.email,
+        wasCommenced: hasCommenced,
+        previousStatus: request.status,
+      },
+    });
+
+    return {
+      message: 'Work from home request cancelled successfully',
+      data: cancelledRequest,
+    };
+  }
+
+  /**
+   * 6. DECIDE WFH REQUEST (APPROVE / REJECT)
+   */
+  async decideWfhRequest(user: AuthenticatedUser, id: string, dto: DecideWfhRequestDto) {
+    const reviewerEmployee = await this.prisma.employee.findFirst({
+      where: {
+        organizationId: user.organizationId,
+        OR: [{ userId: user.id }, { employeeCode: user.employeeCode }],
+      },
+    });
+
+    const request = await this.prisma.wfhRequest.findUnique({
+      where: { id },
+      include: {
+        employee: true,
+      },
+    });
+
+    if (!request || request.organizationId !== user.organizationId) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Work from home request not found',
+        code: 'WFH_NOT_FOUND',
+      });
+    }
+
+    // 1. Prevent Self-Approval
+    const isSelfApproval =
+      (reviewerEmployee && request.employeeId === reviewerEmployee.id) ||
+      (request.employee && request.employee.userId === user.id);
+
+    if (isSelfApproval) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message:
+          'Self-approval is strictly disallowed. You cannot approve or reject your own WFH request.',
+        code: 'SELF_APPROVAL_DISALLOWED',
+      });
+    }
+
+    // 2. Status Validation
+    if (request.status === WfhStatus.CANCELLED) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Cannot review a WFH request that has been cancelled.',
+        code: 'WFH_ALREADY_CANCELLED',
+      });
+    }
+
+    if (request.status === WfhStatus.APPROVED || request.status === WfhStatus.REJECTED) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: `WFH request has already been ${request.status.toLowerCase()}.`,
+        code: 'REQUEST_ALREADY_DECIDED',
+      });
+    }
+
+    if (request.status !== WfhStatus.SUBMITTED) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: `WFH request must be in SUBMITTED status to be reviewed (current status: "${request.status}").`,
+        code: 'INVALID_STATUS_FOR_DECISION',
+      });
+    }
+
+    // 3. Manager Hierarchy Check OR HR/Admin
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    let isAuthorizedManager = false;
+    if (reviewerEmployee) {
+      isAuthorizedManager = await this.hierarchyService.isManagerOf(
+        reviewerEmployee.id,
+        request.employeeId,
+        user.organizationId,
+      );
+    }
+
+    if (!isAuthorizedManager && !isAdminOrHr) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message:
+          'Access denied: You are only authorized to review WFH requests from your assigned reporting team.',
+        code: 'FORBIDDEN_OUTSIDE_SCOPE',
+      });
+    }
+
+    const targetStatus =
+      dto.decision === ApprovalDecision.APPROVED ? WfhStatus.APPROVED : WfhStatus.REJECTED;
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Concurrency protection: atomic update where status is still SUBMITTED
+      const updateResult = await tx.wfhRequest.updateMany({
+        where: {
+          id: request.id,
+          organizationId: user.organizationId,
+          status: WfhStatus.SUBMITTED,
+        },
+        data: {
+          status: targetStatus,
+        },
+      });
+
+      if (updateResult.count === 0) {
+        throw new ConflictException({
+          statusCode: 409,
+          message: 'This WFH request has already been reviewed or altered by another reviewer.',
+          code: 'CONCURRENT_REVIEW_CONFLICT',
+        });
+      }
+
+      const approvalRecord = await tx.wfhApproval.create({
+        data: {
+          requestId: request.id,
+          approverId: user.id,
+          decision: dto.decision,
+          comments: dto.comments ? dto.comments.trim() : null,
+          decidedAt: new Date(),
+        },
+        include: {
+          approver: {
+            select: {
+              id: true,
+              email: true,
+              firstName: true,
+              lastName: true,
+            },
+          },
+        },
+      });
+
+      const updatedRequest = await tx.wfhRequest.findUnique({
+        where: { id: request.id },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+          approvals: {
+            include: {
+              approver: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+            orderBy: { decidedAt: 'desc' },
+          },
+        },
+      });
+
+      return { request: updatedRequest, approval: approvalRecord };
+    });
+
+    await this.auditService.record({
+      action: dto.decision === ApprovalDecision.APPROVED ? 'WFH_APPROVED' : 'WFH_REJECTED',
+      entity: 'WfhRequest',
+      entityId: request.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        decision: dto.decision,
+        comments: dto.comments,
+        requesterId: request.employeeId,
+      },
+    });
+
+    return {
+      message: `Work from home request ${dto.decision.toLowerCase()} successfully`,
+      data: result.request,
+      approval: result.approval,
+    };
+  }
+
+  /**
+   * 7. GET MANAGER PENDING WFH REQUESTS
+   */
+  async getManagerPendingWfh(user: AuthenticatedUser, query: QueryWfhRequestsDto) {
+    const employee = await this.resolveEmployee(user);
+    const team = await this.hierarchyService.getTeam(employee.id, user.organizationId);
+
+    const where: Prisma.WfhRequestWhereInput = {
+      organizationId: user.organizationId,
+      employeeId: { in: team.allMemberIds },
+      status: WfhStatus.SUBMITTED,
+    };
+
+    if (query.search) {
+      where.reason = { contains: query.search.trim(), mode: 'insensitive' };
+    }
+
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.min(100, Math.max(1, query.limit || 10));
+    const skip = (page - 1) * limit;
+
+    const [total, data] = await Promise.all([
+      this.prisma.wfhRequest.count({ where }),
+      this.prisma.wfhRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              firstName: true,
+              lastName: true,
+              displayName: true,
+            },
+          },
+          approvals: {
+            include: {
+              approver: {
+                select: {
+                  id: true,
+                  email: true,
+                  firstName: true,
+                  lastName: true,
+                },
+              },
+            },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      message: 'Pending team WFH requests retrieved successfully',
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+}
