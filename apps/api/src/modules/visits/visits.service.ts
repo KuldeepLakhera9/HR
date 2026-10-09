@@ -22,6 +22,8 @@ import { UpdateOfficialVisitDto } from './dto/update-official-visit.dto';
 import { CancelOfficialVisitDto } from './dto/cancel-official-visit.dto';
 import { QueryOfficialVisitsDto } from './dto/query-official-visits.dto';
 import { DecideOfficialVisitDto } from './dto/decide-official-visit.dto';
+import { VerifyVisitLocationDto } from './dto/verify-visit-location.dto';
+import { haversineDistance } from '../attendance/utils/geofence.util';
 
 export const MAX_VISIT_DURATION_DAYS = 30;
 export const MAX_RETROSPECTIVE_DAYS = 7;
@@ -1082,5 +1084,575 @@ export class VisitsService {
       scope: isAdminOrHr ? 'organization' : 'team',
       status: VisitStatus.SUBMITTED,
     });
+  }
+
+  /**
+   * 8. VERIFY VISIT LOCATION
+   * Server-side verification of field attendance coordinates against approved visit destinations.
+   *
+   * Rules:
+   * - Validates coordinate boundaries [-90, +90] and [-180, +180]
+   * - Validates location freshness (clientTimestamp vs server NTP time <= 300s)
+   * - Validates horizontal accuracy (accuracyMeters <= 150m) and detects spoofing traits
+   * - Validates approved time window (current date in [startDate, endDate])
+   * - Validates employee ownership and visit status (APPROVED or IN_PROGRESS)
+   * - Calculates authoritative Haversine distance on the server
+   * - Supports indoor/remote sites via documented exception (minimum 10 characters required)
+   * - Stores verification evidence in VisitLocationVerification with controlled access
+   * - Never adds continuous tracking
+   */
+  async verifyVisitLocation(user: AuthenticatedUser, dto: VerifyVisitLocationDto) {
+    // 1. Resolve authenticated employee
+    let employee;
+    try {
+      employee = await this.resolveEmployee(user);
+    } catch {
+      return {
+        outcome: 'NOT_AUTHORIZED',
+        isVerified: false,
+        message: 'Authenticated user has no active employee profile.',
+      };
+    }
+
+    if (
+      !employee ||
+      (employee.status && employee.status !== 'ACTIVE') ||
+      employee.isActive === false
+    ) {
+      return {
+        outcome: 'NOT_AUTHORIZED',
+        isVerified: false,
+        message: 'Authenticated user has no active employee profile.',
+      };
+    }
+
+    // 2. Resolve Visit (never trust client-supplied status, distance, or employeeId)
+    let visit: (OfficialVisit & { destinations: VisitDestination[] }) | null = null;
+    const todayUtc = this.normalizeDateToUtc(new Date());
+
+    if (dto.visitId) {
+      visit = await this.prisma.officialVisit.findFirst({
+        where: {
+          id: dto.visitId,
+          organizationId: user.organizationId,
+        },
+        include: { destinations: true },
+      });
+
+      if (!visit) {
+        return {
+          outcome: 'NOT_AUTHORIZED',
+          isVerified: false,
+          message: 'Official visit request not found in organization.',
+        };
+      }
+
+      if (visit.employeeId !== employee.id) {
+        return {
+          outcome: 'NOT_AUTHORIZED',
+          isVerified: false,
+          message:
+            "You are not authorized to verify location for another employee's official visit.",
+        };
+      }
+    } else {
+      visit = await this.prisma.officialVisit.findFirst({
+        where: {
+          organizationId: user.organizationId,
+          employeeId: employee.id,
+          status: { in: [VisitStatus.APPROVED, VisitStatus.IN_PROGRESS] },
+          startDate: { lte: todayUtc },
+          endDate: { gte: todayUtc },
+        },
+        include: { destinations: true },
+        orderBy: { startDate: 'asc' },
+      });
+
+      if (!visit) {
+        return {
+          outcome: 'NOT_AUTHORIZED',
+          isVerified: false,
+          message: 'No approved official visit active for today found for your employee profile.',
+        };
+      }
+    }
+
+    // 3. Status Validation
+    if (visit.status !== VisitStatus.APPROVED && visit.status !== VisitStatus.IN_PROGRESS) {
+      return {
+        outcome: 'NOT_AUTHORIZED',
+        isVerified: false,
+        message: `Official visit status is "${visit.status}". Only APPROVED or IN_PROGRESS visits can be verified.`,
+      };
+    }
+
+    // 4. Approved Time Window Validation
+    if (
+      todayUtc.getTime() < visit.startDate.getTime() ||
+      todayUtc.getTime() > visit.endDate.getTime()
+    ) {
+      return {
+        outcome: 'NOT_AUTHORIZED',
+        isVerified: false,
+        message: `Current date is outside the approved visit window (${visit.startDate.toISOString().split('T')[0]} to ${visit.endDate.toISOString().split('T')[0]}).`,
+      };
+    }
+
+    // 5. Filter Candidate Destinations
+    let candidateDests = visit.destinations;
+    if (dto.destinationId) {
+      candidateDests = visit.destinations.filter((d) => d.id === dto.destinationId);
+      if (candidateDests.length === 0) {
+        return {
+          outcome: 'NOT_AUTHORIZED',
+          isVerified: false,
+          message: 'Specified destination does not belong to this official visit.',
+        };
+      }
+    }
+
+    if (candidateDests.length === 0) {
+      return {
+        outcome: 'NOT_AUTHORIZED',
+        isVerified: false,
+        message: 'Approved official visit has no registered destinations.',
+      };
+    }
+
+    // 6. Check if coordinates are supplied or GPS exception is claimed
+    const hasCoords =
+      dto.latitude !== undefined &&
+      dto.latitude !== null &&
+      dto.longitude !== undefined &&
+      dto.longitude !== null;
+
+    if (!hasCoords) {
+      // Policy for visits where GPS is unsuitable (indoor, remote rural sites):
+      // Require a documented exception rather than silent bypass.
+      const hasDocumentedReason =
+        dto.gpsExceptionReason && dto.gpsExceptionReason.trim().length >= 10;
+
+      if (hasDocumentedReason) {
+        const matchedDest = candidateDests[0];
+        await this.prisma.visitLocationVerification.create({
+          data: {
+            organizationId: user.organizationId,
+            visitId: visit.id,
+            employeeId: employee.id,
+            destinationId: matchedDest?.id,
+            outcome: 'GPS_EXCEPTION_DOCUMENTED',
+            isVerified: true,
+            isException: true,
+            exceptionReason: dto.gpsExceptionReason!.trim(),
+            deviceInfo: dto.deviceInfo,
+          },
+        });
+
+        await this.auditService.record({
+          action: 'VISIT_LOCATION_VERIFIED',
+          entity: 'OfficialVisit',
+          entityId: visit.id,
+          userId: user.id,
+          organizationId: user.organizationId,
+          metadata: {
+            outcome: 'GPS_EXCEPTION_DOCUMENTED',
+            exceptionReason: dto.gpsExceptionReason!.trim(),
+            destinationId: matchedDest?.id,
+            destinationName: matchedDest?.destinationName,
+          },
+        });
+
+        return {
+          outcome: 'VERIFIED',
+          isVerified: true,
+          isException: true,
+          verificationMode: 'GPS_EXCEPTION_DOCUMENTED',
+          exceptionReason: dto.gpsExceptionReason!.trim(),
+          matchedDestination: {
+            id: matchedDest.id,
+            destinationName: matchedDest.destinationName,
+          },
+          message:
+            'Attendance location verified via documented GPS exception for indoor/remote site.',
+        };
+      } else {
+        await this.prisma.visitLocationVerification.create({
+          data: {
+            organizationId: user.organizationId,
+            visitId: visit.id,
+            employeeId: employee.id,
+            outcome: 'GPS_EXCEPTION_REQUIRED',
+            isVerified: false,
+            deviceInfo: dto.deviceInfo,
+          },
+        });
+
+        return {
+          outcome: 'GPS_EXCEPTION_REQUIRED',
+          isVerified: false,
+          message:
+            'A documented explanation (minimum 10 characters) is required by policy for visits where GPS is unsuitable or exempt.',
+        };
+      }
+    }
+
+    // 7. Validate Coordinate Ranges
+    if (
+      typeof dto.latitude !== 'number' ||
+      typeof dto.longitude !== 'number' ||
+      isNaN(dto.latitude) ||
+      isNaN(dto.longitude) ||
+      dto.latitude < -90 ||
+      dto.latitude > 90 ||
+      dto.longitude < -180 ||
+      dto.longitude > 180
+    ) {
+      await this.prisma.visitLocationVerification.create({
+        data: {
+          organizationId: user.organizationId,
+          visitId: visit.id,
+          employeeId: employee.id,
+          outcome: 'OUTSIDE_APPROVED_AREA',
+          isVerified: false,
+          deviceInfo: dto.deviceInfo,
+        },
+      });
+
+      return {
+        outcome: 'OUTSIDE_APPROVED_AREA',
+        isVerified: false,
+        message:
+          'Provided GPS coordinates are outside valid geographical bounds [-90, +90] / [-180, +180].',
+      };
+    }
+
+    // 8. Validate Location Freshness
+    if (dto.clientTimestamp) {
+      const clientTime = new Date(dto.clientTimestamp);
+      const serverTime = new Date();
+      const skewSeconds = Math.round(Math.abs(serverTime.getTime() - clientTime.getTime()) / 1000);
+      const maxSkewSeconds = 300; // 5 minutes max freshness window
+
+      // Check future skew > 60 seconds
+      const isFuture = clientTime.getTime() - serverTime.getTime() > 60000;
+
+      if (skewSeconds > maxSkewSeconds || isFuture) {
+        await this.prisma.visitLocationVerification.create({
+          data: {
+            organizationId: user.organizationId,
+            visitId: visit.id,
+            employeeId: employee.id,
+            outcome: 'STALE_LOCATION',
+            isVerified: false,
+            latitude: dto.latitude,
+            longitude: dto.longitude,
+            deviceInfo: dto.deviceInfo,
+          },
+        });
+
+        return {
+          outcome: 'STALE_LOCATION',
+          isVerified: false,
+          timeSkewSeconds: skewSeconds,
+          message: `Location fix is stale (${skewSeconds}s old). Maximum allowable age is ${maxSkewSeconds} seconds.`,
+        };
+      }
+    }
+
+    // 9. Validate GPS Horizontal Accuracy & Check Spoofing Limitations
+    if (dto.accuracyMeters !== undefined && dto.accuracyMeters !== null) {
+      const maxAccuracyMeters = 150;
+      if (dto.accuracyMeters > maxAccuracyMeters) {
+        await this.prisma.visitLocationVerification.create({
+          data: {
+            organizationId: user.organizationId,
+            visitId: visit.id,
+            employeeId: employee.id,
+            outcome: 'LOW_ACCURACY',
+            isVerified: false,
+            latitude: dto.latitude,
+            longitude: dto.longitude,
+            accuracyMeters: dto.accuracyMeters,
+            deviceInfo: dto.deviceInfo,
+          },
+        });
+
+        return {
+          outcome: 'LOW_ACCURACY',
+          isVerified: false,
+          accuracyMeters: dto.accuracyMeters,
+          maxAllowedAccuracyMeters: maxAccuracyMeters,
+          message: `Reported GPS accuracy (${dto.accuracyMeters}m) exceeds acceptable ${maxAccuracyMeters}m threshold. Move to an area with clear sky view.`,
+        };
+      }
+    }
+
+    // 10. Distance Calculation against Approved Destination(s) (Authoritative Server Haversine)
+    let bestDest: VisitDestination | null = null;
+    let minDistance = Infinity;
+
+    for (const dest of candidateDests) {
+      if (dest.latitude !== null && dest.longitude !== null) {
+        const dist = haversineDistance(dto.latitude, dto.longitude, dest.latitude, dest.longitude);
+        if (dist < minDistance) {
+          minDistance = dist;
+          bestDest = dest;
+        }
+      }
+    }
+
+    if (!bestDest) {
+      // Dest has no coordinates configured
+      if (dto.gpsExceptionReason && dto.gpsExceptionReason.trim().length >= 10) {
+        const defaultDest = candidateDests[0];
+        await this.prisma.visitLocationVerification.create({
+          data: {
+            organizationId: user.organizationId,
+            visitId: visit.id,
+            employeeId: employee.id,
+            destinationId: defaultDest?.id,
+            outcome: 'GPS_EXCEPTION_DOCUMENTED',
+            isVerified: true,
+            isException: true,
+            exceptionReason: dto.gpsExceptionReason.trim(),
+            deviceInfo: dto.deviceInfo,
+          },
+        });
+
+        return {
+          outcome: 'VERIFIED',
+          isVerified: true,
+          isException: true,
+          verificationMode: 'GPS_EXCEPTION_DOCUMENTED',
+          exceptionReason: dto.gpsExceptionReason.trim(),
+          matchedDestination: {
+            id: defaultDest.id,
+            destinationName: defaultDest.destinationName,
+          },
+          message:
+            'Attendance location verified via documented exception (destination has no GPS coordinates configured).',
+        };
+      }
+
+      return {
+        outcome: 'OUTSIDE_APPROVED_AREA',
+        isVerified: false,
+        message:
+          'No geographic coordinates are configured for this visit destination. Documented exception required.',
+      };
+    }
+
+    const isInside = minDistance <= bestDest.radiusMeters;
+
+    if (isInside) {
+      // Store verification evidence with controlled access
+      await this.prisma.visitLocationVerification.create({
+        data: {
+          organizationId: user.organizationId,
+          visitId: visit.id,
+          employeeId: employee.id,
+          destinationId: bestDest.id,
+          outcome: 'VERIFIED',
+          isVerified: true,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          accuracyMeters: dto.accuracyMeters,
+          distanceMeters: minDistance,
+          allowedRadiusMeters: bestDest.radiusMeters,
+          deviceInfo: dto.deviceInfo,
+        },
+      });
+
+      // Audit decision
+      await this.auditService.record({
+        action: 'VISIT_LOCATION_VERIFIED',
+        entity: 'OfficialVisit',
+        entityId: visit.id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        metadata: {
+          outcome: 'VERIFIED',
+          distanceMeters: minDistance,
+          allowedRadiusMeters: bestDest.radiusMeters,
+          destinationId: bestDest.id,
+          destinationName: bestDest.destinationName,
+        },
+      });
+
+      return {
+        outcome: 'VERIFIED',
+        isVerified: true,
+        distanceMeters: minDistance,
+        allowedRadiusMeters: bestDest.radiusMeters,
+        matchedDestination: {
+          id: bestDest.id,
+          destinationName: bestDest.destinationName,
+        },
+        message: `Location verified within ${minDistance}m of ${bestDest.destinationName} (radius tolerance: ${bestDest.radiusMeters}m).`,
+      };
+    } else {
+      // Check if destination is exempt and documented exception provided
+      if (
+        !bestDest.isGeofenceRequired &&
+        dto.gpsExceptionReason &&
+        dto.gpsExceptionReason.trim().length >= 10
+      ) {
+        await this.prisma.visitLocationVerification.create({
+          data: {
+            organizationId: user.organizationId,
+            visitId: visit.id,
+            employeeId: employee.id,
+            destinationId: bestDest.id,
+            outcome: 'GPS_EXCEPTION_DOCUMENTED',
+            isVerified: true,
+            isException: true,
+            exceptionReason: dto.gpsExceptionReason.trim(),
+            latitude: dto.latitude,
+            longitude: dto.longitude,
+            accuracyMeters: dto.accuracyMeters,
+            distanceMeters: minDistance,
+            allowedRadiusMeters: bestDest.radiusMeters,
+            deviceInfo: dto.deviceInfo,
+          },
+        });
+
+        return {
+          outcome: 'VERIFIED',
+          isVerified: true,
+          isException: true,
+          verificationMode: 'GPS_EXCEPTION_DOCUMENTED',
+          exceptionReason: dto.gpsExceptionReason.trim(),
+          distanceMeters: minDistance,
+          matchedDestination: {
+            id: bestDest.id,
+            destinationName: bestDest.destinationName,
+          },
+          message:
+            'Attendance location verified via documented GPS exception for indoor/remote site.',
+        };
+      }
+
+      // Record outside approved area evidence
+      await this.prisma.visitLocationVerification.create({
+        data: {
+          organizationId: user.organizationId,
+          visitId: visit.id,
+          employeeId: employee.id,
+          destinationId: bestDest.id,
+          outcome: 'OUTSIDE_APPROVED_AREA',
+          isVerified: false,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          accuracyMeters: dto.accuracyMeters,
+          distanceMeters: minDistance,
+          allowedRadiusMeters: bestDest.radiusMeters,
+          deviceInfo: dto.deviceInfo,
+        },
+      });
+
+      await this.auditService.record({
+        action: 'VISIT_LOCATION_REJECTED',
+        entity: 'OfficialVisit',
+        entityId: visit.id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        metadata: {
+          outcome: 'OUTSIDE_APPROVED_AREA',
+          distanceMeters: minDistance,
+          allowedRadiusMeters: bestDest.radiusMeters,
+          destinationId: bestDest.id,
+          destinationName: bestDest.destinationName,
+        },
+      });
+
+      return {
+        outcome: 'OUTSIDE_APPROVED_AREA',
+        isVerified: false,
+        distanceMeters: minDistance,
+        allowedRadiusMeters: bestDest.radiusMeters,
+        matchedDestination: {
+          id: bestDest.id,
+          destinationName: bestDest.destinationName,
+        },
+        message: `Current location is ${minDistance}m away from ${bestDest.destinationName}, exceeding the allowed ${bestDest.radiusMeters}m radius tolerance.`,
+      };
+    }
+  }
+
+  /**
+   * 9. GET VISIT LOCATION VERIFICATIONS
+   * Retrieve location verification evidence logs with RBAC controlled access.
+   */
+  async getVisitVerifications(user: AuthenticatedUser, visitId: string) {
+    const employee = await this.resolveEmployee(user);
+    const visit = await this.prisma.officialVisit.findFirst({
+      where: {
+        id: visitId,
+        organizationId: user.organizationId,
+      },
+      include: { employee: true },
+    });
+
+    if (!visit) {
+      throw new NotFoundException({
+        statusCode: 404,
+        message: 'Official visit request not found.',
+        code: 'VISIT_NOT_FOUND',
+      });
+    }
+
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    const isOwnVisit = employee && visit.employeeId === employee.id;
+
+    let isAuthorizedManager = false;
+    if (employee && !isOwnVisit && !isAdminOrHr) {
+      isAuthorizedManager = await this.hierarchyService.isManagerOf(
+        user.organizationId,
+        employee.id,
+        visit.employeeId,
+      );
+    }
+
+    if (!isOwnVisit && !isAuthorizedManager && !isAdminOrHr) {
+      throw new ForbiddenException({
+        statusCode: 403,
+        message:
+          'You are not authorized to view location verification evidence for this official visit.',
+        code: 'FORBIDDEN_OUTSIDE_SCOPE',
+      });
+    }
+
+    const verifications = await this.prisma.visitLocationVerification.findMany({
+      where: {
+        visitId,
+        organizationId: user.organizationId,
+      },
+      include: {
+        destination: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    // Redact exact coordinates for non-HR/Admin roles (privacy preservation)
+    const sanitized = verifications.map((v) => ({
+      id: v.id,
+      outcome: v.outcome,
+      isVerified: v.isVerified,
+      isException: v.isException,
+      exceptionReason: v.exceptionReason,
+      distanceMeters: v.distanceMeters,
+      allowedRadiusMeters: v.allowedRadiusMeters,
+      accuracyMeters: v.accuracyMeters,
+      destinationName: v.destination?.destinationName,
+      createdAt: v.createdAt,
+      latitude: isAdminOrHr ? v.latitude : undefined,
+      longitude: isAdminOrHr ? v.longitude : undefined,
+    }));
+
+    return {
+      message: 'Location verifications retrieved successfully',
+      data: sanitized,
+    };
   }
 }

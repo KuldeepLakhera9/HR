@@ -23,6 +23,7 @@ import { UpdateOfficialVisitDto } from './dto/update-official-visit.dto';
 import { CancelOfficialVisitDto } from './dto/cancel-official-visit.dto';
 import { QueryOfficialVisitsDto } from './dto/query-official-visits.dto';
 import { DecideOfficialVisitDto } from './dto/decide-official-visit.dto';
+import { VerifyVisitLocationDto } from './dto/verify-visit-location.dto';
 
 @ApiTags('Official Visits')
 @ApiBearerAuth()
@@ -64,6 +65,23 @@ export class VisitsController {
     return this.visitsService.getManagerPendingVisits(user, query);
   }
 
+  @Post('verify-location')
+  @HttpCode(HttpStatus.OK)
+  @RequirePermissions('VISIT_VIEW')
+  @ApiOperation({
+    summary: 'Verify client GPS attendance fix against approved official visit destination',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Location evaluation outcome and verification evidence',
+  })
+  async verifyVisitLocation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: VerifyVisitLocationDto,
+  ) {
+    return this.visitsService.verifyVisitLocation(user, dto);
+  }
+
   @Get()
   @RequirePermissions('VISIT_VIEW')
   @ApiOperation({
@@ -83,6 +101,17 @@ export class VisitsController {
   @ApiResponse({ status: 404, description: 'Visit not found' })
   async getVisitById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.visitsService.getVisitById(user, id);
+  }
+
+  @Get(':id/verifications')
+  @RequirePermissions('VISIT_VIEW')
+  @ApiOperation({
+    summary: 'Get location verification audit logs for an official visit with RBAC scoping',
+  })
+  @ApiResponse({ status: 200, description: 'List of verification attempt records' })
+  @ApiResponse({ status: 403, description: 'Access outside user scope' })
+  async getVisitVerifications(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.visitsService.getVisitVerifications(user, id);
   }
 
   @Patch(':id')

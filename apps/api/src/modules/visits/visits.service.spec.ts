@@ -73,6 +73,7 @@ describe('VisitsService', () => {
     firstName: 'Alice',
     lastName: 'Smith',
     displayName: 'Alice Smith',
+    status: 'ACTIVE',
     isActive: true,
   };
 
@@ -123,6 +124,12 @@ describe('VisitsService', () => {
     prisma.officialVisit.updateMany = jest.fn();
     prisma.visitApproval = {
       create: jest.fn(),
+    };
+    prisma.visitLocationVerification = {
+      create: jest
+        .fn()
+        .mockImplementation((args) => Promise.resolve({ id: 'loc-verif-1', ...args.data })),
+      findMany: jest.fn().mockResolvedValue([]),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -638,6 +645,274 @@ describe('VisitsService', () => {
         expect.objectContaining({
           data: { status: VisitStatus.EXPIRED },
         }),
+      );
+    });
+  });
+
+  describe('verifyVisitLocation', () => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+
+    const approvedVisit = {
+      id: 'vis-appr-1',
+      organizationId: mockOrgId,
+      employeeId: mockEmployeeId,
+      status: VisitStatus.APPROVED,
+      startDate: today,
+      endDate: today,
+      destinations: [
+        {
+          id: 'dest-1',
+          visitId: 'vis-appr-1',
+          destinationName: 'Cyber Park Hub',
+          latitude: 28.4595,
+          longitude: 77.0266,
+          radiusMeters: 200,
+          isGeofenceRequired: true,
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      prisma.employee.findFirst.mockResolvedValue(mockEmployee);
+    });
+
+    it('returns NOT_AUTHORIZED if authenticated user has no active employee profile', async () => {
+      prisma.employee.findFirst.mockResolvedValue(null);
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.4595,
+        longitude: 77.0266,
+      });
+
+      expect(res.outcome).toBe('NOT_AUTHORIZED');
+      expect(res.isVerified).toBe(false);
+    });
+
+    it('returns NOT_AUTHORIZED if visit does not belong to the employee', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue({
+        ...approvedVisit,
+        employeeId: 'other-emp-99',
+      });
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.4595,
+        longitude: 77.0266,
+      });
+
+      expect(res.outcome).toBe('NOT_AUTHORIZED');
+      expect(res.isVerified).toBe(false);
+    });
+
+    it('returns NOT_AUTHORIZED if visit is not in APPROVED or IN_PROGRESS status', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue({
+        ...approvedVisit,
+        status: VisitStatus.SUBMITTED,
+      });
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.4595,
+        longitude: 77.0266,
+      });
+
+      expect(res.outcome).toBe('NOT_AUTHORIZED');
+      expect(res.isVerified).toBe(false);
+    });
+
+    it('returns NOT_AUTHORIZED if current date is outside approved visit window', async () => {
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      prisma.officialVisit.findFirst.mockResolvedValue({
+        ...approvedVisit,
+        startDate: tomorrow,
+        endDate: tomorrow,
+      });
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.4595,
+        longitude: 77.0266,
+      });
+
+      expect(res.outcome).toBe('NOT_AUTHORIZED');
+      expect(res.isVerified).toBe(false);
+    });
+
+    it('returns OUTSIDE_APPROVED_AREA if coordinate ranges are invalid', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue(approvedVisit);
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 95.0, // Invalid: > 90
+        longitude: 77.0266,
+      });
+
+      expect(res.outcome).toBe('OUTSIDE_APPROVED_AREA');
+      expect(res.isVerified).toBe(false);
+    });
+
+    it('returns STALE_LOCATION if client timestamp skew exceeds 300 seconds', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue(approvedVisit);
+
+      const staleDate = new Date(Date.now() - 350000); // ~5.8 minutes ago
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.4595,
+        longitude: 77.0266,
+        clientTimestamp: staleDate.toISOString(),
+      });
+
+      expect(res.outcome).toBe('STALE_LOCATION');
+      expect(res.isVerified).toBe(false);
+    });
+
+    it('returns LOW_ACCURACY if reported GPS accuracy exceeds 150 meters', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue(approvedVisit);
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.4595,
+        longitude: 77.0266,
+        accuracyMeters: 250,
+      });
+
+      expect(res.outcome).toBe('LOW_ACCURACY');
+      expect(res.isVerified).toBe(false);
+    });
+
+    it('returns VERIFIED when coordinates are within destination geofence radius', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue(approvedVisit);
+
+      // Same coordinates as destination
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.4595,
+        longitude: 77.0266,
+        accuracyMeters: 15,
+        clientTimestamp: new Date().toISOString(),
+      });
+
+      expect(res.outcome).toBe('VERIFIED');
+      expect(res.isVerified).toBe(true);
+      expect(res.distanceMeters).toBe(0);
+      expect(prisma.visitLocationVerification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            outcome: 'VERIFIED',
+            isVerified: true,
+          }),
+        }),
+      );
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'VISIT_LOCATION_VERIFIED',
+        }),
+      );
+    });
+
+    it('returns OUTSIDE_APPROVED_AREA when coordinates exceed destination radius', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue(approvedVisit);
+
+      // Coordinates ~10km away
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        latitude: 28.5355,
+        longitude: 77.391,
+        accuracyMeters: 20,
+      });
+
+      expect(res.outcome).toBe('OUTSIDE_APPROVED_AREA');
+      expect(res.isVerified).toBe(false);
+      expect(res.distanceMeters).toBeGreaterThan(200);
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'VISIT_LOCATION_REJECTED',
+        }),
+      );
+    });
+
+    it('returns VERIFIED with GPS_EXCEPTION_DOCUMENTED when GPS is unsuitable and reason is provided', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue(approvedVisit);
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+        gpsExceptionReason: 'Client meeting in underground server bunker, no GPS signal available',
+      });
+
+      expect(res.outcome).toBe('VERIFIED');
+      expect(res.isVerified).toBe(true);
+      expect(res.isException).toBe(true);
+      expect(res.verificationMode).toBe('GPS_EXCEPTION_DOCUMENTED');
+      expect(prisma.visitLocationVerification.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            outcome: 'GPS_EXCEPTION_DOCUMENTED',
+            isException: true,
+          }),
+        }),
+      );
+    });
+
+    it('returns GPS_EXCEPTION_REQUIRED when no GPS coordinates provided and reason is missing', async () => {
+      prisma.officialVisit.findFirst.mockResolvedValue(approvedVisit);
+
+      const res = await service.verifyVisitLocation(mockEmployeeUser, {
+        visitId: 'vis-appr-1',
+      });
+
+      expect(res.outcome).toBe('GPS_EXCEPTION_REQUIRED');
+      expect(res.isVerified).toBe(false);
+    });
+  });
+
+  describe('getVisitVerifications', () => {
+    it('returns verification records with coordinates redacted for non-HR employees', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockEmployee);
+      prisma.officialVisit.findFirst.mockResolvedValue({
+        id: 'vis-appr-1',
+        organizationId: mockOrgId,
+        employeeId: mockEmployeeId,
+      });
+
+      prisma.visitLocationVerification.findMany.mockResolvedValue([
+        {
+          id: 'verif-1',
+          outcome: 'VERIFIED',
+          isVerified: true,
+          isException: false,
+          distanceMeters: 25.5,
+          allowedRadiusMeters: 200,
+          accuracyMeters: 12,
+          latitude: 28.4595,
+          longitude: 77.0266,
+          createdAt: new Date(),
+          destination: { destinationName: 'Cyber Park Hub' },
+        },
+      ]);
+
+      const res = await service.getVisitVerifications(mockEmployeeUser, 'vis-appr-1');
+      expect(res.data).toHaveLength(1);
+      expect(res.data[0].outcome).toBe('VERIFIED');
+      expect(res.data[0].latitude).toBeUndefined(); // Redacted for regular employee
+      expect(res.data[0].longitude).toBeUndefined();
+    });
+
+    it('throws ForbiddenException if user is neither owner, manager, nor HR', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockEmployee);
+      prisma.officialVisit.findFirst.mockResolvedValue({
+        id: 'vis-appr-1',
+        organizationId: mockOrgId,
+        employeeId: 'other-emp-99',
+      });
+      hierarchyService.isManagerOf.mockResolvedValue(false);
+
+      await expect(service.getVisitVerifications(mockEmployeeUser, 'vis-appr-1')).rejects.toThrow(
+        ForbiddenException,
       );
     });
   });

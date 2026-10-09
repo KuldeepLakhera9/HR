@@ -6,15 +6,7 @@ import { VisitStatus } from '@hrms/database';
 
 describe('VisitsController', () => {
   let controller: VisitsController;
-  let visitsService: {
-    createVisit: jest.Mock;
-    getVisits: jest.Mock;
-    getVisitById: jest.Mock;
-    updateVisit: jest.Mock;
-    cancelVisit: jest.Mock;
-    getManagerPendingVisits: jest.Mock;
-    decideVisit: jest.Mock;
-  };
+  let visitsService: any;
 
   const mockUser: AuthenticatedUser = {
     id: 'usr-1',
@@ -38,6 +30,8 @@ describe('VisitsController', () => {
       cancelVisit: jest.fn(),
       getManagerPendingVisits: jest.fn(),
       decideVisit: jest.fn(),
+      verifyVisitLocation: jest.fn(),
+      getVisitVerifications: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -174,6 +168,34 @@ describe('VisitsController', () => {
       const res = await controller.decideVisit(mockUser, 'vis-123', dto);
       expect(visitsService.decideVisit).toHaveBeenCalledWith(mockUser, 'vis-123', dto);
       expect(res.data?.status).toBe(VisitStatus.APPROVED);
+    });
+  });
+
+  describe('POST /visits/verify-location', () => {
+    it('calls visitsService.verifyVisitLocation with user and payload', async () => {
+      visitsService.verifyVisitLocation = jest.fn().mockResolvedValue({
+        outcome: 'VERIFIED',
+        isVerified: true,
+        distanceMeters: 45,
+      });
+
+      const dto = { visitId: 'vis-123', latitude: 28.5, longitude: 77.2 };
+      const res = await controller.verifyVisitLocation(mockUser, dto);
+      expect(visitsService.verifyVisitLocation).toHaveBeenCalledWith(mockUser, dto);
+      expect(res.outcome).toBe('VERIFIED');
+    });
+  });
+
+  describe('GET /visits/:id/verifications', () => {
+    it('calls visitsService.getVisitVerifications with user and id', async () => {
+      visitsService.getVisitVerifications = jest.fn().mockResolvedValue({
+        message: 'Location verifications retrieved successfully',
+        data: [{ id: 'verif-1', outcome: 'VERIFIED' }],
+      });
+
+      const res = await controller.getVisitVerifications(mockUser, 'vis-123');
+      expect(visitsService.getVisitVerifications).toHaveBeenCalledWith(mockUser, 'vis-123');
+      expect(res.data).toHaveLength(1);
     });
   });
 });

@@ -57,6 +57,7 @@ model Organization {
   officeLocations              OfficeLocation[]
   officialVisits               OfficialVisit[]
   wfhRequests                  WfhRequest[]
+  visitLocationVerifications   VisitLocationVerification[]
 
   @@index([code])
   @@index([isActive])
@@ -482,6 +483,7 @@ model Employee {
   attendanceExceptions         AttendanceException[]
   officialVisits               OfficialVisit[]
   wfhRequests                  WfhRequest[]
+  visitLocationVerifications   VisitLocationVerification[]
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -1090,6 +1092,7 @@ model OfficialVisit {
 
   destinations         VisitDestination[]
   approvals            VisitApproval[]
+  locationVerifications VisitLocationVerification[]
   attendanceSessions   AttendanceSession[]
   attendanceEvents     AttendanceEvent[]
   attendanceDailySummaries AttendanceDailySummary[]
@@ -1117,11 +1120,48 @@ model VisitDestination {
   radiusMeters       Int                @default(200)
   isGeofenceRequired Boolean            @default(true)
 
+  locationVerifications VisitLocationVerification[]
+
   createdAt          DateTime           @default(now())
   updatedAt          DateTime           @updatedAt
 
   @@index([visitId])
   @@map("visit_destinations")
+}
+
+model VisitLocationVerification {
+  id                   String             @id @default(uuid())
+  organizationId       String
+  organization         Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  visitId              String
+  visit                OfficialVisit      @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  employeeId           String
+  employee             Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  destinationId        String?
+  destination          VisitDestination?  @relation(fields: [destinationId], references: [id], onDelete: SetNull)
+
+  outcome              String             // VERIFIED, OUTSIDE_APPROVED_AREA, LOW_ACCURACY, STALE_LOCATION, NOT_AUTHORIZED, GPS_EXCEPTION_DOCUMENTED, GPS_EXCEPTION_REQUIRED
+  isVerified           Boolean            @default(false)
+  isException          Boolean            @default(false)
+  exceptionReason      String?
+
+  latitude             Float?
+  longitude            Float?
+  accuracyMeters       Float?
+  distanceMeters       Float?
+  allowedRadiusMeters  Int?
+
+  deviceInfo           String?
+  ipAddress            String?
+
+  createdAt            DateTime           @default(now())
+
+  @@index([visitId])
+  @@index([employeeId])
+  @@index([organizationId])
+  @@index([outcome])
+  @@index([createdAt])
+  @@map("visit_location_verifications")
 }
 
 model VisitApproval {
