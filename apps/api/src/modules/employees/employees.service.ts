@@ -36,8 +36,8 @@ export class EmployeesService {
   private static readonly VALID_STATUS_TRANSITIONS: Record<EmploymentStatus, EmploymentStatus[]> = {
     PROBATION: [EmploymentStatus.ACTIVE, EmploymentStatus.TERMINATED, EmploymentStatus.RESIGNED],
     ACTIVE: [EmploymentStatus.ON_NOTICE, EmploymentStatus.RESIGNED, EmploymentStatus.TERMINATED],
-    ON_NOTICE: [EmploymentStatus.EXITED, EmploymentStatus.ACTIVE],
-    RESIGNED: [EmploymentStatus.EXITED, EmploymentStatus.ACTIVE],
+    ON_NOTICE: [EmploymentStatus.EXITED, EmploymentStatus.ACTIVE, EmploymentStatus.TERMINATED],
+    RESIGNED: [EmploymentStatus.EXITED, EmploymentStatus.ACTIVE, EmploymentStatus.ON_NOTICE],
     TERMINATED: [EmploymentStatus.EXITED],
     EXITED: [], // Terminal state
   };

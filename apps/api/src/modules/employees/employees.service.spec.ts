@@ -282,7 +282,7 @@ describe('EmployeesService', () => {
   });
 
   describe('Controlled Status Lifecycle', () => {
-    it('should permit valid transition from PROBATION to ACTIVE', async () => {
+    it('should permit valid transition from PROBATION to ACTIVE and execute all 4 lifecycle requirements', async () => {
       const mockEmp = {
         id: 'emp-1',
         status: EmploymentStatus.PROBATION,
@@ -297,24 +297,170 @@ describe('EmployeesService', () => {
       );
 
       expect(result).toBeDefined();
+
+      // Requirement 2: Update employee and employment status
       expect(prisma.employee.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'emp-1' },
           data: expect.objectContaining({ status: EmploymentStatus.ACTIVE }),
         }),
       );
+      expect(prisma.employeeEmployment.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { employeeId: 'emp-1' },
+          data: expect.objectContaining({ employmentStatus: EmploymentStatus.ACTIVE }),
+        }),
+      );
+
+      // Requirement 3: Create EmployeeHistory
       expect(prisma.employeeHistory.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             eventType: EmployeeHistoryEventType.STATUS_CHANGED,
             previousValue: EmploymentStatus.PROBATION,
             newValue: EmploymentStatus.ACTIVE,
+            performedById: mockAdminUser.id,
+            metadata: expect.objectContaining({ reason: 'Probation cleared' }),
+          }),
+        }),
+      );
+
+      // Requirement 4: Create AuditLog
+      expect(audit.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'EMPLOYEE_STATUS_CHANGED',
+          entity: 'Employee',
+          entityId: 'emp-1',
+          userId: mockAdminUser.id,
+          organizationId: mockOrgId,
+          metadata: expect.objectContaining({
+            from: EmploymentStatus.PROBATION,
+            to: EmploymentStatus.ACTIVE,
+            reason: 'Probation cleared',
           }),
         }),
       );
     });
 
-    it('should reject invalid transition from EXITED to ACTIVE', async () => {
+    it('should permit valid transition from ACTIVE to ON_NOTICE', async () => {
+      const mockActiveEmp = {
+        id: 'emp-2',
+        status: EmploymentStatus.ACTIVE,
+        employment: { id: 'empl-2' },
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockActiveEmp);
+
+      const result = await service.transitionStatus(
+        'emp-2',
+        { status: EmploymentStatus.ON_NOTICE, reason: 'Resignation tendered' },
+        mockAdminUser,
+      );
+
+      expect(result).toBeDefined();
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'emp-2' },
+          data: expect.objectContaining({ status: EmploymentStatus.ON_NOTICE }),
+        }),
+      );
+    });
+
+    it('should permit valid transition from ON_NOTICE to EXITED and deactivate user account', async () => {
+      const mockNoticeEmp = {
+        id: 'emp-3',
+        userId: 'usr-3',
+        status: EmploymentStatus.ON_NOTICE,
+        employment: { id: 'empl-3' },
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockNoticeEmp);
+
+      const result = await service.transitionStatus(
+        'emp-3',
+        { status: EmploymentStatus.EXITED, reason: 'Notice period served' },
+        mockAdminUser,
+      );
+
+      expect(result).toBeDefined();
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'emp-3' },
+          data: expect.objectContaining({ status: EmploymentStatus.EXITED, isActive: false }),
+        }),
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'usr-3' },
+          data: expect.objectContaining({ isActive: false }),
+        }),
+      );
+    });
+
+    it('should permit valid transition from ACTIVE to TERMINATED', async () => {
+      const mockActiveEmp = {
+        id: 'emp-4',
+        status: EmploymentStatus.ACTIVE,
+        employment: { id: 'empl-4' },
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockActiveEmp);
+
+      const result = await service.transitionStatus(
+        'emp-4',
+        { status: EmploymentStatus.TERMINATED, reason: 'Policy violation' },
+        mockAdminUser,
+      );
+
+      expect(result).toBeDefined();
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'emp-4' },
+          data: expect.objectContaining({ status: EmploymentStatus.TERMINATED }),
+        }),
+      );
+    });
+
+    it('should permit valid transition from ON_NOTICE back to ACTIVE (resignation withdrawal)', async () => {
+      const mockNoticeEmp = {
+        id: 'emp-5',
+        status: EmploymentStatus.ON_NOTICE,
+        employment: { id: 'empl-5' },
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockNoticeEmp);
+
+      const result = await service.transitionStatus(
+        'emp-5',
+        { status: EmploymentStatus.ACTIVE, reason: 'Resignation withdrawn' },
+        mockAdminUser,
+      );
+
+      expect(result).toBeDefined();
+      expect(prisma.employee.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'emp-5' },
+          data: expect.objectContaining({ status: EmploymentStatus.ACTIVE }),
+        }),
+      );
+    });
+
+    it('should return immediately without changes when target status equals current status (no-op)', async () => {
+      const mockEmp = {
+        id: 'emp-noop',
+        status: EmploymentStatus.ACTIVE,
+        employment: { id: 'empl-noop' },
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockEmp);
+
+      const result = await service.transitionStatus(
+        'emp-noop',
+        { status: EmploymentStatus.ACTIVE },
+        mockAdminUser,
+      );
+
+      expect(result).toEqual(mockEmp);
+      expect(prisma.employee.update).not.toHaveBeenCalled();
+      expect(prisma.employeeHistory.create).not.toHaveBeenCalled();
+    });
+
+    it('should reject invalid transitions: EXITED -> ACTIVE (terminal state)', async () => {
       const mockExitedEmp = {
         id: 'emp-exited',
         status: EmploymentStatus.EXITED,
@@ -323,6 +469,42 @@ describe('EmployeesService', () => {
 
       await expect(
         service.transitionStatus('emp-exited', { status: EmploymentStatus.ACTIVE }, mockAdminUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject invalid transitions: PROBATION -> EXITED (skipping lifecycle)', async () => {
+      const mockProbationEmp = {
+        id: 'emp-prob',
+        status: EmploymentStatus.PROBATION,
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockProbationEmp);
+
+      await expect(
+        service.transitionStatus('emp-prob', { status: EmploymentStatus.EXITED }, mockAdminUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject invalid transitions: ACTIVE -> PROBATION (backward transition)', async () => {
+      const mockActiveEmp = {
+        id: 'emp-act',
+        status: EmploymentStatus.ACTIVE,
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockActiveEmp);
+
+      await expect(
+        service.transitionStatus('emp-act', { status: EmploymentStatus.PROBATION }, mockAdminUser),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject invalid transitions: TERMINATED -> ACTIVE', async () => {
+      const mockTerminatedEmp = {
+        id: 'emp-term',
+        status: EmploymentStatus.TERMINATED,
+      };
+      prisma.employee.findFirst.mockResolvedValue(mockTerminatedEmp);
+
+      await expect(
+        service.transitionStatus('emp-term', { status: EmploymentStatus.ACTIVE }, mockAdminUser),
       ).rejects.toThrow(BadRequestException);
     });
   });
