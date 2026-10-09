@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { HierarchyService } from '../employees/hierarchy.service';
 import { AttendancePoliciesService } from '../attendance/attendance-policies.service';
+import { NotificationsService } from '../notifications/notifications.module';
 import {
   BadRequestException,
   ConflictException,
@@ -95,6 +96,12 @@ describe('WfhService', () => {
       }),
     };
 
+    const notificationsService = {
+      createNotification: jest.fn().mockResolvedValue({ id: 'notif-1' }),
+      getNotifications: jest.fn().mockResolvedValue([]),
+      markRead: jest.fn().mockResolvedValue({ id: 'notif-1', isRead: true }),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         WfhService,
@@ -102,6 +109,7 @@ describe('WfhService', () => {
         { provide: AuditService, useValue: auditService },
         { provide: HierarchyService, useValue: hierarchyService },
         { provide: AttendancePoliciesService, useValue: policiesService },
+        { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
 
@@ -376,6 +384,9 @@ describe('WfhService', () => {
           id: 'sub-wfh-1',
           organizationId: 'org-1',
           employeeId: 'emp-record-1',
+          startDate: new Date('2026-11-01T00:00:00.000Z'),
+          endDate: new Date('2026-11-01T00:00:00.000Z'),
+          durationType: WfhDurationType.FULL_DAY,
           status: WfhStatus.SUBMITTED,
           employee: { userId: 'user-emp-1' },
         })
@@ -383,6 +394,9 @@ describe('WfhService', () => {
           id: 'sub-wfh-1',
           organizationId: 'org-1',
           employeeId: 'emp-record-1',
+          startDate: new Date('2026-11-01T00:00:00.000Z'),
+          endDate: new Date('2026-11-01T00:00:00.000Z'),
+          durationType: WfhDurationType.FULL_DAY,
           status: WfhStatus.APPROVED,
           employee: { userId: 'user-emp-1' },
         });
@@ -402,6 +416,118 @@ describe('WfhService', () => {
       expect(res.data?.status).toBe(WfhStatus.APPROVED);
       expect(auditService.record).toHaveBeenCalledWith(
         expect.objectContaining({ action: 'WFH_APPROVED' }),
+      );
+    });
+
+    it('should require reviewer comments when rejecting a WFH request', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockManagerEmployee);
+      prisma.wfhRequest.findUnique.mockResolvedValue({
+        id: 'sub-wfh-1',
+        organizationId: 'org-1',
+        employeeId: 'emp-record-1',
+        status: WfhStatus.SUBMITTED,
+        employee: { userId: 'user-emp-1' },
+      });
+
+      await expect(
+        service.decideWfhRequest(mockManagerUser, 'sub-wfh-1', {
+          decision: ApprovalDecision.REJECTED,
+          comments: '   ', // blank
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should prevent duplicate decision on already decided WFH request', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockManagerEmployee);
+      prisma.wfhRequest.findUnique.mockResolvedValue({
+        id: 'sub-wfh-1',
+        organizationId: 'org-1',
+        employeeId: 'emp-record-1',
+        status: WfhStatus.APPROVED, // already approved
+        employee: { userId: 'user-emp-1' },
+      });
+
+      await expect(
+        service.decideWfhRequest(mockManagerUser, 'sub-wfh-1', {
+          decision: ApprovalDecision.APPROVED,
+          comments: 'Duplicate approval attempt',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('should reject with ConflictException if concurrent decision alters request status', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockManagerEmployee);
+      prisma.wfhRequest.findUnique.mockResolvedValue({
+        id: 'sub-wfh-1',
+        organizationId: 'org-1',
+        employeeId: 'emp-record-1',
+        status: WfhStatus.SUBMITTED,
+        employee: { userId: 'user-emp-1' },
+      });
+      hierarchyService.isManagerOf.mockResolvedValue(true);
+      // updateMany returns count: 0 simulating race condition where status was changed
+      prisma.wfhRequest.updateMany.mockResolvedValue({ count: 0 });
+
+      await expect(
+        service.decideWfhRequest(mockManagerUser, 'sub-wfh-1', {
+          decision: ApprovalDecision.APPROVED,
+          comments: 'Concurrent race condition attempt',
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('should allow HR user with oversight permission to approve outside direct reporting chain', async () => {
+      const mockHrUser: any = {
+        id: 'user-hr-1',
+        email: 'hr@test.local',
+        organizationId: 'org-1',
+        roles: ['HR'],
+        permissions: ['WFH_APPROVE'],
+      };
+
+      prisma.employee.findFirst.mockResolvedValue({
+        id: 'hr-emp-1',
+        userId: 'user-hr-1',
+        organizationId: 'org-1',
+      });
+      prisma.wfhRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'sub-wfh-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-record-1',
+          startDate: new Date('2026-11-01T00:00:00.000Z'),
+          endDate: new Date('2026-11-01T00:00:00.000Z'),
+          durationType: WfhDurationType.FULL_DAY,
+          status: WfhStatus.SUBMITTED,
+          employee: { userId: 'user-emp-1' },
+        })
+        .mockResolvedValueOnce({
+          id: 'sub-wfh-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-record-1',
+          status: WfhStatus.APPROVED,
+          employee: { userId: 'user-emp-1' },
+        });
+      // HR is not direct manager
+      hierarchyService.isManagerOf.mockResolvedValue(false);
+      prisma.wfhRequest.updateMany.mockResolvedValue({ count: 1 });
+      prisma.wfhApproval.create.mockResolvedValue({
+        id: 'appr-hr-1',
+        decision: ApprovalDecision.APPROVED,
+        comments: 'HR oversight administrative approval',
+      });
+
+      const res = await service.decideWfhRequest(mockHrUser, 'sub-wfh-1', {
+        decision: ApprovalDecision.APPROVED,
+        comments: 'HR oversight administrative approval',
+      });
+
+      expect(res.data?.status).toBe(WfhStatus.APPROVED);
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'WFH_APPROVED',
+          metadata: expect.objectContaining({ isEscalationOverride: true }),
+        }),
       );
     });
   });

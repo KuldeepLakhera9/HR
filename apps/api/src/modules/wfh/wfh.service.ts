@@ -3,12 +3,14 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { HierarchyService } from '../employees/hierarchy.service';
 import { AttendancePoliciesService } from '../attendance/attendance-policies.service';
+import { NotificationsService } from '../notifications/notifications.module';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { CreateWfhRequestDto } from './dto/create-wfh-request.dto';
 import { UpdateWfhRequestDto } from './dto/update-wfh-request.dto';
@@ -23,6 +25,7 @@ import { ApprovalDecision, Prisma, VisitStatus, WfhDurationType, WfhStatus } fro
 
 @Injectable()
 export class WfhService {
+  private readonly logger = new Logger(WfhService.name);
   private readonly leaveIntegration: LeaveIntegrationService;
 
   constructor(
@@ -30,6 +33,7 @@ export class WfhService {
     private readonly auditService: AuditService,
     private readonly hierarchyService: HierarchyService,
     private readonly policiesService: AttendancePoliciesService,
+    private readonly notificationsService: NotificationsService,
   ) {
     this.leaveIntegration = new DefaultLeaveIntegrationService();
   }
@@ -56,6 +60,15 @@ export class WfhService {
       },
       include: {
         employment: true,
+        manager: {
+          select: {
+            id: true,
+            userId: true,
+            firstName: true,
+            lastName: true,
+            displayName: true,
+          },
+        },
       },
     });
 
@@ -256,6 +269,29 @@ export class WfhService {
         reason: createdRequest.reason,
       },
     });
+
+    // Notify reporting manager about newly submitted request
+    try {
+      if (employee.manager?.userId) {
+        await this.notificationsService.createNotification({
+          userId: employee.manager.userId,
+          organizationId: user.organizationId,
+          title: `New WFH Request: ${employee.displayName || user.firstName}`,
+          message: `${employee.displayName || user.firstName} requested work from home for ${dto.startDate} to ${dto.endDate} (${durationType}). Reason: "${createdRequest.reason}"`,
+          type: 'INFO',
+          link: `/wfh`,
+          metadata: {
+            requestId: createdRequest.id,
+            employeeId: employee.id,
+            startDate: dto.startDate,
+            endDate: dto.endDate,
+            durationType,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.debug(`Notification dispatch failed: ${(err as Error).message}`);
+    }
 
     return {
       message: 'Work from home request submitted successfully',
@@ -499,6 +535,21 @@ export class WfhService {
 
     const existing = await this.prisma.wfhRequest.findUnique({
       where: { id },
+      include: {
+        employee: {
+          include: {
+            manager: {
+              select: {
+                id: true,
+                userId: true,
+                firstName: true,
+                lastName: true,
+                displayName: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!existing || existing.organizationId !== user.organizationId) {
@@ -645,6 +696,43 @@ export class WfhService {
       },
     });
 
+    if (isReapprovalTriggered) {
+      try {
+        if (existing.employee?.manager?.userId) {
+          await this.notificationsService.createNotification({
+            userId: existing.employee.manager.userId,
+            organizationId: user.organizationId,
+            title: `WFH Re-approval Required: ${existing.employee.displayName || existing.employee.firstName}`,
+            message: `${existing.employee.displayName || existing.employee.firstName} modified their approved WFH dates. Status reset to SUBMITTED and re-approval is required.`,
+            type: 'WARNING',
+            link: `/wfh`,
+            metadata: {
+              requestId: updated.id,
+              employeeId: existing.employeeId,
+              isReapprovalTriggered: true,
+            },
+          });
+        }
+        if (existing.employee?.userId) {
+          await this.notificationsService.createNotification({
+            userId: existing.employee.userId,
+            organizationId: user.organizationId,
+            title: 'WFH Status Reset to SUBMITTED',
+            message:
+              'Your material updates have reset your WFH request status to SUBMITTED. Awaiting manager re-approval.',
+            type: 'WARNING',
+            link: `/wfh`,
+            metadata: {
+              requestId: updated.id,
+              isReapprovalTriggered: true,
+            },
+          });
+        }
+      } catch (err) {
+        this.logger.debug(`Notification dispatch failed: ${(err as Error).message}`);
+      }
+    }
+
     const responseMessage = isReapprovalTriggered
       ? 'WFH request modified with material changes and returned to SUBMITTED for re-approval'
       : 'WFH request updated successfully';
@@ -666,6 +754,21 @@ export class WfhService {
 
     const request = await this.prisma.wfhRequest.findUnique({
       where: { id },
+      include: {
+        employee: {
+          include: {
+            manager: {
+              select: {
+                id: true,
+                userId: true,
+                firstName: true,
+                lastName: true,
+                displayName: true,
+              },
+            },
+          },
+        },
+      },
     });
 
     if (!request || request.organizationId !== user.organizationId) {
@@ -758,6 +861,40 @@ export class WfhService {
       },
     });
 
+    try {
+      const isCancelledByOwner = request.employeeId === employee.id;
+      if (isCancelledByOwner && request.employee?.manager?.userId) {
+        await this.notificationsService.createNotification({
+          userId: request.employee.manager.userId,
+          organizationId: user.organizationId,
+          title: `WFH Request Cancelled: ${request.employee.displayName || request.employee.firstName}`,
+          message: `${request.employee.displayName || request.employee.firstName} cancelled their WFH request for ${request.startDate.toISOString().slice(0, 10)} to ${request.endDate.toISOString().slice(0, 10)}. Reason: "${dto.cancellationReason}"`,
+          type: 'INFO',
+          link: `/wfh`,
+          metadata: {
+            requestId: request.id,
+            cancellationReason: dto.cancellationReason,
+          },
+        });
+      } else if (!isCancelledByOwner && request.employee?.userId) {
+        await this.notificationsService.createNotification({
+          userId: request.employee.userId,
+          organizationId: user.organizationId,
+          title: 'WFH Request Cancelled by Reviewer',
+          message: `Your WFH request for ${request.startDate.toISOString().slice(0, 10)} to ${request.endDate.toISOString().slice(0, 10)} was cancelled by ${user.firstName} ${user.lastName}. Reason: "${dto.cancellationReason}"`,
+          type: 'WARNING',
+          link: `/wfh`,
+          metadata: {
+            requestId: request.id,
+            cancellationReason: dto.cancellationReason,
+            cancelledById: user.id,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.debug(`Notification dispatch failed: ${(err as Error).message}`);
+    }
+
     return {
       message: 'Work from home request cancelled successfully',
       data: cancelledRequest,
@@ -829,8 +966,24 @@ export class WfhService {
       });
     }
 
-    // 3. Manager Hierarchy Check OR HR/Admin
+    // 3. Reviewer comments mandatory on REJECTION
+    if (dto.decision === ApprovalDecision.REJECTED && (!dto.comments || !dto.comments.trim())) {
+      throw new BadRequestException({
+        statusCode: 400,
+        message: 'Reviewer comments are mandatory when rejecting a WFH request.',
+        code: 'REJECTION_COMMENTS_REQUIRED',
+      });
+    }
+
+    // 4. Manager Hierarchy Check OR HR/Admin Oversight Permission
     const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    const hasOversightPermission =
+      isAdminOrHr ||
+      (user.permissions &&
+        (user.permissions.includes('WFH_APPROVE_ALL') ||
+          user.permissions.includes('WFH_OVERSIGHT') ||
+          user.permissions.includes('WFH_APPROVE_ANY')));
+
     let isAuthorizedManager = false;
     if (reviewerEmployee) {
       isAuthorizedManager = await this.hierarchyService.isManagerOf(
@@ -840,7 +993,7 @@ export class WfhService {
       );
     }
 
-    if (!isAuthorizedManager && !isAdminOrHr) {
+    if (!isAuthorizedManager && !hasOversightPermission) {
       throw new ForbiddenException({
         statusCode: 403,
         message:
@@ -848,6 +1001,8 @@ export class WfhService {
         code: 'FORBIDDEN_OUTSIDE_SCOPE',
       });
     }
+
+    const isEscalationOverride = !isAuthorizedManager && hasOversightPermission;
 
     const targetStatus =
       dto.decision === ApprovalDecision.APPROVED ? WfhStatus.APPROVED : WfhStatus.REJECTED;
@@ -924,6 +1079,7 @@ export class WfhService {
       return { request: updatedRequest, approval: approvalRecord };
     });
 
+    // Record audit history covering explicit dates, day portions, and escalation override
     await this.auditService.record({
       action: dto.decision === ApprovalDecision.APPROVED ? 'WFH_APPROVED' : 'WFH_REJECTED',
       entity: 'WfhRequest',
@@ -933,9 +1089,38 @@ export class WfhService {
       metadata: {
         decision: dto.decision,
         comments: dto.comments,
+        startDate: request.startDate.toISOString().slice(0, 10),
+        endDate: request.endDate.toISOString().slice(0, 10),
+        durationType: request.durationType,
+        isEscalationOverride,
         requesterId: request.employeeId,
       },
     });
+
+    // In-app notification to employee
+    try {
+      if (request.employee?.userId) {
+        await this.notificationsService.createNotification({
+          userId: request.employee.userId,
+          organizationId: user.organizationId,
+          title: `WFH Request ${dto.decision}: ${request.startDate.toISOString().slice(0, 10)}`,
+          message: `Your WFH request for ${request.startDate.toISOString().slice(0, 10)} to ${request.endDate.toISOString().slice(0, 10)} (${request.durationType}) has been ${dto.decision.toLowerCase()} by ${user.firstName} ${user.lastName}.${dto.comments ? ` Remarks: "${dto.comments}"` : ''}`,
+          type: dto.decision === ApprovalDecision.APPROVED ? 'SUCCESS' : 'WARNING',
+          link: `/wfh`,
+          metadata: {
+            requestId: request.id,
+            decision: dto.decision,
+            approverId: user.id,
+            isEscalationOverride,
+            startDate: request.startDate.toISOString().slice(0, 10),
+            endDate: request.endDate.toISOString().slice(0, 10),
+            durationType: request.durationType,
+          },
+        });
+      }
+    } catch (err) {
+      this.logger.debug(`Notification dispatch failed: ${(err as Error).message}`);
+    }
 
     return {
       message: `Work from home request ${dto.decision.toLowerCase()} successfully`,
@@ -948,13 +1133,22 @@ export class WfhService {
    * 7. GET MANAGER PENDING WFH REQUESTS
    */
   async getManagerPendingWfh(user: AuthenticatedUser, query: QueryWfhRequestsDto) {
-    const employee = await this.resolveEmployee(user);
-    const team = await this.hierarchyService.getTeam(employee.id, user.organizationId);
+    const isAdminOrHr = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    let allowedEmployeeIds: string[] | null = null;
+
+    if (isAdminOrHr && query.scope === 'organization') {
+      // Oversight view of all pending requests in organization
+      allowedEmployeeIds = null;
+    } else {
+      const employee = await this.resolveEmployee(user);
+      const team = await this.hierarchyService.getTeam(employee.id, user.organizationId);
+      allowedEmployeeIds = team.allMemberIds;
+    }
 
     const where: Prisma.WfhRequestWhereInput = {
       organizationId: user.organizationId,
-      employeeId: { in: team.allMemberIds },
       status: WfhStatus.SUBMITTED,
+      ...(allowedEmployeeIds ? { employeeId: { in: allowedEmployeeIds } } : {}),
     };
 
     if (query.search) {
