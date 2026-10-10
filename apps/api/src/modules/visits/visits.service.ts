@@ -1671,9 +1671,9 @@ export class VisitsService {
     let isAuthorizedManager = false;
     if (employee && !isOwnVisit && !isAdminOrHr) {
       isAuthorizedManager = await this.hierarchyService.isManagerOf(
-        user.organizationId,
         employee.id,
         visit.employeeId,
+        user.organizationId,
       );
     }
 

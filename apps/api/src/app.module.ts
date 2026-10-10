@@ -34,7 +34,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
-        limit: 30,
+        limit: 120,
       },
     ]),
     PrismaModule,
