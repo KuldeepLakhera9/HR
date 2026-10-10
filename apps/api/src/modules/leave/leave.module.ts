@@ -7,10 +7,12 @@ import { LeaveService } from './leave.service';
 import { LeaveLedgerService } from './leave-ledger.service';
 import { LeaveCalculatorService } from './leave-calculator.service';
 
+import { LeaveValidationService } from './leave-validation.service';
+
 @Module({
   imports: [PrismaModule, EmployeesModule, NotificationsModule],
   controllers: [LeaveController],
-  providers: [LeaveService, LeaveLedgerService, LeaveCalculatorService],
-  exports: [LeaveService, LeaveLedgerService, LeaveCalculatorService],
+  providers: [LeaveService, LeaveLedgerService, LeaveCalculatorService, LeaveValidationService],
+  exports: [LeaveService, LeaveLedgerService, LeaveCalculatorService, LeaveValidationService],
 })
 export class LeaveModule {}

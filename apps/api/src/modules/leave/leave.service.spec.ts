@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { LeaveService } from './leave.service';
 import { LeaveLedgerService } from './leave-ledger.service';
 import { LeaveCalculatorService } from './leave-calculator.service';
+import { LeaveValidationService } from './leave-validation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { HierarchyService } from '../employees/hierarchy.service';
@@ -63,6 +64,16 @@ describe('LeaveService', () => {
       },
       leaveType: {
         findFirst: jest.fn().mockResolvedValue({
+          id: 'lt-cl',
+          code: 'CL',
+          name: 'Casual Leave',
+          isPaid: true,
+          allowHalfDay: true,
+          requiresDoc: false,
+          docThresholdDays: 3,
+          isActive: true,
+        }),
+        findUnique: jest.fn().mockResolvedValue({
           id: 'lt-cl',
           code: 'CL',
           name: 'Casual Leave',
@@ -157,6 +168,7 @@ describe('LeaveService', () => {
         LeaveService,
         LeaveLedgerService,
         LeaveCalculatorService,
+        LeaveValidationService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: { record: jest.fn().mockResolvedValue(undefined) } },
         { provide: HierarchyService, useValue: hierarchyService },

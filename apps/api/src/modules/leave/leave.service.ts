@@ -14,6 +14,7 @@ import { NotificationsService } from '../notifications/notifications.module';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { LeaveLedgerService } from './leave-ledger.service';
 import { LeaveCalculatorService } from './leave-calculator.service';
+import { LeaveValidationService } from './leave-validation.service';
 import { CreateLeaveRequestDto } from './dto/create-leave-request.dto';
 import { DecideLeaveRequestDto } from './dto/decide-leave-request.dto';
 import { CancelLeaveRequestDto } from './dto/cancel-leave-request.dto';
@@ -48,6 +49,7 @@ export class LeaveService {
     private readonly notificationsService: NotificationsService,
     private readonly ledgerService: LeaveLedgerService,
     private readonly calculatorService: LeaveCalculatorService,
+    private readonly validationService: LeaveValidationService,
   ) {}
 
   // Helper: Resolve active Employee record for authenticated user
@@ -85,154 +87,53 @@ export class LeaveService {
     const durationType = dto.durationType || LeaveDurationType.FULL_DAY;
     const leaveYear = start.getUTCFullYear();
 
-    if (end < start) {
-      throw new BadRequestException('End date cannot be earlier than start date.');
-    }
-
-    // 1. Validate leave type
-    const leaveType = await this.prisma.leaveType.findFirst({
-      where: {
-        id: dto.leaveTypeId,
-        organizationId: user.organizationId,
-        isActive: true,
-      },
-    });
-    if (!leaveType) {
-      throw new BadRequestException('Specified leave type does not exist or is inactive.');
-    }
-
-    // Half-day validation
-    if (durationType !== LeaveDurationType.FULL_DAY) {
-      if (!leaveType.allowHalfDay) {
-        throw new BadRequestException(`${leaveType.name} does not permit half-day applications.`);
-      }
-      if (start.getTime() !== end.getTime()) {
-        throw new BadRequestException(
-          'Half-day leave can only be applied for a single calendar day.',
-        );
-      }
-    }
-
-    // 2. Resolve applicable policy
-    const policyAssignment = await this.prisma.employeeLeavePolicyAssignment.findFirst({
-      where: {
+    // 1. Pre-transaction validation: Comprehensive rule verification
+    const preValidation = await this.validationService.validateLeaveApplication(
+      {
         organizationId: user.organizationId,
         employeeId: employee.id,
-        leavePolicy: { leaveTypeId: leaveType.id },
-        effectiveFrom: { lte: end },
-        OR: [{ effectiveTo: null }, { effectiveTo: { gte: start } }],
+        leaveTypeId: dto.leaveTypeId,
+        startDate: start,
+        endDate: end,
+        durationType,
+        reason: dto.reason,
+        attachmentUrl: dto.attachmentUrl,
       },
-      include: { leavePolicy: true },
-      orderBy: { effectiveFrom: 'desc' },
-    });
+      true, // Throws structured BadRequestException or ConflictException
+    );
 
-    const policy = policyAssignment?.leavePolicy;
+    const chargeableDays = preValidation.calculation!.chargeableDays;
 
-    // Check notice period
-    if (policy && policy.minNoticeDays > 0) {
-      const todayUtc = this.calculatorService.normalizeDateToUtc(new Date());
-      const diffMs = start.getTime() - todayUtc.getTime();
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      if (diffDays < policy.minNoticeDays) {
-        throw new BadRequestException(
-          `Application violates notice requirement. At least ${policy.minNoticeDays} days advance notice required.`,
-        );
-      }
-    }
-
-    // 3. Collision / Overlap Detection
-    // A. Check existing leave requests
-    const overlappingLeave = await this.prisma.leaveRequest.findFirst({
-      where: {
-        employeeId: employee.id,
-        status: { in: [LeaveRequestStatus.SUBMITTED, LeaveRequestStatus.APPROVED] },
-        startDate: { lte: end },
-        endDate: { gte: start },
-      },
-      include: { leaveType: true },
-    });
-    if (overlappingLeave) {
-      throw new ConflictException(
-        `Overlapping leave application found: ${overlappingLeave.leaveType.name} (${overlappingLeave.startDate.toISOString().split('T')[0]} to ${overlappingLeave.endDate.toISOString().split('T')[0]}).`,
-      );
-    }
-
-    // B. Check overlapping Official Visits
-    const overlappingVisit = await this.prisma.officialVisit.findFirst({
-      where: {
-        employeeId: employee.id,
-        status: { in: [VisitStatus.SUBMITTED, VisitStatus.APPROVED] },
-        startDate: { lte: end },
-        endDate: { gte: start },
-      },
-    });
-    if (overlappingVisit) {
-      throw new ConflictException(
-        `Cannot apply for leave during an active official visit window (${overlappingVisit.startDate.toISOString().split('T')[0]} to ${overlappingVisit.endDate.toISOString().split('T')[0]}).`,
-      );
-    }
-
-    // C. Check overlapping WFH Requests
-    const overlappingWfh = await this.prisma.wfhRequest.findFirst({
-      where: {
-        employeeId: employee.id,
-        status: { in: [WfhStatus.SUBMITTED, WfhStatus.APPROVED] },
-        startDate: { lte: end },
-        endDate: { gte: start },
-      },
-    });
-    if (overlappingWfh) {
-      throw new ConflictException(
-        `Cannot apply for leave during an active work-from-home schedule (${overlappingWfh.startDate.toISOString().split('T')[0]} to ${overlappingWfh.endDate.toISOString().split('T')[0]}).`,
-      );
-    }
-
-    // 4. Calculate Chargeable Days
-    const calc = await this.calculatorService.calculateLeaveDays({
-      organizationId: user.organizationId,
-      employeeId: employee.id,
-      leaveTypeId: leaveType.id,
-      startDate: start,
-      endDate: end,
-      durationType,
-    });
-
-    if (calc.chargeableDays <= 0) {
-      throw new BadRequestException(
-        'Selected leave period contains 0 chargeable working days (falls entirely on non-working days or holidays).',
-      );
-    }
-
-    // Check max consecutive days
-    if (policy && policy.maxConsecutiveDays && calc.chargeableDays > policy.maxConsecutiveDays) {
-      throw new BadRequestException(
-        `Request exceeds maximum consecutive leave duration of ${policy.maxConsecutiveDays} days under policy ${policy.name}.`,
-      );
-    }
-
-    // Check document requirement
-    if (
-      leaveType.requiresDoc &&
-      calc.chargeableDays >= leaveType.docThresholdDays &&
-      !dto.attachmentUrl
-    ) {
-      throw new BadRequestException(
-        `Supporting document is mandatory for ${leaveType.name} exceeding ${leaveType.docThresholdDays} days.`,
-      );
-    }
-
-    // 5. Atomic Transaction: Create Request and Place Balance Reservation
+    // 2. Atomic Transaction: Revalidate inside transaction & create request + balance reservation
     const result = await this.prisma.$transaction(async (tx) => {
+      // In-transaction revalidation against concurrent overlapping submissions / approvals
+      const txValidation = await this.validationService.validateLeaveApplication(
+        {
+          organizationId: user.organizationId,
+          employeeId: employee.id,
+          leaveTypeId: dto.leaveTypeId,
+          startDate: start,
+          endDate: end,
+          durationType,
+          reason: dto.reason,
+          attachmentUrl: dto.attachmentUrl,
+          tx,
+        },
+        true,
+      );
+
+      const validatedDays = txValidation.calculation!.chargeableDays;
+
       const leaveRequest = await tx.leaveRequest.create({
         data: {
           organizationId: user.organizationId,
           employeeId: employee.id,
-          leaveTypeId: leaveType.id,
+          leaveTypeId: dto.leaveTypeId,
           leaveYear,
           startDate: start,
           endDate: end,
           durationType,
-          chargeableDays: new Prisma.Decimal(calc.chargeableDays),
+          chargeableDays: new Prisma.Decimal(validatedDays),
           reason: dto.reason.trim(),
           attachmentUrl: dto.attachmentUrl || null,
           attachmentName: dto.attachmentName || null,
@@ -244,15 +145,19 @@ export class LeaveService {
       await this.ledgerService.reserveBalance(
         user.organizationId,
         employee.id,
-        leaveType.id,
+        dto.leaveTypeId,
         leaveYear,
         leaveRequest.id,
-        calc.chargeableDays,
+        validatedDays,
         user.id,
         tx,
       );
 
       return leaveRequest;
+    });
+
+    const leaveType = await this.prisma.leaveType.findFirst({
+      where: { id: dto.leaveTypeId },
     });
 
     // 6. Notify Manager & Audit Log
@@ -267,7 +172,7 @@ export class LeaveService {
             userId: manager.userId,
             organizationId: user.organizationId,
             title: 'New Leave Application',
-            message: `${employee.displayName} applied for ${calc.chargeableDays} day(s) of ${leaveType.name} (${dto.startDate} to ${dto.endDate}).`,
+            message: `${employee.displayName} applied for ${chargeableDays} day(s) of ${leaveType?.name || 'Leave'} (${dto.startDate} to ${dto.endDate}).`,
             type: 'LEAVE_SUBMITTED',
             link: `/leave?tab=approvals&id=${result.id}`,
             idempotencyKey: `notif:leave_sub:${result.id}`,
@@ -284,8 +189,8 @@ export class LeaveService {
         userId: user.id,
         organizationId: user.organizationId,
         metadata: {
-          leaveTypeId: leaveType.id,
-          chargeableDays: calc.chargeableDays,
+          leaveTypeId: dto.leaveTypeId,
+          chargeableDays,
           startDate: dto.startDate,
           endDate: dto.endDate,
         },
@@ -393,6 +298,26 @@ export class LeaveService {
       });
 
       if (dto.decision === ApprovalDecision.APPROVED) {
+        // Concurrency safeguard: Re-verify that no conflicting approved leave exists
+        const overlappingApproved = await tx.leaveRequest.findFirst({
+          where: {
+            id: { not: requestId },
+            employeeId: leaveRequest.employeeId,
+            status: LeaveRequestStatus.APPROVED,
+            startDate: { lte: leaveRequest.endDate },
+            endDate: { gte: leaveRequest.startDate },
+          },
+          include: { leaveType: true },
+        });
+
+        if (overlappingApproved) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'OVERLAPPING_LEAVE_REQUEST',
+            message: `Cannot approve leave request: Conflicting approved leave already exists (${overlappingApproved.leaveType.name} from ${overlappingApproved.startDate.toISOString().split('T')[0]} to ${overlappingApproved.endDate.toISOString().split('T')[0]}).`,
+          });
+        }
+
         // Transition ledger reservation into consumption
         await this.ledgerService.consumeBalance(requestId, user.id, tx);
       } else {
@@ -547,36 +472,33 @@ export class LeaveService {
       employeeId = employee.id;
     }
 
-    const start = this.calculatorService.normalizeDateToUtc(dto.startDate);
-    const end = this.calculatorService.normalizeDateToUtc(dto.endDate);
-    const leaveYear = start.getUTCFullYear();
-
-    const calc = await this.calculatorService.calculateLeaveDays({
-      organizationId: user.organizationId,
-      employeeId,
-      leaveTypeId: dto.leaveTypeId,
-      startDate: start,
-      endDate: end,
-      durationType: dto.durationType,
-    });
-
-    const account = await this.ledgerService.getOrCreateAccount(
-      user.organizationId,
-      employeeId,
-      dto.leaveTypeId,
-      leaveYear,
+    const validation = await this.validationService.validateLeaveApplication(
+      {
+        organizationId: user.organizationId,
+        employeeId,
+        leaveTypeId: dto.leaveTypeId,
+        startDate: dto.startDate,
+        endDate: dto.endDate,
+        durationType: dto.durationType,
+      },
+      false, // Preview mode: do not throw, return structured validation payload
     );
-
-    const availableBalance = Number(account.closingBalance);
-    const hasSufficientBalance = availableBalance >= calc.chargeableDays;
 
     return {
       success: true,
       data: {
-        ...calc,
-        hasSufficientBalance,
-        availableBalance,
-        pendingBalance: Number(account.pendingBalance),
+        ...validation.calculation,
+        isValid: validation.isValid,
+        errors: validation.errors,
+        warnings: validation.warnings,
+        hasSufficientBalance: !validation.errors.some(
+          (e) =>
+            e.code === 'INSUFFICIENT_LEAVE_BALANCE' || e.code === 'NEGATIVE_BALANCE_LIMIT_EXCEEDED',
+        ),
+        availableBalance: validation.availableBalance ?? 0,
+        pendingBalance: validation.pendingBalance ?? 0,
+        leaveYear: validation.leaveYear,
+        policy: validation.policy,
       },
     };
   }
