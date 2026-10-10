@@ -32,6 +32,7 @@ import {
   Sliders,
 } from 'lucide-react';
 import { officeLocationsApi, organizationApi } from '../../../lib/api-client';
+import { useAuth } from '../../../context/AuthContext';
 import {
   OfficeLocationDto,
   LocationValidationOutcome,
@@ -39,6 +40,7 @@ import {
 } from '@hrms/types';
 
 export default function OfficeLocationsPage() {
+  const { isAuthenticated } = useAuth();
   const [locations, setLocations] = useState<OfficeLocationDto[]>([]);
   const [branches, setBranches] = useState<Array<{ id: string; name: string; code: string }>>([]);
   const [loading, setLoading] = useState(true);
@@ -113,9 +115,11 @@ export default function OfficeLocationsPage() {
   };
 
   useEffect(() => {
-    fetchLocations();
-    fetchBranches();
-  }, [fetchLocations]);
+    if (isAuthenticated) {
+      fetchLocations();
+      fetchBranches();
+    }
+  }, [fetchLocations, isAuthenticated]);
 
   const handleOpenCreateModal = () => {
     setEditingLocation(null);
@@ -209,6 +213,15 @@ export default function OfficeLocationsPage() {
         type: 'warning',
         title: 'Invalid Longitude',
         message: 'Longitude must be between -180 and 180.',
+      });
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setToastMessage({
+        type: 'error',
+        title: 'Authentication Required',
+        message: 'You must be signed in as Admin to save office locations.',
       });
       return;
     }
@@ -391,7 +404,7 @@ export default function OfficeLocationsPage() {
       : 100;
 
   return (
-    <AppShell>
+    <AppShell requireAuth={true}>
       {toastMessage && (
         <div className="fixed top-5 right-5 z-50">
           <Toast
