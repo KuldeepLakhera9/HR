@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { managerApi } from '../../lib/api-client';
 import { TeamMemberDetailModal } from '../../components/team/TeamMemberDetailModal';
+import { TeamReportsView } from '../../components/team/TeamReportsView';
 
 interface ManagerDashboardData {
   success: boolean;
@@ -125,7 +126,20 @@ interface ManagerDashboardData {
 
 export default function TeamManagerPage() {
   // Top-level View Navigation
-  const [activeTab, setActiveTab] = useState<'overview' | 'directory'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'directory' | 'reports'>('overview');
+
+  // Check URL query param for tab deeplinking
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'reports') {
+        setActiveTab('reports');
+      } else if (tabParam === 'directory') {
+        setActiveTab('directory');
+      }
+    }
+  }, []);
 
   // Overview Dashboard State
   const [data, setData] = useState<ManagerDashboardData | null>(null);
@@ -406,6 +420,16 @@ export default function TeamManagerPage() {
                 }`}
               >
                 Team Directory
+              </button>
+              <button
+                onClick={() => setActiveTab('reports')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  activeTab === 'reports'
+                    ? 'bg-white text-stone-900 shadow-xs'
+                    : 'text-stone-500 hover:text-stone-900'
+                }`}
+              >
+                Team Reports
               </button>
             </div>
 
@@ -1228,6 +1252,9 @@ export default function TeamManagerPage() {
             </div>
           </div>
         )}
+
+        {/* Team Reports Tab */}
+        {activeTab === 'reports' && <TeamReportsView />}
       </div>
 
       {/* Authorized Member Detail Modal */}

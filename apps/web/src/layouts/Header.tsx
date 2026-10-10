@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useRole } from '../context/RoleContext';
 import { useAuth } from '../context/AuthContext';
 import { RoleType } from '@hrms/types';
@@ -36,6 +37,7 @@ const INITIAL_NOTIFICATIONS = [
 ];
 
 export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleMobileMenu }) => {
+  const router = useRouter();
   const { role, setRole, currentUser } = useRole();
   const { isAuthenticated, logout } = useAuth();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -70,11 +72,24 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
 
   const handleMarkAllRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    notifications.forEach((n) => {
-      if (!n.isRead) {
-        notificationsApi.markRead(n.id).catch(() => {});
-      }
+    notificationsApi.markAllRead().catch(() => {
+      // Fallback per item
+      notifications.forEach((n) => {
+        if (!n.isRead) {
+          notificationsApi.markRead(n.id).catch(() => {});
+        }
+      });
     });
+  };
+
+  const handleSelectNotification = (item: any) => {
+    if (!item.isRead) {
+      notificationsApi.markRead(item.id).catch(() => {});
+      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)));
+    }
+    if (item.link) {
+      router.push(item.link);
+    }
   };
 
   return (
@@ -135,7 +150,11 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
           </div>
 
           {/* Notification Menu */}
-          <NotificationMenu notifications={notifications} onMarkAllRead={handleMarkAllRead} />
+          <NotificationMenu
+            notifications={notifications}
+            onMarkAllRead={handleMarkAllRead}
+            onSelectNotification={handleSelectNotification}
+          />
 
           {/* User Menu or Sign In Button */}
           {isAuthenticated ? (

@@ -1015,6 +1015,8 @@ model AttendanceException {
 
   @@index([organizationId])
   @@index([employeeId])
+  @@index([employeeId, date])
+  @@index([organizationId, date])
   @@index([exceptionType])
   @@index([resolved])
   @@index([status])
@@ -1194,6 +1196,7 @@ model VisitApproval {
 
   @@index([visitId])
   @@index([approverId])
+  @@index([decidedAt])
   @@map("visit_approvals")
 }
 
@@ -1244,6 +1247,7 @@ model WfhApproval {
 
   @@index([requestId])
   @@index([approverId])
+  @@index([decidedAt])
   @@map("wfh_approvals")
 }
 
@@ -1496,5 +1500,6 @@ model LeaveApproval {
 
   @@index([leaveRequestId])
   @@index([approverId])
+  @@index([decidedAt])
   @@map("leave_approvals")
 }

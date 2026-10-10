@@ -6,7 +6,8 @@ import { ChartCard, KPICard, Button } from '@hrms/ui';
 import { AttendanceTrendChart } from '../../features/dashboard/components/charts/AttendanceTrendChart';
 import { LeaveTrendChart } from '../../features/dashboard/components/charts/LeaveTrendChart';
 import { DepartmentDistributionChart } from '../../features/dashboard/components/charts/DepartmentDistributionChart';
-import { Download, FileSpreadsheet, BarChart2 } from 'lucide-react';
+import { Download, FileSpreadsheet, BarChart2, Users } from 'lucide-react';
+import Link from 'next/link';
 
 export default function ReportsPage() {
   return (
@@ -22,6 +23,15 @@ export default function ReportsPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/team?tab=reports">
+              <Button
+                size="sm"
+                variant="outline"
+                leftIcon={<Users className="h-4 w-4 text-amber-700" />}
+              >
+                Manager Team Reports
+              </Button>
+            </Link>
             <Button size="sm" variant="outline" leftIcon={<FileSpreadsheet className="h-4 w-4" />}>
               Export Attendance MIS
             </Button>

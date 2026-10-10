@@ -316,16 +316,21 @@ export interface NotificationItem {
   message: string;
   time: string;
   isRead: boolean;
+  link?: string | null;
+  type?: string;
+  metadata?: any;
 }
 
 export interface NotificationMenuProps {
   notifications: NotificationItem[];
   onMarkAllRead?: () => void;
+  onSelectNotification?: (item: NotificationItem) => void;
 }
 
 export const NotificationMenu: React.FC<NotificationMenuProps> = ({
   notifications,
   onMarkAllRead,
+  onSelectNotification,
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -390,8 +395,16 @@ export const NotificationMenu: React.FC<NotificationMenuProps> = ({
               notifications.map((n) => (
                 <div
                   key={n.id}
+                  onClick={() => {
+                    if (onSelectNotification) {
+                      onSelectNotification(n);
+                    } else if (n.link) {
+                      window.location.href = n.link;
+                    }
+                    setIsOpen(false);
+                  }}
                   className={cn(
-                    'px-4 py-2.5 border-b border-stone-50 hover:bg-stone-50 transition-colors',
+                    'px-4 py-2.5 border-b border-stone-50 hover:bg-stone-50 transition-colors cursor-pointer',
                     !n.isRead && 'bg-amber-50/30',
                   )}
                 >

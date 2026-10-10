@@ -1,9 +1,37 @@
-import { Injectable, ForbiddenException, NotFoundException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+  BadRequestException,
+  Logger,
+  Optional,
+} from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { HierarchyService } from '../employees/hierarchy.service';
+import { LeaveService } from '../leave/leave.service';
+import { WfhService } from '../wfh/wfh.service';
+import { VisitsService } from '../visits/visits.service';
+import { ManagerAlertsService } from './manager-alerts.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { ManagerDashboardQueryDto } from './dto/manager-dashboard-query.dto';
 import { TeamDirectoryQueryDto } from './dto/team-directory-query.dto';
+import {
+  QueryUnifiedApprovalsDto,
+  ApprovalRequestTypeFilter,
+  ApprovalStatusFilter,
+  ApprovalSortBy,
+} from './dto/unified-approvals-query.dto';
+import {
+  DecideUnifiedApprovalDto,
+  CancelUnifiedApprovalDto,
+} from './dto/decide-unified-approval.dto';
+import {
+  ApprovalDecision,
+  LeaveRequestStatus,
+  Prisma,
+  VisitStatus,
+  WfhStatus,
+} from '@prisma/client';
 import { getTimezoneParts } from '../attendance/utils/policy-evaluator.util';
 
 export interface ManagerDashboardMetricSummary {
@@ -45,6 +73,79 @@ export interface ManagerRosterItem {
   leaveTypeName?: string | null;
 }
 
+export interface UnifiedApprovalItem {
+  id: string;
+  type: 'LEAVE' | 'WFH' | 'VISIT';
+  typeLabel: string;
+  employeeId: string;
+  employee: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    profilePhoto: string | null;
+    department: string | null;
+    designation: string | null;
+    managerId?: string | null;
+  };
+  startDate: string;
+  endDate: string;
+  duration: string;
+  durationDays: number;
+  durationType: string;
+  reason: string;
+  status: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  submittedAt: string;
+  updatedAt: string;
+  isEscalated: boolean;
+  metadata: {
+    leaveTypeId?: string;
+    leaveTypeName?: string;
+    leaveTypeCode?: string;
+    leaveTypeColor?: string | null;
+    chargeableDays?: number;
+    isPaid?: boolean;
+    attachmentUrl?: string | null;
+    attachmentName?: string | null;
+    contactNumber?: string | null;
+    emergencyAddress?: string | null;
+    title?: string;
+    destinationCount?: number;
+    destinations?: Array<{
+      organizationName: string;
+      city: string;
+      address?: string | null;
+      latitude?: number | null;
+      longitude?: number | null;
+    }>;
+    transportMode?: string;
+    isInternational?: boolean;
+  };
+  approvals: Array<{
+    id: string;
+    approverId: string;
+    approverName: string;
+    decision: string;
+    comments?: string | null;
+    decidedAt: string;
+  }>;
+}
+
+export interface UnifiedApprovalsResponse {
+  items: UnifiedApprovalItem[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+  counts: {
+    totalPending: number;
+    leavePending: number;
+    wfhPending: number;
+    visitPending: number;
+  };
+}
+
 @Injectable()
 export class ManagerService {
   private readonly logger = new Logger(ManagerService.name);
@@ -52,6 +153,10 @@ export class ManagerService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hierarchyService: HierarchyService,
+    private readonly leaveService: LeaveService,
+    private readonly wfhService: WfhService,
+    private readonly visitsService: VisitsService,
+    @Optional() private readonly managerAlertsService?: ManagerAlertsService,
   ) {}
 
   /**
@@ -1183,5 +1288,601 @@ export class ManagerService {
         reason: '[Approved Scheduled Absence]',
       })),
     };
+  }
+
+  /**
+   * Unified read/query layer for Manager Approvals Inbox across Leave, WFH, and Official Visits.
+   * Respects organizational boundaries, manager hierarchy scope, and self-approval guards.
+   */
+  async getUnifiedApprovals(
+    user: AuthenticatedUser,
+    query: QueryUnifiedApprovalsDto,
+  ): Promise<UnifiedApprovalsResponse> {
+    const isHrOrAdmin = user.roles.includes('ADMIN' as any) || user.roles.includes('HR' as any);
+    let allowedEmployeeIds: string[] | null = null;
+
+    if (!isHrOrAdmin) {
+      const managerEmp = await this.prisma.employee.findFirst({
+        where: {
+          organizationId: user.organizationId,
+          userId: user.id,
+          deletedAt: null,
+        },
+        select: { id: true, displayName: true, employeeCode: true },
+      });
+
+      if (!managerEmp) {
+        throw new ForbiddenException(
+          'Access denied: You do not possess an active employee profile to review approvals.',
+        );
+      }
+
+      const hierarchy = await this.hierarchyService.getTeam(managerEmp.id, user.organizationId);
+      // Guarantee self-approval prevention: exclude manager from their own approval inbox
+      const subordinateIds = hierarchy.allMemberIds.filter((id) => id !== managerEmp.id);
+
+      if (query.employeeId) {
+        if (!subordinateIds.includes(query.employeeId)) {
+          throw new ForbiddenException(
+            'Access denied: Queried employee is outside your authorized reporting hierarchy scope.',
+          );
+        }
+        allowedEmployeeIds = [query.employeeId];
+      } else {
+        allowedEmployeeIds = subordinateIds;
+      }
+    } else {
+      if (query.employeeId) {
+        allowedEmployeeIds = [query.employeeId];
+      }
+    }
+
+    // 1. Calculate pending counters across all 3 workflows within caller scope
+    const pendingScopeWhere = {
+      organizationId: user.organizationId,
+      ...(allowedEmployeeIds ? { employeeId: { in: allowedEmployeeIds } } : {}),
+      ...(query.escalatedOnly ? { employee: { managerId: null } } : {}),
+    };
+
+    const [leavePendingCount, wfhPendingCount, visitPendingCount] = await Promise.all([
+      this.prisma.leaveRequest.count({
+        where: {
+          ...pendingScopeWhere,
+          status: LeaveRequestStatus.SUBMITTED,
+        },
+      }),
+      this.prisma.wfhRequest.count({
+        where: {
+          ...pendingScopeWhere,
+          status: WfhStatus.SUBMITTED,
+        },
+      }),
+      this.prisma.officialVisit.count({
+        where: {
+          ...pendingScopeWhere,
+          status: VisitStatus.SUBMITTED,
+        },
+      }),
+    ]);
+
+    // 2. Build workflow query conditions
+    const statusFilter =
+      !query.status || query.status === ApprovalStatusFilter.SUBMITTED
+        ? 'SUBMITTED'
+        : query.status === ApprovalStatusFilter.ALL
+          ? undefined
+          : query.status;
+
+    const baseWhere: any = {
+      organizationId: user.organizationId,
+      ...(allowedEmployeeIds ? { employeeId: { in: allowedEmployeeIds } } : {}),
+      ...(query.escalatedOnly ? { employee: { managerId: null } } : {}),
+    };
+
+    if (query.startDate) {
+      baseWhere.endDate = { gte: new Date(query.startDate) };
+    }
+    if (query.endDate) {
+      baseWhere.startDate = { lte: new Date(query.endDate) };
+    }
+    if (query.submittedStartDate) {
+      baseWhere.createdAt = {
+        ...(baseWhere.createdAt || {}),
+        gte: new Date(query.submittedStartDate),
+      };
+    }
+    if (query.submittedEndDate) {
+      baseWhere.createdAt = {
+        ...(baseWhere.createdAt || {}),
+        lte: new Date(query.submittedEndDate),
+      };
+    }
+
+    const searchTerm = query.search?.trim();
+
+    const fetchLeaves =
+      !query.type ||
+      query.type === ApprovalRequestTypeFilter.ALL ||
+      query.type === ApprovalRequestTypeFilter.LEAVE;
+    const fetchWfh =
+      !query.type ||
+      query.type === ApprovalRequestTypeFilter.ALL ||
+      query.type === ApprovalRequestTypeFilter.WFH;
+    const fetchVisits =
+      !query.type ||
+      query.type === ApprovalRequestTypeFilter.ALL ||
+      query.type === ApprovalRequestTypeFilter.VISIT;
+
+    const queries: Promise<UnifiedApprovalItem[]>[] = [];
+
+    // 3. Query Leaves
+    if (fetchLeaves) {
+      const leaveWhere: Prisma.LeaveRequestWhereInput = {
+        ...baseWhere,
+        ...(statusFilter ? { status: statusFilter as LeaveRequestStatus } : {}),
+      };
+
+      if (searchTerm) {
+        leaveWhere.OR = [
+          { reason: { contains: searchTerm, mode: 'insensitive' } },
+          { employee: { displayName: { contains: searchTerm, mode: 'insensitive' } } },
+          { employee: { employeeCode: { contains: searchTerm, mode: 'insensitive' } } },
+        ];
+      }
+
+      queries.push(
+        this.prisma.leaveRequest
+          .findMany({
+            where: leaveWhere,
+            include: {
+              employee: {
+                select: {
+                  id: true,
+                  employeeCode: true,
+                  displayName: true,
+                  profilePhoto: true,
+                  managerId: true,
+                  employment: {
+                    select: {
+                      department: { select: { name: true } },
+                      designation: { select: { title: true } },
+                    },
+                  },
+                },
+              },
+              leaveType: true,
+              approvals: {
+                include: {
+                  approver: { select: { id: true, firstName: true, lastName: true } },
+                },
+                orderBy: { decidedAt: 'desc' },
+              },
+            },
+          })
+          .then((records) =>
+            records.map((r) => {
+              const startIso = r.startDate.toISOString().split('T')[0];
+              const endIso = r.endDate.toISOString().split('T')[0];
+              const days = Number(r.chargeableDays);
+              let duration = `${days} ${days === 1 ? 'Day' : 'Days'}`;
+              if (r.durationType === 'FIRST_HALF') duration += ' (First Half)';
+              if (r.durationType === 'SECOND_HALF') duration += ' (Second Half)';
+
+              return {
+                id: r.id,
+                type: 'LEAVE' as const,
+                typeLabel: 'Leave Application',
+                employeeId: r.employeeId,
+                employee: {
+                  id: r.employee.id,
+                  employeeCode: r.employee.employeeCode,
+                  displayName: r.employee.displayName,
+                  profilePhoto: r.employee.profilePhoto,
+                  department: r.employee.employment?.department?.name || null,
+                  designation: r.employee.employment?.designation?.title || null,
+                  managerId: r.employee.managerId,
+                },
+                startDate: startIso,
+                endDate: endIso,
+                duration,
+                durationDays: days,
+                durationType: r.durationType,
+                reason: r.reason,
+                status: r.status as any,
+                submittedAt: r.createdAt.toISOString(),
+                updatedAt: r.updatedAt.toISOString(),
+                isEscalated: !r.employee.managerId,
+                metadata: {
+                  leaveTypeId: r.leaveTypeId,
+                  leaveTypeName: r.leaveType?.name,
+                  leaveTypeCode: r.leaveType?.code,
+                  leaveTypeColor: r.leaveType?.color,
+                  chargeableDays: days,
+                  isPaid: r.leaveType?.isPaid,
+                  attachmentUrl: r.attachmentUrl,
+                  attachmentName: r.attachmentName,
+                },
+                approvals: r.approvals.map((a) => ({
+                  id: a.id,
+                  approverId: a.approverId,
+                  approverName: `${a.approver.firstName} ${a.approver.lastName}`,
+                  decision: a.decision,
+                  comments: a.comments,
+                  decidedAt: a.decidedAt.toISOString(),
+                })),
+              };
+            }),
+          ),
+      );
+    }
+
+    // 4. Query WFH
+    if (fetchWfh) {
+      const wfhWhere: Prisma.WfhRequestWhereInput = {
+        ...baseWhere,
+        ...(statusFilter ? { status: statusFilter as WfhStatus } : {}),
+      };
+
+      if (searchTerm) {
+        wfhWhere.OR = [
+          { reason: { contains: searchTerm, mode: 'insensitive' } },
+          { employee: { displayName: { contains: searchTerm, mode: 'insensitive' } } },
+          { employee: { employeeCode: { contains: searchTerm, mode: 'insensitive' } } },
+        ];
+      }
+
+      queries.push(
+        this.prisma.wfhRequest
+          .findMany({
+            where: wfhWhere,
+            include: {
+              employee: {
+                select: {
+                  id: true,
+                  employeeCode: true,
+                  displayName: true,
+                  profilePhoto: true,
+                  managerId: true,
+                  employment: {
+                    select: {
+                      department: { select: { name: true } },
+                      designation: { select: { title: true } },
+                    },
+                  },
+                },
+              },
+              approvals: {
+                include: {
+                  approver: { select: { id: true, firstName: true, lastName: true } },
+                },
+                orderBy: { decidedAt: 'desc' },
+              },
+            },
+          })
+          .then((records) =>
+            records.map((r) => {
+              const startIso = r.startDate.toISOString().split('T')[0];
+              const endIso = r.endDate.toISOString().split('T')[0];
+              const diffMs = r.endDate.getTime() - r.startDate.getTime();
+              const daysDiff = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+              const days =
+                r.durationType === 'FIRST_HALF' || r.durationType === 'SECOND_HALF'
+                  ? 0.5
+                  : daysDiff;
+
+              let duration = `${days} ${days === 1 ? 'Day' : 'Days'}`;
+              if (r.durationType === 'FIRST_HALF') duration = 'Half Day (First Half)';
+              if (r.durationType === 'SECOND_HALF') duration = 'Half Day (Second Half)';
+
+              return {
+                id: r.id,
+                type: 'WFH' as const,
+                typeLabel: 'Work From Home',
+                employeeId: r.employeeId,
+                employee: {
+                  id: r.employee.id,
+                  employeeCode: r.employee.employeeCode,
+                  displayName: r.employee.displayName,
+                  profilePhoto: r.employee.profilePhoto,
+                  department: r.employee.employment?.department?.name || null,
+                  designation: r.employee.employment?.designation?.title || null,
+                  managerId: r.employee.managerId,
+                },
+                startDate: startIso,
+                endDate: endIso,
+                duration,
+                durationDays: days,
+                durationType: r.durationType,
+                reason: r.reason,
+                status: r.status as any,
+                submittedAt: r.createdAt.toISOString(),
+                updatedAt: r.updatedAt.toISOString(),
+                isEscalated: !r.employee.managerId,
+                metadata: {},
+                approvals: r.approvals.map((a) => ({
+                  id: a.id,
+                  approverId: a.approverId,
+                  approverName: `${a.approver.firstName} ${a.approver.lastName}`,
+                  decision: a.decision,
+                  comments: a.comments,
+                  decidedAt: a.decidedAt.toISOString(),
+                })),
+              };
+            }),
+          ),
+      );
+    }
+
+    // 5. Query Official Visits
+    if (fetchVisits) {
+      const visitWhere: Prisma.OfficialVisitWhereInput = {
+        ...baseWhere,
+        ...(statusFilter ? { status: statusFilter as VisitStatus } : {}),
+      };
+
+      if (searchTerm) {
+        visitWhere.OR = [
+          { title: { contains: searchTerm, mode: 'insensitive' } },
+          { purpose: { contains: searchTerm, mode: 'insensitive' } },
+          { employee: { displayName: { contains: searchTerm, mode: 'insensitive' } } },
+          { employee: { employeeCode: { contains: searchTerm, mode: 'insensitive' } } },
+        ];
+      }
+
+      queries.push(
+        this.prisma.officialVisit
+          .findMany({
+            where: visitWhere,
+            include: {
+              employee: {
+                select: {
+                  id: true,
+                  employeeCode: true,
+                  displayName: true,
+                  profilePhoto: true,
+                  managerId: true,
+                  employment: {
+                    select: {
+                      department: { select: { name: true } },
+                      designation: { select: { title: true } },
+                    },
+                  },
+                },
+              },
+              destinations: true,
+              approvals: {
+                include: {
+                  approver: { select: { id: true, firstName: true, lastName: true } },
+                },
+                orderBy: { decidedAt: 'desc' },
+              },
+            },
+          })
+          .then((records) =>
+            records.map((r) => {
+              const startIso = r.startDate.toISOString().split('T')[0];
+              const endIso = r.endDate.toISOString().split('T')[0];
+              const days = Number(r.expectedDurationDays) || 1;
+              const duration = `${days} ${days === 1 ? 'Day' : 'Days'}`;
+
+              return {
+                id: r.id,
+                type: 'VISIT' as const,
+                typeLabel: 'Official Visit',
+                employeeId: r.employeeId,
+                employee: {
+                  id: r.employee.id,
+                  employeeCode: r.employee.employeeCode,
+                  displayName: r.employee.displayName,
+                  profilePhoto: r.employee.profilePhoto,
+                  department: r.employee.employment?.department?.name || null,
+                  designation: r.employee.employment?.designation?.title || null,
+                  managerId: r.employee.managerId,
+                },
+                startDate: startIso,
+                endDate: endIso,
+                duration,
+                durationDays: days,
+                durationType: 'FULL_DAY',
+                reason: r.purpose || r.title,
+                status: r.status as any,
+                submittedAt: r.createdAt.toISOString(),
+                updatedAt: r.updatedAt.toISOString(),
+                isEscalated: !r.employee.managerId,
+                metadata: {
+                  title: r.title,
+                  destinationCount: r.destinations?.length || 0,
+                  destinations: r.destinations?.map((d) => ({
+                    organizationName: d.destinationName,
+                    city: d.city || '',
+                    address: d.address,
+                    latitude: d.latitude,
+                    longitude: d.longitude,
+                  })),
+                },
+                approvals: r.approvals.map((a) => ({
+                  id: a.id,
+                  approverId: a.approverId,
+                  approverName: `${a.approver.firstName} ${a.approver.lastName}`,
+                  decision: a.decision,
+                  comments: a.comments,
+                  decidedAt: a.decidedAt.toISOString(),
+                })),
+              };
+            }),
+          ),
+      );
+    }
+
+    const queryResults = await Promise.all(queries);
+    const combinedItems = queryResults.flat();
+
+    // 6. Sort unified items
+    const sortBy = query.sortBy || ApprovalSortBy.SUBMITTED_AT;
+    const sortOrder = query.sortOrder || 'desc';
+
+    combinedItems.sort((a, b) => {
+      let comparison = 0;
+      if (sortBy === ApprovalSortBy.START_DATE) {
+        comparison = a.startDate.localeCompare(b.startDate);
+      } else if (sortBy === ApprovalSortBy.EMPLOYEE_NAME) {
+        comparison = a.employee.displayName.localeCompare(b.employee.displayName);
+      } else if (sortBy === ApprovalSortBy.TYPE) {
+        comparison = a.type.localeCompare(b.type);
+      } else {
+        // Default: submittedAt
+        comparison = new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+      }
+
+      return sortOrder === 'desc' ? -comparison : comparison;
+    });
+
+    // 7. Paginate
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.max(1, Math.min(100, Number(query.limit) || 10));
+    const total = combinedItems.length;
+    const paginatedItems = combinedItems.slice((page - 1) * limit, page * limit);
+
+    return {
+      items: paginatedItems,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+      counts: {
+        totalPending: leavePendingCount + wfhPendingCount + visitPendingCount,
+        leavePending: leavePendingCount,
+        wfhPending: wfhPendingCount,
+        visitPending: visitPendingCount,
+      },
+    };
+  }
+
+  /**
+   * Retrieves single approval request details by reusing the original backend service.
+   */
+  async getUnifiedApprovalDetail(user: AuthenticatedUser, type: string, id: string) {
+    const normType = type.toUpperCase();
+    if (normType === 'LEAVE') {
+      return this.leaveService.getRequestById(user, id);
+    }
+    if (normType === 'WFH') {
+      return this.wfhService.getWfhRequestById(user, id);
+    }
+    if (normType === 'VISIT' || normType === 'OFFICIAL_VISIT') {
+      return this.visitsService.getVisitById(user, id);
+    }
+    throw new BadRequestException(`Unsupported approval request type: ${type}`);
+  }
+
+  /**
+   * Dispatches approval/rejection decision through the authoritative original workflow service.
+   * Preserves transactional ledger balance posting, collision checks, notifications and audit history.
+   */
+  async decideUnifiedApproval(user: AuthenticatedUser, dto: DecideUnifiedApprovalDto) {
+    const normType = dto.type.toUpperCase();
+    const rawDecision = dto.decision.toUpperCase();
+    const decision: ApprovalDecision =
+      rawDecision === 'APPROVE' || rawDecision === 'APPROVED'
+        ? ApprovalDecision.APPROVED
+        : ApprovalDecision.REJECTED;
+    const commentText = (dto.reason || dto.comments || dto.remarks || '').trim();
+
+    if (decision === ApprovalDecision.REJECTED && commentText.length < 3) {
+      throw new BadRequestException(
+        'A reason of at least 3 characters is mandatory when rejecting.',
+      );
+    }
+
+    if (normType === 'LEAVE') {
+      const result = await this.leaveService.decide(user, dto.requestId, {
+        decision,
+        comments: commentText || undefined,
+      });
+      if (this.managerAlertsService) {
+        this.managerAlertsService
+          .notifyApprovalOutcome({
+            organizationId: user.organizationId,
+            employeeId: (result as any)?.employeeId || '',
+            type: 'LEAVE',
+            requestId: dto.requestId,
+            decision: decision === ApprovalDecision.APPROVED ? 'APPROVED' : 'REJECTED',
+            decidedByUserId: user.id,
+            startDate: (result as any)?.startDate || new Date(),
+            endDate: (result as any)?.endDate || new Date(),
+            sanitizedComments: commentText || undefined,
+          })
+          .catch(() => null);
+      }
+      return result;
+    }
+    if (normType === 'WFH') {
+      const result = await this.wfhService.decideWfhRequest(user, dto.requestId, {
+        decision,
+        comments: commentText || undefined,
+      });
+      if (this.managerAlertsService) {
+        this.managerAlertsService
+          .notifyApprovalOutcome({
+            organizationId: user.organizationId,
+            employeeId: (result as any)?.employeeId || '',
+            type: 'WFH',
+            requestId: dto.requestId,
+            decision: decision === ApprovalDecision.APPROVED ? 'APPROVED' : 'REJECTED',
+            decidedByUserId: user.id,
+            startDate: (result as any)?.startDate || new Date(),
+            endDate: (result as any)?.endDate || new Date(),
+            sanitizedComments: commentText || undefined,
+          })
+          .catch(() => null);
+      }
+      return result;
+    }
+    if (normType === 'VISIT' || normType === 'OFFICIAL_VISIT') {
+      const result = await this.visitsService.decideVisit(user, dto.requestId, {
+        decision,
+        comments: commentText || undefined,
+      });
+      if (this.managerAlertsService) {
+        this.managerAlertsService
+          .notifyApprovalOutcome({
+            organizationId: user.organizationId,
+            employeeId: (result as any)?.employeeId || '',
+            type: 'VISIT',
+            requestId: dto.requestId,
+            decision: decision === ApprovalDecision.APPROVED ? 'APPROVED' : 'REJECTED',
+            decidedByUserId: user.id,
+            startDate: (result as any)?.startDate || new Date(),
+            endDate: (result as any)?.endDate || new Date(),
+            sanitizedComments: commentText || undefined,
+          })
+          .catch(() => null);
+      }
+      return result;
+    }
+
+    throw new BadRequestException(`Unsupported approval workflow type: ${dto.type}`);
+  }
+
+  /**
+   * Dispatches cancellation through the authoritative original workflow service.
+   */
+  async cancelUnifiedApproval(user: AuthenticatedUser, dto: CancelUnifiedApprovalDto) {
+    const normType = dto.type.toUpperCase();
+    const cancellationReason = dto.reason || 'Cancelled by manager';
+
+    if (normType === 'LEAVE') {
+      return this.leaveService.cancel(user, dto.requestId, { cancellationReason });
+    }
+    if (normType === 'WFH') {
+      return this.wfhService.cancelWfhRequest(user, dto.requestId, { cancellationReason });
+    }
+    if (normType === 'VISIT' || normType === 'OFFICIAL_VISIT') {
+      return this.visitsService.cancelVisit(user, dto.requestId, { cancellationReason });
+    }
+
+    throw new BadRequestException(`Unsupported approval workflow type: ${dto.type}`);
   }
 }

@@ -1136,14 +1136,46 @@ export const attendanceApi = {
 };
 
 export const notificationsApi = {
-  async getNotifications() {
-    const res = await fetchWithAuth<any[]>('/notifications');
+  async getNotifications(params?: { type?: string; isRead?: boolean; limit?: number }) {
+    const q = new URLSearchParams();
+    if (params?.type) q.append('type', params.type);
+    if (params?.isRead !== undefined) q.append('isRead', String(params.isRead));
+    if (params?.limit) q.append('limit', String(params.limit));
+    const qs = q.toString();
+    const res = await fetchWithAuth<any[]>(`/notifications${qs ? `?${qs}` : ''}`);
     return res.data;
   },
   async markRead(id: string) {
     const res = await fetchWithAuth<any>(`/notifications/${id}/read`, {
       method: 'PATCH',
     });
+    return res.data;
+  },
+  async markAllRead() {
+    const res = await fetchWithAuth<any>('/notifications/read-all', {
+      method: 'PATCH',
+    });
+    return res.data;
+  },
+};
+
+export const managerAlertsApi = {
+  async getAlerts(params?: { type?: string; isRead?: boolean; limit?: number }) {
+    const q = new URLSearchParams();
+    if (params?.type) q.append('type', params.type);
+    if (params?.isRead !== undefined) q.append('isRead', String(params.isRead));
+    if (params?.limit) q.append('limit', String(params.limit));
+    const qs = q.toString();
+    const res = await fetchWithAuth<{ alerts: any[]; total: number; unreadCount: number }>(
+      `/manager/alerts${qs ? `?${qs}` : ''}`,
+    );
+    return res.data;
+  },
+  async scanUpcoming() {
+    const res = await fetchWithAuth<{ scannedCount: number; alertedCount: number; alerts: any[] }>(
+      '/manager/alerts/scan-upcoming',
+      { method: 'POST' },
+    );
     return res.data;
   },
 };
@@ -1727,6 +1759,193 @@ export const managerApi = {
 
   async getTeamMember(id: string) {
     const res = await fetchWithAuth<any>(`/manager/team/members/${id}`);
+    return res;
+  },
+
+  async getUnifiedApprovals(params?: {
+    type?: 'ALL' | 'LEAVE' | 'WFH' | 'VISIT';
+    status?: 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+    search?: string;
+    departmentId?: string;
+    branchId?: string;
+    startDate?: string;
+    endDate?: string;
+    page?: number;
+    limit?: number;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+  }) {
+    const query = new URLSearchParams();
+    if (params?.type && params.type !== 'ALL') query.set('type', params.type);
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.departmentId && params.departmentId !== 'ALL')
+      query.set('departmentId', params.departmentId);
+    if (params?.branchId && params.branchId !== 'ALL') query.set('branchId', params.branchId);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.sortBy) query.set('sortBy', params.sortBy);
+    if (params?.sortOrder) query.set('sortOrder', params.sortOrder);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/manager/approvals${qs}`);
+    return res;
+  },
+
+  async getUnifiedApprovalDetail(type: string, id: string) {
+    const res = await fetchWithAuth<any>(`/manager/approvals/${type}/${id}`);
+    return res;
+  },
+
+  async decideUnifiedApproval(data: {
+    type: string;
+    requestId: string;
+    decision: 'APPROVED' | 'REJECTED';
+    reason?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/manager/approvals/decide', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async cancelUnifiedApproval(data: { type: string; requestId: string; reason: string }) {
+    const res = await fetchWithAuth<any>('/manager/approvals/cancel', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async getTeamAttendanceReport(params?: {
+    startDate?: string;
+    endDate?: string;
+    employeeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    scope?: 'ALL' | 'DIRECT';
+    status?: string;
+    mode?: string;
+    page?: number;
+    limit?: number;
+    format?: 'json' | 'csv';
+  }) {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.employeeId && params.employeeId !== 'ALL')
+      query.set('employeeId', params.employeeId);
+    if (params?.departmentId && params.departmentId !== 'ALL')
+      query.set('departmentId', params.departmentId);
+    if (params?.branchId && params.branchId !== 'ALL') query.set('branchId', params.branchId);
+    if (params?.scope) query.set('scope', params.scope);
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.mode && params.mode !== 'ALL') query.set('mode', params.mode);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.format) query.set('format', params.format);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/manager/reports/attendance${qs}`);
+    return res;
+  },
+
+  async getTeamExceptionReport(params?: {
+    startDate?: string;
+    endDate?: string;
+    employeeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    scope?: 'ALL' | 'DIRECT';
+    exceptionType?: string;
+    severity?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+    format?: 'json' | 'csv';
+  }) {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.employeeId && params.employeeId !== 'ALL')
+      query.set('employeeId', params.employeeId);
+    if (params?.departmentId && params.departmentId !== 'ALL')
+      query.set('departmentId', params.departmentId);
+    if (params?.branchId && params.branchId !== 'ALL') query.set('branchId', params.branchId);
+    if (params?.scope) query.set('scope', params.scope);
+    if (params?.exceptionType && params.exceptionType !== 'ALL')
+      query.set('exceptionType', params.exceptionType);
+    if (params?.severity && params.severity !== 'ALL') query.set('severity', params.severity);
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.format) query.set('format', params.format);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/manager/reports/exceptions${qs}`);
+    return res;
+  },
+
+  async getTeamApprovalReport(params?: {
+    startDate?: string;
+    endDate?: string;
+    employeeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    scope?: 'ALL' | 'DIRECT';
+    type?: string;
+    decision?: string;
+    page?: number;
+    limit?: number;
+    format?: 'json' | 'csv';
+  }) {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.employeeId && params.employeeId !== 'ALL')
+      query.set('employeeId', params.employeeId);
+    if (params?.departmentId && params.departmentId !== 'ALL')
+      query.set('departmentId', params.departmentId);
+    if (params?.branchId && params.branchId !== 'ALL') query.set('branchId', params.branchId);
+    if (params?.scope) query.set('scope', params.scope);
+    if (params?.type && params.type !== 'ALL') query.set('type', params.type);
+    if (params?.decision && params.decision !== 'ALL') query.set('decision', params.decision);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.format) query.set('format', params.format);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/manager/reports/approvals${qs}`);
+    return res;
+  },
+
+  async getTeamAvailabilityReport(params?: {
+    startDate?: string;
+    endDate?: string;
+    employeeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    scope?: 'ALL' | 'DIRECT';
+    minAvailabilityPct?: number;
+    page?: number;
+    limit?: number;
+    format?: 'json' | 'csv';
+  }) {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.employeeId && params.employeeId !== 'ALL')
+      query.set('employeeId', params.employeeId);
+    if (params?.departmentId && params.departmentId !== 'ALL')
+      query.set('departmentId', params.departmentId);
+    if (params?.branchId && params.branchId !== 'ALL') query.set('branchId', params.branchId);
+    if (params?.scope) query.set('scope', params.scope);
+    if (params?.minAvailabilityPct !== undefined)
+      query.set('minAvailabilityPct', String(params.minAvailabilityPct));
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.format) query.set('format', params.format);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/manager/reports/availability${qs}`);
     return res;
   },
 };

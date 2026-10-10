@@ -3,6 +3,9 @@ import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ManagerService } from './manager.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { HierarchyService } from '../employees/hierarchy.service';
+import { LeaveService } from '../leave/leave.service';
+import { WfhService } from '../wfh/wfh.service';
+import { VisitsService } from '../visits/visits.service';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 
 describe('ManagerService', () => {
@@ -132,11 +135,32 @@ describe('ManagerService', () => {
       getTeam: jest.fn(),
     };
 
+    const mockLeaveService = {
+      decide: jest.fn(),
+      cancel: jest.fn(),
+      getRequestById: jest.fn(),
+    };
+
+    const mockWfhService = {
+      decideWfhRequest: jest.fn(),
+      cancelWfhRequest: jest.fn(),
+      getWfhRequestById: jest.fn(),
+    };
+
+    const mockVisitsService = {
+      decideVisit: jest.fn(),
+      cancelVisit: jest.fn(),
+      getVisitById: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ManagerService,
         { provide: PrismaService, useValue: prisma },
         { provide: HierarchyService, useValue: hierarchyService },
+        { provide: LeaveService, useValue: mockLeaveService },
+        { provide: WfhService, useValue: mockWfhService },
+        { provide: VisitsService, useValue: mockVisitsService },
       ],
     }).compile();
 

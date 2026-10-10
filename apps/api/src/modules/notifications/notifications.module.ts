@@ -89,10 +89,16 @@ export class NotificationsService {
     return notif;
   }
 
-  async getNotifications(userId?: string, organizationId?: string) {
+  async getNotifications(
+    userId?: string,
+    organizationId?: string,
+    query?: { type?: string; isRead?: boolean; limit?: number },
+  ) {
     const filtered = this.notifications.filter((n) => {
       if (organizationId && n.organizationId !== organizationId) return false;
       if (n.userId && userId && n.userId !== userId) return false;
+      if (query?.type && n.type !== query.type) return false;
+      if (query?.isRead !== undefined && n.isRead !== query.isRead) return false;
       return true;
     });
 
@@ -105,7 +111,15 @@ export class NotificationsService {
       isRead: n.isRead,
       metadata: n.metadata,
       link: n.link,
+      idempotencyKey: n.idempotencyKey,
+      createdAt: n.createdAt,
     }));
+
+    // If dynamic notifications exist, or if query filter is applied, do not inject static default demo items
+    if (filtered.length > 0 || query?.type || query?.isRead !== undefined) {
+      const limit = query?.limit ? Number(query.limit) : 50;
+      return formattedDynamic.slice(0, limit);
+    }
 
     // Retain default seed notifications for demonstration
     const defaults = [
@@ -113,26 +127,43 @@ export class NotificationsService {
         id: 'notif-1',
         title: 'Upcoming Holiday: Dussehra',
         message: 'Office remains closed on Monday for Dussehra festival.',
+        type: 'INFO',
         time: '2 hours ago',
         isRead: false,
+        metadata: null,
+        link: null,
+        idempotencyKey: null,
+        createdAt: new Date(),
       },
       {
         id: 'notif-2',
         title: 'Leave Approved',
         message: 'Your casual leave request for Oct 14 has been approved by manager.',
+        type: 'APPROVAL_APPROVED',
         time: '1 day ago',
         isRead: false,
+        metadata: null,
+        link: null,
+        idempotencyKey: null,
+        createdAt: new Date(),
       },
       {
         id: 'notif-3',
         title: 'Official Visit Submitted',
         message: 'Official visit request submitted for Hyderabad client meet.',
+        type: 'INFO',
         time: '2 days ago',
         isRead: true,
+        metadata: null,
+        link: null,
+        idempotencyKey: null,
+        createdAt: new Date(),
       },
     ];
 
-    return [...formattedDynamic, ...defaults];
+    const combined = [...formattedDynamic, ...defaults];
+    const limit = query?.limit ? Number(query.limit) : 50;
+    return combined.slice(0, limit);
   }
 
   async markRead(id: string, _userId?: string) {
@@ -141,6 +172,23 @@ export class NotificationsService {
       notif.isRead = true;
     }
     return { id, isRead: true };
+  }
+
+  async markAllRead(userId?: string, organizationId?: string) {
+    let count = 0;
+    for (const n of this.notifications) {
+      if (organizationId && n.organizationId !== organizationId) continue;
+      if (userId && n.userId && n.userId !== userId) continue;
+      if (!n.isRead) {
+        n.isRead = true;
+        count++;
+      }
+    }
+    return { count, success: true };
+  }
+
+  clearForTesting() {
+    this.notifications = [];
   }
 
   private formatRelativeTime(date: Date): string {
@@ -168,6 +216,16 @@ export class NotificationsController {
     const data = await this.notificationsService.getNotifications(user?.id, user?.organizationId);
     return {
       message: 'Notifications retrieved',
+      data,
+    };
+  }
+
+  @Patch('read-all')
+  @ApiOperation({ summary: 'Mark all notifications as read for current user' })
+  async markAllRead(@CurrentUser() user?: AuthenticatedUser) {
+    const data = await this.notificationsService.markAllRead(user?.id, user?.organizationId);
+    return {
+      message: 'All notifications marked as read',
       data,
     };
   }

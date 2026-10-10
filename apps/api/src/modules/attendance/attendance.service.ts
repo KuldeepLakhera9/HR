@@ -183,12 +183,31 @@ export class AttendanceService {
       const empCode = emp?.employeeCode ? ` (${emp.employeeCode})` : '';
 
       if (params.notify !== false && this.notificationsService) {
+        let managerUserId: string | null = null;
+        try {
+          const empWithMgr = await this.prisma.employee.findUnique({
+            where: { id: params.employeeId },
+            select: {
+              managerId: true,
+              manager: { select: { userId: true } },
+              employment: { select: { manager: { select: { userId: true } } } },
+            },
+          });
+          managerUserId =
+            empWithMgr?.manager?.userId || empWithMgr?.employment?.manager?.userId || null;
+        } catch {
+          // Non-fatal
+        }
+
         await this.notificationsService
           .createNotification({
+            userId: managerUserId,
             organizationId: params.organizationId,
             title: `Attendance Exception: ${params.exceptionType.replace(/_/g, ' ')}`,
-            message: `${empName}${empCode} flagged for ${params.exceptionType.replace(/_/g, ' ').toLowerCase()} on ${dateOnly}.`,
+            message: `${empName}${empCode} flagged for ${params.exceptionType.replace(/_/g, ' ').toLowerCase()} on ${dateOnly}. Action may be required.`,
             type: 'EXCEPTION_ALERT',
+            link: `/attendance?id=${created.id}`,
+            idempotencyKey: `notif:mgr_exception:${created.id}`,
             metadata: {
               exceptionId: created.id,
               employeeId: params.employeeId,
