@@ -110,6 +110,7 @@ export default function AttendancePage() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Geolocation & Verification State
+  const maxAllowedGpsAccuracy = todayData?.policy?.maxGpsAccuracyMeters ?? 100;
   const {
     status: geoStatus,
     position,
@@ -117,7 +118,7 @@ export default function AttendancePage() {
     isAcquiring,
     acquireLocation,
     reset: resetGeo,
-  } = useGeolocation(100);
+  } = useGeolocation(maxAllowedGpsAccuracy);
   const [locationVerification, setLocationVerification] = useState<{
     status: 'UNVERIFIED' | 'VERIFYING' | 'VERIFIED' | 'OUTSIDE_GEOFENCE' | 'ERROR';
     distanceMeters?: number;

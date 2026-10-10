@@ -898,7 +898,7 @@ async function main() {
     where: {
       organizationId_name: {
         organizationId: org.id,
-        name: 'Tech Park HQ Bangalore',
+        name: 'AIC-ADT Baramati',
       },
     },
     update: {
@@ -906,11 +906,15 @@ async function main() {
       longitude: 74.614057,
       geofenceRadiusMeters: 100,
       timezone: 'Asia/Kolkata',
+      code: 'AIC-ADT-01',
+      address: 'Atal Incubation Centre, Agricultural Development Trust, Shardanagar, Baramati',
       isActive: true,
     },
     create: {
       organizationId: org.id,
-      name: 'Tech Park HQ Bangalore',
+      name: 'AIC-ADT Baramati',
+      code: 'AIC-ADT-01',
+      address: 'Atal Incubation Centre, Agricultural Development Trust, Shardanagar, Baramati',
       latitude: 18.17441,
       longitude: 74.614057,
       geofenceRadiusMeters: 100,
