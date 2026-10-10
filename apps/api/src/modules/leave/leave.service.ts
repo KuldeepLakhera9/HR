@@ -947,16 +947,16 @@ export class LeaveService {
         attachmentName: r.attachmentName,
         status: r.status,
         isEscalated: r.employee.managerId === null,
-        approvals: r.approvals.map((a) => ({
+        approvals: (r.approvals || []).map((a) => ({
           id: a.id,
           approverId: a.approverId,
-          approverName: `${a.approver.firstName} ${a.approver.lastName}`,
+          approverName: a.approver ? `${a.approver.firstName} ${a.approver.lastName}` : '',
           decision: a.decision,
           comments: a.comments,
-          decidedAt: a.decidedAt.toISOString(),
+          decidedAt: a.decidedAt ? new Date(a.decidedAt).toISOString() : new Date().toISOString(),
         })),
-        createdAt: r.createdAt.toISOString(),
-        updatedAt: r.updatedAt.toISOString(),
+        createdAt: r.createdAt ? new Date(r.createdAt).toISOString() : new Date().toISOString(),
+        updatedAt: r.updatedAt ? new Date(r.updatedAt).toISOString() : new Date().toISOString(),
       })),
       pagination: {
         page,
