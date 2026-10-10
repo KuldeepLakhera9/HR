@@ -29,6 +29,9 @@ import {
 } from './dto/create-leave-policy.dto';
 import { AdjustLeaveBalanceDto } from './dto/adjust-leave-balance.dto';
 import { QueryLeaveCalendarDto } from './dto/query-leave-calendar.dto';
+import { QueryPolicyAssignmentsDto } from './dto/query-policy-assignments.dto';
+import { QueryLeaveReconciliationDto } from './dto/query-leave-reconciliation.dto';
+import { QueryLeaveReportsDto } from './dto/query-leave-reports.dto';
 import {
   ApprovalDecision,
   LeaveDurationType,
@@ -1220,6 +1223,67 @@ export class LeaveService {
     return { success: true, message: 'Leave type created successfully.', data: leaveType };
   }
 
+  async updateLeaveType(user: AuthenticatedUser, id: string, dto: UpdateLeaveTypeDto) {
+    const existing = await this.prisma.leaveType.findFirst({
+      where: { id, organizationId: user.organizationId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Leave type not found in this organization');
+    }
+
+    const updated = await this.prisma.leaveType.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
+        ...(dto.color !== undefined ? { color: dto.color } : {}),
+        ...(dto.isPaid !== undefined ? { isPaid: dto.isPaid } : {}),
+        ...(dto.allowHalfDay !== undefined ? { allowHalfDay: dto.allowHalfDay } : {}),
+        ...(dto.requiresDoc !== undefined ? { requiresDoc: dto.requiresDoc } : {}),
+        ...(dto.docThresholdDays !== undefined ? { docThresholdDays: dto.docThresholdDays } : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+
+    this.auditService
+      .record({
+        action: 'LEAVE_TYPE_UPDATE',
+        entity: 'LeaveType',
+        entityId: id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        metadata: { changes: dto },
+      })
+      .catch(() => null);
+
+    return { success: true, message: 'Leave type updated successfully.', data: updated };
+  }
+
+  async deleteLeaveType(user: AuthenticatedUser, id: string) {
+    const existing = await this.prisma.leaveType.findFirst({
+      where: { id, organizationId: user.organizationId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Leave type not found in this organization');
+    }
+
+    const hasRequests = await this.prisma.leaveRequest.count({ where: { leaveTypeId: id } });
+    if (hasRequests > 0) {
+      const deactivated = await this.prisma.leaveType.update({
+        where: { id },
+        data: { isActive: false },
+      });
+      return {
+        success: true,
+        message: 'Leave type has active records and was deactivated instead of deleted.',
+        data: deactivated,
+      };
+    }
+
+    await this.prisma.leaveType.delete({ where: { id } });
+    return { success: true, message: 'Leave type deleted successfully.' };
+  }
+
   async getLeavePolicies(organizationId: string) {
     const policies = await this.prisma.leavePolicy.findMany({
       where: { organizationId },
@@ -1230,6 +1294,12 @@ export class LeaveService {
   }
 
   async createLeavePolicy(user: AuthenticatedUser, dto: CreateLeavePolicyDto) {
+    const effFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date();
+    const effTo = dto.effectiveTo ? new Date(dto.effectiveTo) : null;
+    if (effFrom && effTo && effFrom.getTime() > effTo.getTime()) {
+      throw new BadRequestException('effectiveFrom must be on or before effectiveTo');
+    }
+
     const policy = await this.prisma.leavePolicy.create({
       data: {
         organizationId: user.organizationId,
@@ -1246,13 +1316,100 @@ export class LeaveService {
         countHolidaysAsLeave: dto.countHolidaysAsLeave ?? false,
         allowNegativeBalance: dto.allowNegativeBalance ?? false,
         maxNegativeBalance: new Prisma.Decimal(dto.maxNegativeBalance ?? 0),
-        effectiveFrom: dto.effectiveFrom ? new Date(dto.effectiveFrom) : new Date(),
-        effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null,
+        effectiveFrom: effFrom,
+        effectiveTo: effTo,
         isActive: dto.isActive ?? true,
       },
     });
 
-    return { success: true, message: 'Leave policy created successfully.', data: policy };
+    return {
+      success: true,
+      message: 'Leave policy created successfully.',
+      data: {
+        ...policy,
+        annualEntitlement: Number(policy.annualEntitlement),
+        carryForwardLimit: Number(policy.carryForwardLimit),
+        maxNegativeBalance: Number(policy.maxNegativeBalance),
+      },
+    };
+  }
+
+  async updateLeavePolicy(user: AuthenticatedUser, id: string, dto: UpdateLeavePolicyDto) {
+    const existing = await this.prisma.leavePolicy.findFirst({
+      where: { id, organizationId: user.organizationId },
+    });
+    if (!existing) {
+      throw new NotFoundException('Leave policy not found in this organization');
+    }
+
+    const effFrom = dto.effectiveFrom ? new Date(dto.effectiveFrom) : existing.effectiveFrom;
+    const effTo =
+      dto.effectiveTo !== undefined
+        ? dto.effectiveTo
+          ? new Date(dto.effectiveTo)
+          : null
+        : existing.effectiveTo;
+    if (effFrom && effTo && effFrom.getTime() > effTo.getTime()) {
+      throw new BadRequestException('effectiveFrom must be on or before effectiveTo');
+    }
+
+    const updated = await this.prisma.leavePolicy.update({
+      where: { id },
+      data: {
+        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+        ...(dto.description !== undefined ? { description: dto.description?.trim() || null } : {}),
+        ...(dto.annualEntitlement !== undefined
+          ? { annualEntitlement: new Prisma.Decimal(dto.annualEntitlement) }
+          : {}),
+        ...(dto.accrualFrequency !== undefined ? { accrualFrequency: dto.accrualFrequency } : {}),
+        ...(dto.carryForwardLimit !== undefined
+          ? { carryForwardLimit: new Prisma.Decimal(dto.carryForwardLimit) }
+          : {}),
+        ...(dto.maxConsecutiveDays !== undefined
+          ? { maxConsecutiveDays: dto.maxConsecutiveDays }
+          : {}),
+        ...(dto.minNoticeDays !== undefined ? { minNoticeDays: dto.minNoticeDays } : {}),
+        ...(dto.countWeekendsAsLeave !== undefined
+          ? { countWeekendsAsLeave: dto.countWeekendsAsLeave }
+          : {}),
+        ...(dto.countHolidaysAsLeave !== undefined
+          ? { countHolidaysAsLeave: dto.countHolidaysAsLeave }
+          : {}),
+        ...(dto.allowNegativeBalance !== undefined
+          ? { allowNegativeBalance: dto.allowNegativeBalance }
+          : {}),
+        ...(dto.maxNegativeBalance !== undefined
+          ? { maxNegativeBalance: new Prisma.Decimal(dto.maxNegativeBalance) }
+          : {}),
+        ...(dto.effectiveFrom !== undefined ? { effectiveFrom: new Date(dto.effectiveFrom) } : {}),
+        ...(dto.effectiveTo !== undefined
+          ? { effectiveTo: dto.effectiveTo ? new Date(dto.effectiveTo) : null }
+          : {}),
+        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+      },
+    });
+
+    this.auditService
+      .record({
+        action: 'LEAVE_POLICY_UPDATE',
+        entity: 'LeavePolicy',
+        entityId: id,
+        userId: user.id,
+        organizationId: user.organizationId,
+        metadata: { changes: dto },
+      })
+      .catch(() => null);
+
+    return {
+      success: true,
+      message: 'Leave policy updated successfully.',
+      data: {
+        ...updated,
+        annualEntitlement: Number(updated.annualEntitlement),
+        carryForwardLimit: Number(updated.carryForwardLimit),
+        maxNegativeBalance: Number(updated.maxNegativeBalance),
+      },
+    };
   }
 
   async assignPolicy(user: AuthenticatedUser, dto: AssignLeavePolicyDto) {
@@ -1277,6 +1434,81 @@ export class LeaveService {
     });
 
     return { success: true, message: 'Leave policy assigned successfully.', data: assignment };
+  }
+
+  async getPolicyAssignments(user: AuthenticatedUser, query: QueryPolicyAssignmentsDto) {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+
+    const where: Prisma.EmployeeLeavePolicyAssignmentWhereInput = {
+      organizationId: user.organizationId,
+      ...(query.leavePolicyId ? { leavePolicyId: query.leavePolicyId } : {}),
+      ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+    };
+
+    if (query.departmentId || query.branchId || query.search) {
+      where.employee = {
+        organizationId: user.organizationId,
+        ...(query.search
+          ? {
+              OR: [
+                { displayName: { contains: query.search, mode: 'insensitive' } },
+                { employeeCode: { contains: query.search, mode: 'insensitive' } },
+              ],
+            }
+          : {}),
+        ...(query.departmentId || query.branchId
+          ? {
+              employment: {
+                ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+                ...(query.branchId ? { branchId: query.branchId } : {}),
+              },
+            }
+          : {}),
+      };
+    }
+
+    const [total, assignments] = await Promise.all([
+      this.prisma.employeeLeavePolicyAssignment.count({ where }),
+      this.prisma.employeeLeavePolicyAssignment.findMany({
+        where,
+        skip,
+        take: limit,
+        include: {
+          employee: {
+            select: {
+              id: true,
+              displayName: true,
+              employeeCode: true,
+              employment: {
+                select: {
+                  department: { select: { id: true, name: true } },
+                  branch: { select: { id: true, name: true } },
+                },
+              },
+            },
+          },
+          leavePolicy: {
+            include: {
+              leaveType: { select: { id: true, name: true, code: true, color: true } },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: assignments,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
   }
 
   async adjustBalance(user: AuthenticatedUser, dto: AdjustLeaveBalanceDto) {
@@ -1309,7 +1541,473 @@ export class LeaveService {
     return {
       success: true,
       message: 'Leave balance adjusted successfully.',
-      data: updated,
+      data: {
+        ...updated,
+        openingBalance: Number(updated.openingBalance),
+        allocatedBalance: Number(updated.allocatedBalance),
+        accruedBalance: Number(updated.accruedBalance),
+        usedBalance: Number(updated.usedBalance),
+        pendingBalance: Number(updated.pendingBalance),
+        closingBalance: Number(updated.closingBalance),
+      },
+    };
+  }
+
+  async getBalanceReconciliation(user: AuthenticatedUser, query: QueryLeaveReconciliationDto) {
+    const leaveYear = Number(query.leaveYear) || new Date().getFullYear();
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+
+    const where: Prisma.LeaveBalanceAccountWhereInput = {
+      organizationId: user.organizationId,
+      leaveYear,
+      ...(query.leaveTypeId ? { leaveTypeId: query.leaveTypeId } : {}),
+      ...(query.employeeId ? { employeeId: query.employeeId } : {}),
+      ...(query.departmentId
+        ? { employee: { employment: { departmentId: query.departmentId } } }
+        : {}),
+    };
+
+    const accounts = await this.prisma.leaveBalanceAccount.findMany({
+      where,
+      include: {
+        employee: {
+          select: {
+            id: true,
+            displayName: true,
+            employeeCode: true,
+            employment: { select: { department: { select: { name: true } } } },
+          },
+        },
+        leaveType: { select: { id: true, name: true, code: true, color: true } },
+        transactions: true,
+      },
+      orderBy: { employee: { displayName: 'asc' } },
+    });
+
+    const evaluated = accounts.map((account) => {
+      let calcAllocated = 0;
+      let calcUsed = 0;
+      let calcPending = 0;
+
+      for (const t of account.transactions) {
+        const amt = Math.abs(Number(t.amount));
+        switch (t.transactionType) {
+          case 'OPENING_GRANT':
+          case 'ACCRUAL':
+            calcAllocated += amt;
+            break;
+          case 'MANUAL_ADJUSTMENT':
+            calcAllocated += Number(t.amount);
+            break;
+          case 'RESERVATION':
+            calcPending += amt;
+            break;
+          case 'RELEASE_RESERVATION':
+            calcPending -= amt;
+            break;
+          case 'CONSUMPTION':
+            calcPending -= amt;
+            calcUsed += amt;
+            break;
+          case 'REVERSAL':
+            calcUsed -= amt;
+            break;
+          case 'EXPIRY':
+            calcAllocated -= amt;
+            break;
+        }
+      }
+
+      calcPending = Math.max(0, calcPending);
+      calcUsed = Math.max(0, calcUsed);
+      const calcClosing = calcAllocated - calcUsed - calcPending;
+
+      const storedAllocated = Number(account.allocatedBalance);
+      const storedUsed = Number(account.usedBalance);
+      const storedPending = Number(account.pendingBalance);
+      const storedClosing = Number(account.closingBalance);
+
+      const discrepancy = Math.round((storedClosing - calcClosing) * 100) / 100;
+      const isBalanced =
+        discrepancy === 0 && storedUsed === calcUsed && storedPending === calcPending;
+
+      return {
+        id: account.id,
+        employee: account.employee,
+        leaveType: account.leaveType,
+        leaveYear: account.leaveYear,
+        stored: {
+          allocated: storedAllocated,
+          used: storedUsed,
+          pending: storedPending,
+          closing: storedClosing,
+        },
+        calculated: {
+          allocated: calcAllocated,
+          used: calcUsed,
+          pending: calcPending,
+          closing: calcClosing,
+        },
+        discrepancy,
+        isBalanced,
+        transactionCount: account.transactions.length,
+        lastReconciledAt: account.lastReconciledAt,
+      };
+    });
+
+    const totalAccounts = evaluated.length;
+    const discrepantAccounts = evaluated.filter((a) => !a.isBalanced).length;
+    const balancedAccounts = totalAccounts - discrepantAccounts;
+
+    const filtered = query.discrepantOnly ? evaluated.filter((a) => !a.isBalanced) : evaluated;
+    const total = filtered.length;
+    const skip = (page - 1) * limit;
+    const paginated = filtered.slice(skip, skip + limit);
+
+    return {
+      success: true,
+      data: {
+        summary: {
+          totalAccounts,
+          balancedAccounts,
+          discrepantAccounts,
+          reconciliationRatePercent:
+            totalAccounts > 0 ? Math.round((balancedAccounts / totalAccounts) * 100) : 100,
+        },
+        accounts: paginated,
+      },
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  async reconcileAccount(user: AuthenticatedUser, accountId: string) {
+    const account = await this.prisma.leaveBalanceAccount.findFirst({
+      where: { id: accountId, organizationId: user.organizationId },
+    });
+    if (!account) {
+      throw new NotFoundException('Leave balance account not found in this organization');
+    }
+
+    const updated = await this.ledgerService.reconcileAccount(accountId);
+
+    this.auditService
+      .record({
+        action: 'LEAVE_BALANCE_RECONCILE',
+        entity: 'LeaveBalanceAccount',
+        entityId: accountId,
+        userId: user.id,
+        organizationId: user.organizationId,
+        metadata: {
+          previousClosing: Number(account.closingBalance),
+          reconciledClosing: Number(updated.closingBalance),
+        },
+      })
+      .catch(() => null);
+
+    return {
+      success: true,
+      message: 'Account balance successfully reconciled against authoritative ledger.',
+      data: {
+        ...updated,
+        closingBalance: Number(updated.closingBalance),
+        allocatedBalance: Number(updated.allocatedBalance),
+        usedBalance: Number(updated.usedBalance),
+        pendingBalance: Number(updated.pendingBalance),
+      },
+    };
+  }
+
+  async getAccountLedger(user: AuthenticatedUser, accountId: string) {
+    const account = await this.prisma.leaveBalanceAccount.findFirst({
+      where: { id: accountId, organizationId: user.organizationId },
+      include: {
+        employee: {
+          select: {
+            id: true,
+            displayName: true,
+            employeeCode: true,
+            employment: { select: { department: { select: { name: true } } } },
+          },
+        },
+        leaveType: true,
+        transactions: {
+          include: {
+            actor: {
+              select: {
+                id: true,
+                email: true,
+                employee: { select: { displayName: true } },
+              },
+            },
+            leaveRequest: { select: { id: true, startDate: true, endDate: true, status: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
+      },
+    });
+
+    if (!account) {
+      throw new NotFoundException('Leave balance account not found in this organization');
+    }
+
+    return {
+      success: true,
+      data: {
+        account: {
+          id: account.id,
+          employee: account.employee,
+          leaveType: account.leaveType,
+          leaveYear: account.leaveYear,
+          openingBalance: Number(account.openingBalance),
+          allocatedBalance: Number(account.allocatedBalance),
+          usedBalance: Number(account.usedBalance),
+          pendingBalance: Number(account.pendingBalance),
+          closingBalance: Number(account.closingBalance),
+          lastReconciledAt: account.lastReconciledAt,
+        },
+        transactions: account.transactions.map((t) => ({
+          id: t.id,
+          transactionType: t.transactionType,
+          amount: Number(t.amount),
+          balanceAfter: Number(t.balanceAfter),
+          reason: t.reason,
+          actor: t.actor
+            ? {
+                id: t.actor.id,
+                email: t.actor.email,
+                displayName: t.actor.employee?.displayName || t.actor.email,
+              }
+            : null,
+          leaveRequest: t.leaveRequest,
+          idempotencyKey: t.idempotencyKey,
+          createdAt: t.createdAt,
+        })),
+      },
+    };
+  }
+
+  async getLeaveReports(user: AuthenticatedUser, query: QueryLeaveReportsDto) {
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const isManager = user.roles.includes('MANAGER');
+
+    const startDateStr = query.startDate || `${new Date().getFullYear()}-01-01`;
+    const endDateStr = query.endDate || `${new Date().getFullYear()}-12-31`;
+
+    const startUtc = new Date(`${startDateStr}T00:00:00.000Z`);
+    const endUtc = new Date(`${endDateStr}T23:59:59.999Z`);
+
+    let allowedEmployeeIds: string[] | null = null;
+    let allowedDirectReportIds: Set<string> = new Set();
+
+    if (!isAdminOrHr) {
+      const userEmployee = await this.resolveEmployee(user);
+      if (isManager) {
+        const teamIds = await this.hierarchyService.getTeamMemberIds(
+          userEmployee.id,
+          user.organizationId,
+        );
+        allowedEmployeeIds = [userEmployee.id, ...teamIds];
+        allowedDirectReportIds = new Set(teamIds);
+      } else {
+        allowedEmployeeIds = [userEmployee.id];
+      }
+    }
+
+    const where: Prisma.LeaveRequestWhereInput = {
+      organizationId: user.organizationId,
+      startDate: { lte: endUtc },
+      endDate: { gte: startUtc },
+      ...(query.leaveTypeId ? { leaveTypeId: query.leaveTypeId } : {}),
+      ...(query.status ? { status: query.status } : {}),
+      ...(allowedEmployeeIds ? { employeeId: { in: allowedEmployeeIds } } : {}),
+    };
+
+    if (query.departmentId || query.branchId) {
+      where.employee = {
+        employment: {
+          ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+          ...(query.branchId ? { branchId: query.branchId } : {}),
+        },
+      };
+    }
+
+    const allRequests = await this.prisma.leaveRequest.findMany({
+      where,
+      include: {
+        employee: {
+          select: {
+            id: true,
+            displayName: true,
+            employeeCode: true,
+            employment: {
+              select: {
+                department: { select: { id: true, name: true } },
+                branch: { select: { id: true, name: true } },
+              },
+            },
+          },
+        },
+        leaveType: { select: { id: true, name: true, code: true, color: true } },
+      },
+      orderBy: { startDate: 'desc' },
+    });
+
+    let totalApprovedDays = 0;
+    let totalPendingDays = 0;
+    let totalRejectedDays = 0;
+    let totalCancelledDays = 0;
+    const uniqueEmployees = new Set<string>();
+
+    const byDeptMap: Record<
+      string,
+      { departmentName: string; requestCount: number; approvedDays: number }
+    > = {};
+    const byTypeMap: Record<
+      string,
+      {
+        leaveTypeName: string;
+        code: string;
+        color: string;
+        requestCount: number;
+        approvedDays: number;
+      }
+    > = {};
+    const trendsMap: Record<string, { month: string; requestCount: number; approvedDays: number }> =
+      {};
+
+    for (const req of allRequests) {
+      const days = Number(req.chargeableDays);
+      uniqueEmployees.add(req.employeeId);
+
+      if (req.status === LeaveRequestStatus.APPROVED) totalApprovedDays += days;
+      else if (req.status === LeaveRequestStatus.SUBMITTED) totalPendingDays += days;
+      else if (req.status === LeaveRequestStatus.REJECTED) totalRejectedDays += days;
+      else if (req.status === LeaveRequestStatus.CANCELLED) totalCancelledDays += days;
+
+      const deptName = req.employee?.employment?.department?.name || 'Unassigned';
+      if (!byDeptMap[deptName]) {
+        byDeptMap[deptName] = { departmentName: deptName, requestCount: 0, approvedDays: 0 };
+      }
+      byDeptMap[deptName].requestCount += 1;
+      if (req.status === LeaveRequestStatus.APPROVED) {
+        byDeptMap[deptName].approvedDays += days;
+      }
+
+      const ltName = req.leaveType.name;
+      if (!byTypeMap[ltName]) {
+        byTypeMap[ltName] = {
+          leaveTypeName: ltName,
+          code: req.leaveType.code,
+          color: req.leaveType.color || '#f59e0b',
+          requestCount: 0,
+          approvedDays: 0,
+        };
+      }
+      byTypeMap[ltName].requestCount += 1;
+      if (req.status === LeaveRequestStatus.APPROVED) {
+        byTypeMap[ltName].approvedDays += days;
+      }
+
+      const monthStr = req.startDate.toISOString().substring(0, 7);
+      if (!trendsMap[monthStr]) {
+        trendsMap[monthStr] = { month: monthStr, requestCount: 0, approvedDays: 0 };
+      }
+      trendsMap[monthStr].requestCount += 1;
+      if (req.status === LeaveRequestStatus.APPROVED) {
+        trendsMap[monthStr].approvedDays += days;
+      }
+    }
+
+    const sanitizedRequests = allRequests.map((r) => {
+      const canViewDetails =
+        isAdminOrHr ||
+        (allowedDirectReportIds && allowedDirectReportIds.has(r.employeeId)) ||
+        r.employee.id === user.id;
+      return {
+        id: r.id,
+        employeeCode: r.employee.employeeCode,
+        employeeName: r.employee.displayName,
+        department: r.employee.employment?.department?.name || 'N/A',
+        branch: r.employee.employment?.branch?.name || 'N/A',
+        leaveType: r.leaveType.name,
+        leaveTypeCode: r.leaveType.code,
+        leaveTypeColor: r.leaveType.color,
+        startDate: r.startDate.toISOString().split('T')[0],
+        endDate: r.endDate.toISOString().split('T')[0],
+        durationType: r.durationType,
+        chargeableDays: Number(r.chargeableDays),
+        status: r.status,
+        reason: canViewDetails ? r.reason : '[Confidential]',
+        attachmentUrl: canViewDetails ? r.attachmentUrl : null,
+        attachmentName: canViewDetails ? r.attachmentName : null,
+        createdAt: r.createdAt.toISOString(),
+      };
+    });
+
+    if (query.format === 'csv') {
+      const header =
+        'Request ID,Employee Code,Employee Name,Department,Branch,Leave Type,Start Date,End Date,Duration,Chargeable Days,Status,Applied Date,Reason\n';
+      const rows = sanitizedRequests.map((r) =>
+        [
+          `"${r.id}"`,
+          `"${r.employeeCode}"`,
+          `"${r.employeeName}"`,
+          `"${r.department}"`,
+          `"${r.branch}"`,
+          `"${r.leaveType}"`,
+          `"${r.startDate}"`,
+          `"${r.endDate}"`,
+          `"${r.durationType}"`,
+          r.chargeableDays,
+          `"${r.status}"`,
+          `"${r.createdAt.split('T')[0]}"`,
+          `"${r.reason.replace(/"/g, '""')}"`,
+        ].join(','),
+      );
+      const csv = header + rows.join('\n');
+      return {
+        success: true,
+        data: {
+          csv,
+          filename: `leave-report-${startDateStr}-to-${endDateStr}.csv`,
+          totalRecords: sanitizedRequests.length,
+        },
+      };
+    }
+
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 20));
+    const skip = (page - 1) * limit;
+    const paginated = sanitizedRequests.slice(skip, skip + limit);
+
+    return {
+      success: true,
+      data: {
+        summary: {
+          totalRequests: allRequests.length,
+          totalApprovedDays: Math.round(totalApprovedDays * 100) / 100,
+          totalPendingDays: Math.round(totalPendingDays * 100) / 100,
+          totalRejectedDays: Math.round(totalRejectedDays * 100) / 100,
+          totalCancelledDays: Math.round(totalCancelledDays * 100) / 100,
+          uniqueEmployeesCount: uniqueEmployees.size,
+        },
+        byDepartment: Object.values(byDeptMap).sort((a, b) => b.approvedDays - a.approvedDays),
+        byLeaveType: Object.values(byTypeMap).sort((a, b) => b.approvedDays - a.approvedDays),
+        trends: Object.values(trendsMap).sort((a, b) => a.month.localeCompare(b.month)),
+        requests: paginated,
+      },
+      pagination: {
+        page,
+        limit,
+        total: sanitizedRequests.length,
+        totalPages: Math.ceil(sanitizedRequests.length / limit) || 1,
+      },
     };
   }
 

@@ -1698,4 +1698,35 @@ export const managerApi = {
     const res = await fetchWithAuth<any>(`/manager/dashboard/overview${qs}`);
     return res;
   },
+
+  async getTeamDirectory(params?: {
+    search?: string;
+    departmentId?: string;
+    branchId?: string;
+    workMode?: string;
+    availabilityStatus?: string;
+    sortBy?: string;
+    sortOrder?: 'asc' | 'desc';
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.departmentId) query.set('departmentId', params.departmentId);
+    if (params?.branchId) query.set('branchId', params.branchId);
+    if (params?.workMode) query.set('workMode', params.workMode);
+    if (params?.availabilityStatus) query.set('availabilityStatus', params.availabilityStatus);
+    if (params?.sortBy) query.set('sortBy', params.sortBy);
+    if (params?.sortOrder) query.set('sortOrder', params.sortOrder);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/manager/team/directory${qs}`);
+    return res;
+  },
+
+  async getTeamMember(id: string) {
+    const res = await fetchWithAuth<any>(`/manager/team/members/${id}`);
+    return res;
+  },
 };

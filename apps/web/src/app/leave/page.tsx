@@ -25,11 +25,13 @@ import {
   ShieldCheck,
   AlertCircle,
   ExternalLink,
+  Settings,
 } from 'lucide-react';
 import { ApplyLeaveModal, LeaveBalanceItem } from '../../components/leave/ApplyLeaveModal';
 import { LeaveDetailsModal, LeaveRequestItem } from '../../components/leave/LeaveDetailsModal';
 import { DecideLeaveModal } from '../../components/leave/DecideLeaveModal';
 import { LeaveCalendarView } from '../../components/leave/LeaveCalendarView';
+import { HRLeaveAdminView } from '../../components/leave/HRLeaveAdminView';
 
 export default function LeaveManagementPage() {
   const { user } = useAuth();
@@ -42,7 +44,7 @@ export default function LeaveManagementPage() {
 
   // Navigation tab state
   const [activeTab, setActiveTab] = useState<
-    'my-leave' | 'manager-approvals' | 'hr-overview' | 'calendar'
+    'my-leave' | 'manager-approvals' | 'hr-overview' | 'calendar' | 'hr-admin'
   >('my-leave');
 
   // Balance accounts state
@@ -381,6 +383,21 @@ export default function LeaveManagementPage() {
               >
                 <BarChart3 className="h-4 w-4" />
                 <span>HR & Organization Overview</span>
+              </button>
+            )}
+
+            {isAdminOrHr && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('hr-admin')}
+                className={`py-3 px-1 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
+                  activeTab === 'hr-admin'
+                    ? 'border-amber-600 text-amber-700'
+                    : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
+                }`}
+              >
+                <Settings className="h-4 w-4" />
+                <span>HR Admin & Reports</span>
               </button>
             )}
           </nav>
@@ -945,6 +962,9 @@ export default function LeaveManagementPage() {
 
         {/* TAB 4: TEAM AVAILABILITY & LEAVE CALENDAR */}
         {activeTab === 'calendar' && <LeaveCalendarView />}
+
+        {/* TAB 5: HR ADMINISTRATION, BALANCES & REPORTS */}
+        {activeTab === 'hr-admin' && <HRLeaveAdminView currentUserId={user?.id} />}
 
         {/* Modals */}
         <ApplyLeaveModal

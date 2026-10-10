@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ForbiddenException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ManagerService } from './manager.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { HierarchyService } from '../employees/hierarchy.service';
@@ -79,25 +79,40 @@ describe('ManagerService', () => {
       employee: {
         findFirst: jest.fn(),
         findMany: jest.fn(),
+        count: jest.fn().mockResolvedValue(0),
       },
       organization: {
         findUnique: jest.fn().mockResolvedValue({ timezone: 'Asia/Kolkata' }),
       },
+      department: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      branch: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      leaveBalanceAccount: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
       attendanceDailySummary: {
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
       attendanceSession: {
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
       leaveRequest: {
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
       wfhRequest: {
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
       officialVisit: {
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         count: jest.fn().mockResolvedValue(0),
       },
@@ -108,6 +123,7 @@ describe('ManagerService', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       shiftAssignment: {
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
@@ -328,6 +344,212 @@ describe('ManagerService', () => {
       expect(empRoster?.status).toBe('NOT_DUE_YET');
       expect(res.metrics.notDueYet).toBe(1);
       expect(res.metrics.pendingCheckIn).toBe(0);
+    });
+  });
+
+  describe('Team Directory (Search, Filtering, Pagination, Hierarchy Scope)', () => {
+    it('returns paginated team directory items with concise availability indicators', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockManagerEmployee);
+      hierarchyService.getTeam.mockResolvedValue({
+        manager: mockManagerEmployee,
+        directReports: [mockTeamEmployee1, mockTeamEmployee2],
+        indirectReports: [],
+        allMemberIds: ['emp-sub-1', 'emp-sub-2'],
+        totalTeamSize: 2,
+      });
+
+      prisma.employee.count.mockResolvedValue(2);
+      prisma.employee.findMany.mockResolvedValue([mockTeamEmployee1, mockTeamEmployee2]);
+
+      const res = await service.getTeamDirectory(mockManagerUser, { page: 1, limit: 10 });
+
+      expect(res.success).toBe(true);
+      expect(res.items.length).toBe(2);
+      expect(res.pagination.total).toBe(2);
+      expect(res.pagination.page).toBe(1);
+      expect(res.items[0].availability).toBeDefined();
+      expect(res.items[0].reportingManager).toBeDefined();
+    });
+
+    it('enforces search filter on name, code, or email and applies pagination', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockManagerEmployee);
+      hierarchyService.getTeam.mockResolvedValue({
+        manager: mockManagerEmployee,
+        directReports: [mockTeamEmployee1],
+        indirectReports: [],
+        allMemberIds: ['emp-sub-1', 'emp-sub-2'],
+        totalTeamSize: 2,
+      });
+
+      prisma.employee.count.mockResolvedValue(1);
+      prisma.employee.findMany.mockResolvedValue([mockTeamEmployee1]);
+
+      const res = await service.getTeamDirectory(mockManagerUser, {
+        search: 'Aarav',
+        page: 1,
+        limit: 10,
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.items.length).toBe(1);
+      expect(res.items[0].displayName).toBe('Aarav Gupta');
+      expect(prisma.employee.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            OR: expect.arrayContaining([
+              expect.objectContaining({ displayName: { contains: 'Aarav', mode: 'insensitive' } }),
+            ]),
+          }),
+        }),
+      );
+    });
+
+    it('returns empty directory structure when manager has zero reporting team members', async () => {
+      prisma.employee.findFirst.mockResolvedValue(mockManagerEmployee);
+      hierarchyService.getTeam.mockResolvedValue({
+        manager: mockManagerEmployee,
+        directReports: [],
+        indirectReports: [],
+        allMemberIds: [],
+        totalTeamSize: 0,
+      });
+
+      const res = await service.getTeamDirectory(mockManagerUser, {});
+
+      expect(res.success).toBe(true);
+      expect(res.items).toEqual([]);
+      expect(res.pagination.total).toBe(0);
+      expect(res.pagination.totalPages).toBe(0);
+    });
+  });
+
+  describe('Team Member Detail View (Object-Level Authorization & Privacy)', () => {
+    const mockDetailedSubordinate = {
+      id: 'emp-sub-1',
+      employeeCode: 'EMP001',
+      displayName: 'Aarav Gupta',
+      firstName: 'Aarav',
+      lastName: 'Gupta',
+      profilePhoto: null,
+      status: 'ACTIVE',
+      gender: 'MALE',
+      joiningDate: new Date('2024-01-15'),
+      organizationId: mockOrgId,
+      isActive: true,
+      employment: {
+        designation: { title: 'Software Engineer' },
+        department: { name: 'Engineering' },
+        branch: { name: 'Main HQ' },
+        workMode: 'OFFICE',
+        employmentType: 'FULL_TIME',
+        joiningDate: new Date('2024-01-15'),
+        manager: { id: 'emp-mgr-1', displayName: 'Priya Sharma', employeeCode: 'MGR001' },
+      },
+      contact: { workEmail: 'aarav@peopleos.local', phone: '+91 9876543210' },
+    };
+
+    it('allows manager to view authorized subordinate detail with attendance and balances', async () => {
+      prisma.employee.findFirst
+        .mockResolvedValueOnce(mockManagerEmployee) // caller manager profile
+        .mockResolvedValueOnce(mockDetailedSubordinate); // target employee profile
+
+      hierarchyService.getTeam.mockResolvedValue({
+        manager: mockManagerEmployee,
+        directReports: [mockTeamEmployee1],
+        indirectReports: [],
+        allMemberIds: ['emp-sub-1'],
+        totalTeamSize: 1,
+      });
+
+      prisma.leaveBalanceAccount.findMany.mockResolvedValue([
+        {
+          id: 'bal-1',
+          leaveTypeId: 'lt-1',
+          leaveYear: 2026,
+          allocatedBalance: 12,
+          accruedBalance: 0,
+          usedBalance: 2,
+          pendingBalance: 1,
+          leaveType: { name: 'Casual Leave', code: 'CL', color: '#10b981' },
+        },
+      ]);
+
+      const res = await service.getTeamMember(mockManagerUser, 'emp-sub-1');
+
+      expect(res.success).toBe(true);
+      expect(res.profile.displayName).toBe('Aarav Gupta');
+      expect(res.profile.employeeCode).toBe('EMP001');
+      expect(res.availability).toBeDefined();
+      expect(res.leaveBalances.length).toBe(1);
+      expect(res.leaveBalances[0].availableBalance).toBe(9); // 12 - 2 - 1 = 9
+    });
+
+    it('throws ForbiddenException if manager attempts to view employee outside their reporting hierarchy', async () => {
+      const foreignEmployee = {
+        id: 'emp-foreign-999',
+        employeeCode: 'FOR999',
+        displayName: 'Foreign Subordinate',
+        organizationId: mockOrgId,
+        isActive: true,
+      };
+
+      prisma.employee.findFirst
+        .mockResolvedValueOnce(mockManagerEmployee) // caller manager
+        .mockResolvedValueOnce(foreignEmployee); // foreign target
+
+      hierarchyService.getTeam.mockResolvedValue({
+        manager: mockManagerEmployee,
+        directReports: [mockTeamEmployee1],
+        indirectReports: [],
+        allMemberIds: ['emp-sub-1'], // Only emp-sub-1 is authorized
+        totalTeamSize: 1,
+      });
+
+      await expect(service.getTeamMember(mockManagerUser, 'emp-foreign-999')).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('throws NotFoundException if target employee ID does not exist', async () => {
+      prisma.employee.findFirst
+        .mockResolvedValueOnce(mockManagerEmployee) // caller manager
+        .mockResolvedValueOnce(null); // not found
+
+      await expect(service.getTeamMember(mockManagerUser, 'non-existent-id')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('redacts sensitive leave reasons to protect employee confidentiality', async () => {
+      prisma.employee.findFirst
+        .mockResolvedValueOnce(mockManagerEmployee)
+        .mockResolvedValueOnce(mockDetailedSubordinate);
+
+      hierarchyService.getTeam.mockResolvedValue({
+        manager: mockManagerEmployee,
+        directReports: [mockTeamEmployee1],
+        indirectReports: [],
+        allMemberIds: ['emp-sub-1'],
+        totalTeamSize: 1,
+      });
+
+      prisma.leaveRequest.findMany.mockResolvedValue([
+        {
+          id: 'lr-confidential',
+          startDate: new Date('2026-10-15'),
+          endDate: new Date('2026-10-16'),
+          chargeableDays: 2,
+          reason: 'Confidential sensitive personal/medical reason',
+          leaveType: { name: 'Sick Leave', color: '#ef4444' },
+        },
+      ]);
+
+      const res = await service.getTeamMember(mockManagerUser, 'emp-sub-1');
+
+      expect(res.upcomingAbsences.length).toBe(1);
+      // Privacy invariant: Reason MUST be sanitized to protect employee privacy
+      expect(res.upcomingAbsences[0].reason).toBe('[Approved Scheduled Absence]');
+      expect(res.upcomingAbsences[0].reason).not.toContain('medical');
     });
   });
 });

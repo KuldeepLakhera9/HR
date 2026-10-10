@@ -97,6 +97,9 @@ describe('LeaveService', () => {
       },
       leavePolicy: {
         findFirst: jest.fn(),
+        update: jest.fn().mockResolvedValue({}),
+        findMany: jest.fn().mockResolvedValue([]),
+        create: jest.fn().mockResolvedValue({}),
       },
       employeeLeavePolicyAssignment: {
         findFirst: jest.fn().mockResolvedValue({
@@ -125,6 +128,15 @@ describe('LeaveService', () => {
           pendingBalance: new Prisma.Decimal(0),
           closingBalance: new Prisma.Decimal(12.0),
         }),
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'acc-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'lt-cl',
+          leaveYear: 2026,
+          closingBalance: new Prisma.Decimal(12.0),
+        }),
+        findMany: jest.fn().mockResolvedValue([]),
         create: jest.fn(),
         update: jest.fn().mockResolvedValue({}),
       },
@@ -1121,6 +1133,219 @@ describe('LeaveService', () => {
       expect(res.data.summary.totalWfh).toBe(1);
       expect(res.data.summary.totalVisits).toBe(1);
       expect(res.data.summary.totalEvents).toBe(5);
+    });
+  });
+
+  describe('HR Administration, Reconciliation and Reports (Step 6)', () => {
+    describe('updateLeavePolicy', () => {
+      it('should throw BadRequestException if effectiveFrom is after effectiveTo', async () => {
+        prisma.leavePolicy.findFirst.mockResolvedValueOnce({
+          id: 'pol-1',
+          organizationId: 'org-1',
+          effectiveFrom: new Date('2026-01-01'),
+          effectiveTo: new Date('2026-12-31'),
+        });
+
+        await expect(
+          service.updateLeavePolicy(mockAdminUser, 'pol-1', {
+            effectiveFrom: '2026-12-31',
+            effectiveTo: '2026-01-01',
+          }),
+        ).rejects.toThrow(BadRequestException);
+      });
+
+      it('should successfully update policy when dates are valid', async () => {
+        prisma.leavePolicy.findFirst.mockResolvedValueOnce({
+          id: 'pol-1',
+          organizationId: 'org-1',
+          effectiveFrom: new Date('2026-01-01'),
+          effectiveTo: new Date('2026-12-31'),
+        });
+        prisma.leavePolicy.update.mockResolvedValueOnce({
+          id: 'pol-1',
+          name: 'Updated Policy',
+          annualEntitlement: new Prisma.Decimal(15),
+        });
+
+        const res = await service.updateLeavePolicy(mockAdminUser, 'pol-1', {
+          name: 'Updated Policy',
+          annualEntitlement: 15,
+        });
+
+        expect(res.success).toBe(true);
+        expect(res.data.name).toBe('Updated Policy');
+      });
+    });
+
+    describe('adjustBalance', () => {
+      it('should record manual adjustment via ledgerService with actor and mandatory reason', async () => {
+        jest.spyOn(ledgerService, 'recordManualAdjustment').mockResolvedValueOnce({
+          id: 'acc-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'type-cl',
+          leaveYear: 2026,
+          openingBalance: new Prisma.Decimal(10),
+          allocatedBalance: new Prisma.Decimal(12),
+          accruedBalance: new Prisma.Decimal(0),
+          usedBalance: new Prisma.Decimal(0),
+          pendingBalance: new Prisma.Decimal(0),
+          closingBalance: new Prisma.Decimal(12),
+          lastReconciledAt: new Date(),
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        });
+
+        const res = await service.adjustBalance(mockAdminUser, {
+          employeeId: 'emp-1',
+          leaveTypeId: 'type-cl',
+          leaveYear: 2026,
+          amount: 2.5,
+          reason: 'Compensatory off for weekend deployment support',
+        });
+
+        expect(res.success).toBe(true);
+        expect(ledgerService.recordManualAdjustment).toHaveBeenCalledWith({
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'type-cl',
+          leaveYear: 2026,
+          amount: 2.5,
+          reason: 'Compensatory off for weekend deployment support',
+          actorId: mockAdminUser.id,
+        });
+      });
+    });
+
+    describe('getBalanceReconciliation', () => {
+      it('should detect discrepancies when stored closing balance does not equal calculated closing balance', async () => {
+        prisma.leaveBalanceAccount.findMany.mockResolvedValueOnce([
+          {
+            id: 'acc-balanced',
+            employee: { id: 'emp-1', displayName: 'Balanced User', employeeCode: 'EMP001' },
+            leaveType: { id: 'type-1', name: 'Casual Leave', code: 'CL' },
+            leaveYear: 2026,
+            allocatedBalance: new Prisma.Decimal(10),
+            usedBalance: new Prisma.Decimal(2),
+            pendingBalance: new Prisma.Decimal(0),
+            closingBalance: new Prisma.Decimal(8),
+            transactions: [
+              { transactionType: 'OPENING_GRANT', amount: new Prisma.Decimal(10) },
+              { transactionType: 'CONSUMPTION', amount: new Prisma.Decimal(2) },
+            ],
+          },
+          {
+            id: 'acc-discrepant',
+            employee: { id: 'emp-2', displayName: 'Discrepant User', employeeCode: 'EMP002' },
+            leaveType: { id: 'type-1', name: 'Casual Leave', code: 'CL' },
+            leaveYear: 2026,
+            allocatedBalance: new Prisma.Decimal(10),
+            usedBalance: new Prisma.Decimal(2),
+            pendingBalance: new Prisma.Decimal(0),
+            closingBalance: new Prisma.Decimal(5), // stored is 5, but calculated is 8 (10 - 2)
+            transactions: [
+              { transactionType: 'OPENING_GRANT', amount: new Prisma.Decimal(10) },
+              { transactionType: 'CONSUMPTION', amount: new Prisma.Decimal(2) },
+            ],
+          },
+        ]);
+
+        const res = await service.getBalanceReconciliation(mockAdminUser, {
+          leaveYear: 2026,
+        });
+
+        expect(res.success).toBe(true);
+        expect(res.data.summary.totalAccounts).toBe(2);
+        expect(res.data.summary.balancedAccounts).toBe(1);
+        expect(res.data.summary.discrepantAccounts).toBe(1);
+        expect(res.data.accounts[1].isBalanced).toBe(false);
+        expect(res.data.accounts[1].discrepancy).toBe(-3);
+      });
+    });
+
+    describe('getLeaveReports', () => {
+      it('should mask reason and attachment for unauthorized viewers', async () => {
+        prisma.employee.findFirst.mockResolvedValueOnce({
+          id: 'emp-viewer',
+          userId: 'user-emp-viewer',
+        });
+        prisma.leaveRequest.findMany.mockResolvedValueOnce([
+          {
+            id: 'req-secret',
+            employeeId: 'emp-other',
+            leaveYear: 2026,
+            startDate: new Date('2026-10-15'),
+            endDate: new Date('2026-10-16'),
+            durationType: 'FULL_DAY',
+            chargeableDays: new Prisma.Decimal(2),
+            status: LeaveRequestStatus.APPROVED,
+            reason: 'Private Medical Treatment Details',
+            attachmentUrl: 'https://docs.local/confidential.pdf',
+            attachmentName: 'confidential.pdf',
+            createdAt: new Date('2026-10-01'),
+            employee: {
+              id: 'emp-other',
+              displayName: 'Other Employee',
+              employeeCode: 'EMP999',
+              employment: { department: { id: 'd-1', name: 'Engineering' } },
+            },
+            leaveType: { id: 'lt-1', name: 'Sick Leave', code: 'SL', color: '#ef4444' },
+          },
+        ]);
+
+        const res = await service.getLeaveReports(mockEmployeeUser, {
+          startDate: '2026-10-01',
+          endDate: '2026-10-31',
+        });
+
+        expect(res.success).toBe(true);
+        const reportData = res.data as any;
+        expect(reportData.requests[0].reason).toBe('[Confidential]');
+        expect(reportData.requests[0].attachmentUrl).toBeNull();
+      });
+
+      it('should generate formatted RFC 4180 CSV export when format is csv', async () => {
+        prisma.leaveRequest.findMany.mockResolvedValueOnce([
+          {
+            id: 'req-1',
+            employeeId: 'emp-1',
+            leaveYear: 2026,
+            startDate: new Date('2026-10-10'),
+            endDate: new Date('2026-10-10'),
+            durationType: 'FULL_DAY',
+            chargeableDays: new Prisma.Decimal(1),
+            status: LeaveRequestStatus.APPROVED,
+            reason: 'Annual Checkup',
+            attachmentUrl: null,
+            attachmentName: null,
+            createdAt: new Date('2026-10-01'),
+            employee: {
+              id: 'emp-1',
+              displayName: 'Jane Doe',
+              employeeCode: 'EMP001',
+              employment: {
+                department: { id: 'd-1', name: 'Human Resources' },
+                branch: { id: 'b-1', name: 'Headquarters' },
+              },
+            },
+            leaveType: { id: 'lt-1', name: 'Annual Leave', code: 'AL', color: '#3b82f6' },
+          },
+        ]);
+
+        const res = await service.getLeaveReports(mockAdminUser, {
+          startDate: '2026-10-01',
+          endDate: '2026-10-31',
+          format: 'csv',
+        });
+
+        expect(res.success).toBe(true);
+        const csvData = res.data as any;
+        expect(csvData.csv).toContain('Request ID,Employee Code,Employee Name');
+        expect(csvData.csv).toContain('"Jane Doe"');
+        expect(csvData.csv).toContain('"Human Resources"');
+        expect(csvData.csv).toContain('"Annual Checkup"');
+        expect(csvData.filename).toBe('leave-report-2026-10-01-to-2026-10-31.csv');
+      });
     });
   });
 });

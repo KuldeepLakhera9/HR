@@ -14,10 +14,17 @@ import { CancelLeaveRequestDto } from './dto/cancel-leave-request.dto';
 import { QueryLeaveRequestsDto } from './dto/query-leave-requests.dto';
 import { CalculateLeaveDaysDto } from './dto/calculate-leave-days.dto';
 import { CreateHolidayDto, UpdateHolidayDto } from './dto/create-holiday.dto';
-import { CreateLeaveTypeDto } from './dto/create-leave-type.dto';
-import { CreateLeavePolicyDto, AssignLeavePolicyDto } from './dto/create-leave-policy.dto';
+import { CreateLeaveTypeDto, UpdateLeaveTypeDto } from './dto/create-leave-type.dto';
+import {
+  CreateLeavePolicyDto,
+  UpdateLeavePolicyDto,
+  AssignLeavePolicyDto,
+} from './dto/create-leave-policy.dto';
 import { AdjustLeaveBalanceDto } from './dto/adjust-leave-balance.dto';
 import { QueryLeaveCalendarDto } from './dto/query-leave-calendar.dto';
+import { QueryPolicyAssignmentsDto } from './dto/query-policy-assignments.dto';
+import { QueryLeaveReconciliationDto } from './dto/query-leave-reconciliation.dto';
+import { QueryLeaveReportsDto } from './dto/query-leave-reports.dto';
 
 @ApiTags('Leave')
 @ApiBearerAuth()
@@ -219,10 +226,98 @@ export class LeaveController {
     return this.leaveService.assignPolicy(user, dto);
   }
 
+  @Put('types/:id')
+  @RequirePermissions('SETTING_UPDATE')
+  @ApiOperation({ summary: 'Update an existing leave type' })
+  async updateLeaveType(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateLeaveTypeDto,
+  ) {
+    return this.leaveService.updateLeaveType(user, id, dto);
+  }
+
+  @Delete('types/:id')
+  @RequirePermissions('SETTING_UPDATE')
+  @ApiOperation({ summary: 'Deactivate or delete a leave type' })
+  async deleteLeaveType(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.leaveService.deleteLeaveType(user, id);
+  }
+
+  @Put('policies/:id')
+  @RequirePermissions('SETTING_UPDATE')
+  @ApiOperation({ summary: 'Update an existing leave policy' })
+  async updateLeavePolicy(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: UpdateLeavePolicyDto,
+  ) {
+    return this.leaveService.updateLeavePolicy(user, id, dto);
+  }
+
+  @Get('policies/assignments')
+  @RequirePermissions('LEAVE_VIEW')
+  @ApiOperation({ summary: 'List employee leave policy assignments' })
+  async getPolicyAssignments(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryPolicyAssignmentsDto,
+  ) {
+    return this.leaveService.getPolicyAssignments(user, query);
+  }
+
+  // ===========================================================================
+  // 5. Balance Reconciliation & Ledger Audit
+  // ===========================================================================
+
   @Post('balances/adjust')
   @RequirePermissions('SETTING_UPDATE')
   @ApiOperation({ summary: 'Record an audited manual balance adjustment' })
   async adjustBalance(@CurrentUser() user: AuthenticatedUser, @Body() dto: AdjustLeaveBalanceDto) {
     return this.leaveService.adjustBalance(user, dto);
+  }
+
+  @Get('balances/reconciliation')
+  @RequirePermissions('LEAVE_VIEW')
+  @Roles('ADMIN', 'HR')
+  @ApiOperation({ summary: 'Reconcile balance accounts against authoritative ledger transactions' })
+  async getBalanceReconciliation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryLeaveReconciliationDto,
+  ) {
+    return this.leaveService.getBalanceReconciliation(user, query);
+  }
+
+  @Post('balances/reconcile/:id')
+  @RequirePermissions('SETTING_UPDATE')
+  @Roles('ADMIN', 'HR')
+  @ApiOperation({ summary: 'Recalculate and re-align a balance account from ledger transactions' })
+  async reconcileAccount(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.leaveService.reconcileAccount(user, id);
+  }
+
+  @Get('balances/ledger/:accountId')
+  @RequirePermissions('LEAVE_VIEW')
+  @Roles('ADMIN', 'HR', 'MANAGER')
+  @ApiOperation({ summary: 'Get complete immutable audit ledger for a balance account' })
+  async getAccountLedger(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('accountId') accountId: string,
+  ) {
+    return this.leaveService.getAccountLedger(user, accountId);
+  }
+
+  // ===========================================================================
+  // 6. Leave Reports & Analytics
+  // ===========================================================================
+
+  @Get('reports')
+  @RequirePermissions('LEAVE_VIEW')
+  @Roles('ADMIN', 'HR', 'MANAGER')
+  @ApiOperation({ summary: 'Generate aggregated leave reports, trends and CSV export' })
+  async getLeaveReports(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryLeaveReportsDto,
+  ) {
+    return this.leaveService.getLeaveReports(user, query);
   }
 }
