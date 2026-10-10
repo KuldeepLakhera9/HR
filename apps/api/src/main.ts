@@ -37,17 +37,33 @@ async function bootstrap() {
   app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
 
   // 5. CORS
-  const allowedOrigins = process.env.CORS_ORIGIN
-    ? process.env.CORS_ORIGIN.split(',').map((o) => o.trim())
-    : [
-        'http://localhost:8080',
-        'http://127.0.0.1:8080',
-        'http://localhost:3000',
-        'http://127.0.0.1:3000',
-      ];
+  const configuredOrigins = (process.env.CORS_ORIGIN || '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter(Boolean);
 
   app.enableCors({
-    origin: allowedOrigins,
+    origin: (origin, callback) => {
+      // Allow requests with no origin (curl, server-to-server, mobile native)
+      if (!origin) return callback(null, true);
+
+      // Explicitly allow development localhost on any port
+      if (
+        origin.startsWith('http://localhost:') ||
+        origin.startsWith('http://127.0.0.1:') ||
+        origin === 'http://localhost' ||
+        origin === 'http://127.0.0.1'
+      ) {
+        return callback(null, true);
+      }
+
+      // Check configured origins
+      if (configuredOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`Origin ${origin} not allowed by CORS`));
+    },
     credentials: true,
   });
 
