@@ -923,7 +923,228 @@ async function main() {
     },
   });
 
-  console.log('Phase 3 foundational seeding completed successfully!');
+  // 11. Phase 6: Development-Only Sample Leave Management Fixtures
+  // [DEV-ONLY / SAMPLE] Configures sample leave types, policies, holidays, and opening balances
+  const clType = await prisma.leaveType.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'CL' } },
+    update: { name: 'Casual Leave (Sample)', color: '#d97706', allowHalfDay: true },
+    create: {
+      organizationId: org.id,
+      code: 'CL',
+      name: 'Casual Leave (Sample)',
+      description:
+        'Sample casual leave policy for personal appointments and short unplanned absences',
+      color: '#d97706',
+      isPaid: true,
+      allowHalfDay: true,
+      requiresDoc: false,
+      docThresholdDays: 3,
+      isActive: true,
+    },
+  });
+
+  const slType = await prisma.leaveType.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'SL' } },
+    update: { name: 'Sick Leave (Sample)', color: '#dc2626', allowHalfDay: true },
+    create: {
+      organizationId: org.id,
+      code: 'SL',
+      name: 'Sick Leave (Sample)',
+      description: 'Sample sick leave policy for illness, recovery, and medical care',
+      color: '#dc2626',
+      isPaid: true,
+      allowHalfDay: true,
+      requiresDoc: true,
+      docThresholdDays: 2,
+      isActive: true,
+    },
+  });
+
+  const plType = await prisma.leaveType.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'PL' } },
+    update: { name: 'Privilege / Earned Leave (Sample)', color: '#2563eb', allowHalfDay: false },
+    create: {
+      organizationId: org.id,
+      code: 'PL',
+      name: 'Privilege / Earned Leave (Sample)',
+      description: 'Sample earned leave policy for planned vacations and extended time off',
+      color: '#2563eb',
+      isPaid: true,
+      allowHalfDay: false,
+      requiresDoc: false,
+      docThresholdDays: 5,
+      isActive: true,
+    },
+  });
+
+  const clPolicy = await prisma.leavePolicy.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'POL-CL-DEV' } },
+    update: { annualEntitlement: 12.0 },
+    create: {
+      organizationId: org.id,
+      leaveTypeId: clType.id,
+      code: 'POL-CL-DEV',
+      name: 'Standard Casual Leave (12 Days Sample)',
+      description: '12 days annual entitlement granted at start of leave year',
+      annualEntitlement: 12.0,
+      accrualFrequency: 'ANNUAL',
+      carryForwardLimit: 0.0,
+      maxConsecutiveDays: 3,
+      minNoticeDays: 0,
+      countWeekendsAsLeave: false,
+      countHolidaysAsLeave: false,
+      allowNegativeBalance: false,
+      isActive: true,
+    },
+  });
+
+  const slPolicy = await prisma.leavePolicy.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'POL-SL-DEV' } },
+    update: { annualEntitlement: 10.0 },
+    create: {
+      organizationId: org.id,
+      leaveTypeId: slType.id,
+      code: 'POL-SL-DEV',
+      name: 'Standard Sick Leave (10 Days Sample)',
+      description: '10 days annual entitlement for medical recovery',
+      annualEntitlement: 10.0,
+      accrualFrequency: 'ANNUAL',
+      carryForwardLimit: 5.0,
+      maxConsecutiveDays: 14,
+      minNoticeDays: 0,
+      countWeekendsAsLeave: false,
+      countHolidaysAsLeave: false,
+      allowNegativeBalance: false,
+      isActive: true,
+    },
+  });
+
+  const plPolicy = await prisma.leavePolicy.upsert({
+    where: { organizationId_code: { organizationId: org.id, code: 'POL-PL-DEV' } },
+    update: { annualEntitlement: 15.0 },
+    create: {
+      organizationId: org.id,
+      leaveTypeId: plType.id,
+      code: 'POL-PL-DEV',
+      name: 'Standard Earned Leave (15 Days Sample)',
+      description: '15 days annual entitlement with 3-day advance notice',
+      annualEntitlement: 15.0,
+      accrualFrequency: 'ANNUAL',
+      carryForwardLimit: 30.0,
+      maxConsecutiveDays: 20,
+      minNoticeDays: 3,
+      countWeekendsAsLeave: false,
+      countHolidaysAsLeave: false,
+      allowNegativeBalance: false,
+      isActive: true,
+    },
+  });
+
+  // Sample Gazetted Holidays for 2026
+  const sampleHolidays = [
+    { name: 'Republic Day', date: '2026-01-26' },
+    { name: 'Independence Day', date: '2026-08-15' },
+    { name: 'Gandhi Jayanti', date: '2026-10-02' },
+    { name: 'Diwali (Deepavali)', date: '2026-10-20' },
+  ];
+
+  for (const h of sampleHolidays) {
+    const d = new Date(`${h.date}T00:00:00.000Z`);
+    const existing = await prisma.holiday.findFirst({
+      where: {
+        organizationId: org.id,
+        branchId: null,
+        date: d,
+      },
+    });
+
+    if (existing) {
+      await prisma.holiday.update({
+        where: { id: existing.id },
+        data: { name: h.name },
+      });
+    } else {
+      await prisma.holiday.create({
+        data: {
+          organizationId: org.id,
+          branchId: null,
+          name: h.name,
+          date: d,
+          year: 2026,
+          isOptional: false,
+        },
+      });
+    }
+  }
+
+  // Assign policies to all active seed employees and initialize balance ledger
+  const allEmployees = await prisma.employee.findMany({ where: { organizationId: org.id } });
+  const samplePolicies = [clPolicy, slPolicy, plPolicy];
+
+  for (const emp of allEmployees) {
+    for (const pol of samplePolicies) {
+      await prisma.employeeLeavePolicyAssignment.upsert({
+        where: {
+          employeeId_leavePolicyId_effectiveFrom: {
+            employeeId: emp.id,
+            leavePolicyId: pol.id,
+            effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+          },
+        },
+        update: {},
+        create: {
+          organizationId: org.id,
+          employeeId: emp.id,
+          leavePolicyId: pol.id,
+          effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+        },
+      });
+
+      const entitlement = Number(pol.annualEntitlement);
+      const acc = await prisma.leaveBalanceAccount.upsert({
+        where: {
+          organizationId_employeeId_leaveTypeId_leaveYear: {
+            organizationId: org.id,
+            employeeId: emp.id,
+            leaveTypeId: pol.leaveTypeId,
+            leaveYear: 2026,
+          },
+        },
+        update: {},
+        create: {
+          organizationId: org.id,
+          employeeId: emp.id,
+          leaveTypeId: pol.leaveTypeId,
+          leaveYear: 2026,
+          openingBalance: entitlement,
+          allocatedBalance: entitlement,
+          accruedBalance: 0,
+          usedBalance: 0,
+          pendingBalance: 0,
+          closingBalance: entitlement,
+          lastReconciledAt: new Date(),
+        },
+      });
+
+      const idempotencyKey = `grant:seed:${acc.id}:2026`;
+      await prisma.leaveBalanceTransaction.upsert({
+        where: { idempotencyKey },
+        update: {},
+        create: {
+          accountId: acc.id,
+          transactionType: 'OPENING_GRANT',
+          amount: entitlement,
+          balanceAfter: entitlement,
+          reason: `Initial annual entitlement grant (${pol.name})`,
+          idempotencyKey,
+        },
+      });
+    }
+  }
+
+  console.log(
+    'Phase 3 foundational seeding and Phase 6 leave sample fixtures completed successfully!',
+  );
 }
 
 main()

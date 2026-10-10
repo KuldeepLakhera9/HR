@@ -1296,3 +1296,215 @@ export interface MonthlyAttendanceReportResponse {
     totalPages: number;
   };
 }
+
+// =============================================================================
+// PHASE 6: LEAVE MANAGEMENT DOMAIN TYPES & DTOS
+// =============================================================================
+
+export type LeaveDurationType = 'FULL_DAY' | 'FIRST_HALF' | 'SECOND_HALF';
+export type LeaveRequestStatus = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+export type LeaveAccrualFrequency = 'ANNUAL' | 'MONTHLY' | 'QUARTERLY';
+export type LeaveTransactionType =
+  | 'OPENING_GRANT'
+  | 'ACCRUAL'
+  | 'RESERVATION'
+  | 'RELEASE_RESERVATION'
+  | 'CONSUMPTION'
+  | 'REVERSAL'
+  | 'MANUAL_ADJUSTMENT'
+  | 'EXPIRY';
+
+export interface HolidayDto {
+  id: string;
+  organizationId: string;
+  branchId?: string | null;
+  branchName?: string | null;
+  name: string;
+  date: string;
+  year: number;
+  isOptional: boolean;
+  description?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateHolidayDto {
+  branchId?: string | null;
+  name: string;
+  date: string;
+  isOptional?: boolean;
+  description?: string;
+}
+
+export interface LeaveTypeDto {
+  id: string;
+  organizationId: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  color: string;
+  isPaid: boolean;
+  allowHalfDay: boolean;
+  requiresDoc: boolean;
+  docThresholdDays: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateLeaveTypeDto {
+  code: string;
+  name: string;
+  description?: string;
+  color?: string;
+  isPaid?: boolean;
+  allowHalfDay?: boolean;
+  requiresDoc?: boolean;
+  docThresholdDays?: number;
+  isActive?: boolean;
+}
+
+export interface LeavePolicyDto {
+  id: string;
+  organizationId: string;
+  leaveTypeId: string;
+  leaveType?: LeaveTypeDto;
+  name: string;
+  code: string;
+  description?: string | null;
+  annualEntitlement: number;
+  accrualFrequency: LeaveAccrualFrequency;
+  carryForwardLimit: number;
+  maxConsecutiveDays?: number | null;
+  minNoticeDays: number;
+  countWeekendsAsLeave: boolean;
+  countHolidaysAsLeave: boolean;
+  allowNegativeBalance: boolean;
+  maxNegativeBalance: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  isActive: boolean;
+}
+
+export interface CreateLeavePolicyDto {
+  leaveTypeId: string;
+  name: string;
+  code: string;
+  description?: string;
+  annualEntitlement: number;
+  accrualFrequency?: LeaveAccrualFrequency;
+  carryForwardLimit?: number;
+  maxConsecutiveDays?: number;
+  minNoticeDays?: number;
+  countWeekendsAsLeave?: boolean;
+  countHolidaysAsLeave?: boolean;
+  allowNegativeBalance?: boolean;
+  maxNegativeBalance?: number;
+  effectiveFrom?: string;
+  effectiveTo?: string;
+  isActive?: boolean;
+}
+
+export interface LeaveBalanceAccountDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  leaveTypeId: string;
+  leaveType?: LeaveTypeDto;
+  leaveYear: number;
+  openingBalance: number;
+  accruedBalance: number;
+  allocatedBalance: number;
+  usedBalance: number;
+  pendingBalance: number;
+  closingBalance: number;
+  lastReconciledAt: string;
+}
+
+export interface LeaveBalanceTransactionDto {
+  id: string;
+  accountId: string;
+  leaveRequestId?: string | null;
+  transactionType: LeaveTransactionType;
+  amount: number;
+  balanceAfter: number;
+  reason: string;
+  actorId?: string | null;
+  actorName?: string | null;
+  idempotencyKey: string;
+  createdAt: string;
+}
+
+export interface LeaveRequestDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    department?: string | null;
+    designation?: string | null;
+    avatarUrl?: string | null;
+  };
+  leaveTypeId: string;
+  leaveType?: LeaveTypeDto;
+  leaveYear: number;
+  startDate: string;
+  endDate: string;
+  durationType: LeaveDurationType;
+  chargeableDays: number;
+  reason: string;
+  attachmentUrl?: string | null;
+  attachmentName?: string | null;
+  status: LeaveRequestStatus;
+  cancellationReason?: string | null;
+  cancelledAt?: string | null;
+  cancelledBy?: { id: string; name: string } | null;
+  approvals?: Array<{
+    id: string;
+    approverId: string;
+    approverName: string;
+    decision: 'APPROVED' | 'REJECTED';
+    comments?: string | null;
+    decidedAt: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateLeaveRequestDto {
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  durationType?: LeaveDurationType;
+  reason: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  idempotencyKey?: string;
+}
+
+export interface DecideLeaveRequestDto {
+  decision: 'APPROVED' | 'REJECTED';
+  comments?: string;
+}
+
+export interface CalculateLeaveDaysDto {
+  employeeId?: string;
+  leaveTypeId: string;
+  startDate: string;
+  endDate: string;
+  durationType?: LeaveDurationType;
+}
+
+export interface CalculateLeaveDaysResponseDto {
+  totalCalendarDays: number;
+  chargeableDays: number;
+  holidayDays: number;
+  weekendDays: number;
+  holidaysEncountered: Array<{ name: string; date: string }>;
+  isSandwichApplied: boolean;
+  hasSufficientBalance: boolean;
+  availableBalance: number;
+  pendingBalance: number;
+}

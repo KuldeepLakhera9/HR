@@ -58,6 +58,12 @@ model Organization {
   officialVisits               OfficialVisit[]
   wfhRequests                  WfhRequest[]
   visitLocationVerifications   VisitLocationVerification[]
+  holidays                     Holiday[]
+  leaveTypes                   LeaveType[]
+  leavePolicies                LeavePolicy[]
+  employeeLeavePolicyAssignments EmployeeLeavePolicyAssignment[]
+  leaveBalanceAccounts         LeaveBalanceAccount[]
+  leaveRequests                LeaveRequest[]
 
   @@index([code])
   @@index([isActive])
@@ -96,6 +102,7 @@ model Branch {
   attendancePolicies    AttendancePolicy[]
   attendanceEvents      AttendanceEvent[]
   officeLocations       OfficeLocation[]
+  holidays              Holiday[]
 
   @@unique([organizationId, code])
   @@index([organizationId])
@@ -222,6 +229,9 @@ model User {
   cancelledVisits     OfficialVisit[]                @relation("VisitCanceller")
   decidedWfh          WfhApproval[]                  @relation("WfhApprover")
   cancelledWfh        WfhRequest[]                   @relation("WfhCanceller")
+  decidedLeaves       LeaveApproval[]                @relation("LeaveApprover")
+  cancelledLeaves     LeaveRequest[]                 @relation("LeaveCanceller")
+  performedLeaveTransactions LeaveBalanceTransaction[] @relation("LeaveTransactionActor")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -484,6 +494,9 @@ model Employee {
   officialVisits               OfficialVisit[]
   wfhRequests                  WfhRequest[]
   visitLocationVerifications   VisitLocationVerification[]
+  leavePolicyAssignments       EmployeeLeavePolicyAssignment[]
+  leaveBalanceAccounts         LeaveBalanceAccount[]
+  leaveRequests                LeaveRequest[]
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -914,6 +927,8 @@ model AttendanceDailySummary {
   officialVisit         OfficialVisit?   @relation(fields: [officialVisitId], references: [id], onDelete: SetNull)
   wfhRequestId          String?
   wfhRequest            WfhRequest?      @relation(fields: [wfhRequestId], references: [id], onDelete: SetNull)
+  leaveRequestId        String?
+  leaveRequest          LeaveRequest?    @relation(fields: [leaveRequestId], references: [id], onDelete: SetNull)
 
   isCorrected       Boolean             @default(false)
   correctionNotes   String?
@@ -927,6 +942,7 @@ model AttendanceDailySummary {
   @@index([status])
   @@index([officialVisitId])
   @@index([wfhRequestId])
+  @@index([leaveRequestId])
   @@index([primaryAttendanceMode])
   @@map("attendance_daily_summaries")
 }
@@ -1229,4 +1245,256 @@ model WfhApproval {
   @@index([requestId])
   @@index([approverId])
   @@map("wfh_approvals")
+}
+
+// -----------------------------------------------------------------------------
+// 12. Phase 6: Professional Leave Management Entities
+// -----------------------------------------------------------------------------
+
+enum LeaveDurationType {
+  FULL_DAY
+  FIRST_HALF
+  SECOND_HALF
+}
+
+enum LeaveRequestStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum LeaveAccrualFrequency {
+  ANNUAL
+  MONTHLY
+  QUARTERLY
+}
+
+enum LeaveTransactionType {
+  OPENING_GRANT
+  ACCRUAL
+  RESERVATION
+  RELEASE_RESERVATION
+  CONSUMPTION
+  REVERSAL
+  MANUAL_ADJUSTMENT
+  EXPIRY
+}
+
+model Holiday {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  branchId       String?
+  branch         Branch?       @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  name           String
+  date           DateTime      // Normalized UTC midnight
+  year           Int
+  isOptional     Boolean       @default(false)
+  description    String?
+
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@unique([organizationId, branchId, date])
+  @@index([organizationId, year])
+  @@index([organizationId, date])
+  @@index([branchId])
+  @@map("holidays")
+}
+
+model LeaveType {
+  id                String             @id @default(uuid())
+  organizationId    String
+  organization      Organization       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  code              String             // e.g. "CL", "SL", "PL"
+  name              String             // e.g. "Casual Leave", "Sick Leave"
+  description       String?
+  color             String             @default("#d97706")
+  isPaid            Boolean            @default(true)
+  allowHalfDay      Boolean            @default(true)
+  requiresDoc       Boolean            @default(false)
+  docThresholdDays  Int                @default(2)
+  isActive          Boolean            @default(true)
+
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  policies          LeavePolicy[]
+  requests          LeaveRequest[]
+  balanceAccounts   LeaveBalanceAccount[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("leave_types")
+}
+
+model LeavePolicy {
+  id                   String                   @id @default(uuid())
+  organizationId       String
+  organization         Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  leaveTypeId          String
+  leaveType            LeaveType                @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  name                 String
+  code                 String
+  description          String?
+  annualEntitlement    Decimal                  @default(12.0) @db.Decimal(5, 2)
+  accrualFrequency     LeaveAccrualFrequency    @default(ANNUAL)
+  carryForwardLimit    Decimal                  @default(0.0) @db.Decimal(5, 2)
+  maxConsecutiveDays   Int?
+  minNoticeDays        Int                      @default(0)
+  countWeekendsAsLeave Boolean                  @default(false)
+  countHolidaysAsLeave Boolean                  @default(false)
+  allowNegativeBalance Boolean                  @default(false)
+  maxNegativeBalance   Decimal                  @default(0.0) @db.Decimal(5, 2)
+  effectiveFrom        DateTime                 @default(now())
+  effectiveTo          DateTime?
+  isActive             Boolean                  @default(true)
+
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  assignments          EmployeeLeavePolicyAssignment[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId])
+  @@index([leaveTypeId])
+  @@index([isActive])
+  @@map("leave_policies")
+}
+
+model EmployeeLeavePolicyAssignment {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee     @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leavePolicyId  String
+  leavePolicy    LeavePolicy  @relation(fields: [leavePolicyId], references: [id], onDelete: Cascade)
+
+  effectiveFrom  DateTime     @default(now())
+  effectiveTo    DateTime?
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([employeeId, leavePolicyId, effectiveFrom])
+  @@index([organizationId])
+  @@index([employeeId])
+  @@index([leavePolicyId])
+  @@map("employee_leave_policy_assignments")
+}
+
+model LeaveBalanceAccount {
+  id               String                    @id @default(uuid())
+  organizationId   String
+  organization     Organization              @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         Employee                  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId      String
+  leaveType        LeaveType                 @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  leaveYear        Int
+  openingBalance   Decimal                   @default(0.0) @db.Decimal(5, 2)
+  accruedBalance   Decimal                   @default(0.0) @db.Decimal(5, 2)
+  allocatedBalance Decimal                   @default(0.0) @db.Decimal(5, 2)
+  usedBalance      Decimal                   @default(0.0) @db.Decimal(5, 2)
+  pendingBalance   Decimal                   @default(0.0) @db.Decimal(5, 2)
+  closingBalance   Decimal                   @default(0.0) @db.Decimal(5, 2)
+  lastReconciledAt DateTime                  @default(now())
+
+  createdAt        DateTime                  @default(now())
+  updatedAt        DateTime                  @updatedAt
+
+  transactions     LeaveBalanceTransaction[]
+
+  @@unique([organizationId, employeeId, leaveTypeId, leaveYear])
+  @@index([organizationId])
+  @@index([employeeId, leaveYear])
+  @@index([leaveTypeId])
+  @@map("leave_balance_accounts")
+}
+
+model LeaveBalanceTransaction {
+  id             String               @id @default(uuid())
+  accountId      String
+  account        LeaveBalanceAccount  @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  leaveRequestId String?
+  leaveRequest   LeaveRequest?        @relation(fields: [leaveRequestId], references: [id], onDelete: SetNull)
+
+  transactionType LeaveTransactionType
+  amount          Decimal              @db.Decimal(5, 2)
+  balanceAfter    Decimal              @db.Decimal(5, 2)
+  reason          String
+  actorId         String?
+  actor           User?                @relation("LeaveTransactionActor", fields: [actorId], references: [id], onDelete: SetNull)
+  idempotencyKey  String               @unique
+
+  createdAt       DateTime             @default(now())
+
+  @@index([accountId])
+  @@index([leaveRequestId])
+  @@index([transactionType])
+  @@index([idempotencyKey])
+  @@index([createdAt])
+  @@map("leave_balance_transactions")
+}
+
+model LeaveRequest {
+  id                 String               @id @default(uuid())
+  organizationId     String
+  organization       Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId         String
+  employee           Employee             @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId        String
+  leaveType          LeaveType            @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  leaveYear          Int
+  startDate          DateTime             // Normalized UTC midnight
+  endDate            DateTime             // Normalized UTC midnight
+  durationType       LeaveDurationType    @default(FULL_DAY)
+  chargeableDays     Decimal              @db.Decimal(4, 2)
+  reason             String
+  attachmentUrl      String?
+  attachmentName     String?
+
+  status             LeaveRequestStatus   @default(SUBMITTED)
+  cancellationReason String?
+  cancelledAt        DateTime?
+  cancelledById      String?
+  cancelledBy        User?                @relation("LeaveCanceller", fields: [cancelledById], references: [id], onDelete: SetNull)
+
+  approvals          LeaveApproval[]
+  transactions       LeaveBalanceTransaction[]
+  dailySummaries     AttendanceDailySummary[]
+
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+
+  @@index([organizationId, status])
+  @@index([employeeId, startDate, endDate])
+  @@index([status])
+  @@index([startDate, endDate])
+  @@map("leave_requests")
+}
+
+model LeaveApproval {
+  id             String           @id @default(uuid())
+  leaveRequestId String
+  leaveRequest   LeaveRequest     @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  approverId     String
+  approver       User             @relation("LeaveApprover", fields: [approverId], references: [id], onDelete: Restrict)
+
+  decision       ApprovalDecision
+  comments       String?
+  decidedAt      DateTime         @default(now())
+
+  @@index([leaveRequestId])
+  @@index([approverId])
+  @@map("leave_approvals")
 }
