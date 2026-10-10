@@ -200,7 +200,10 @@ export class LeaveService {
     return {
       success: true,
       message: 'Leave application submitted successfully.',
-      data: result,
+      data: {
+        ...result,
+        chargeableDays: Number(result.chargeableDays),
+      },
     };
   }
 
@@ -762,7 +765,10 @@ export class LeaveService {
 
     return {
       success: true,
-      data: item,
+      data: {
+        ...item,
+        chargeableDays: Number(item.chargeableDays),
+      },
     };
   }
 

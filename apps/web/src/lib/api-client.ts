@@ -1350,6 +1350,114 @@ export const wfhApi = {
   },
 };
 
+export const leaveApi = {
+  async getBalances(params?: { employeeId?: string; year?: number }) {
+    const query = new URLSearchParams();
+    if (params?.employeeId) query.set('employeeId', params.employeeId);
+    if (params?.year) query.set('year', String(params.year));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/balances${qs}`);
+    return res;
+  },
+
+  async getLeaveTypes() {
+    const res = await fetchWithAuth<any>('/leave/types');
+    return res;
+  },
+
+  async calculate(payload: {
+    leaveTypeId: string;
+    startDate: string;
+    endDate: string;
+    durationType?: string;
+    employeeId?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/leave/calculate', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async apply(payload: {
+    leaveTypeId: string;
+    startDate: string;
+    endDate: string;
+    durationType?: string;
+    reason: string;
+    attachmentUrl?: string;
+    attachmentName?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/leave/apply', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async getRequests(params?: {
+    status?: string;
+    leaveTypeId?: string;
+    employeeId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+    startDate?: string;
+    endDate?: string;
+    leaveYear?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.leaveTypeId && params.leaveTypeId !== 'ALL')
+      query.set('leaveTypeId', params.leaveTypeId);
+    if (params?.employeeId) query.set('employeeId', params.employeeId);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.leaveYear) query.set('leaveYear', String(params.leaveYear));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/requests${qs}`);
+    return res;
+  },
+
+  async getRequestById(id: string) {
+    const res = await fetchWithAuth<any>(`/leave/requests/${id}`);
+    return res;
+  },
+
+  async cancelRequest(id: string, payload: { reason?: string; cancellationReason?: string }) {
+    const res = await fetchWithAuth<any>(`/leave/requests/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({
+        cancellationReason: payload.cancellationReason || payload.reason || 'Cancelled by employee',
+      }),
+    });
+    return res;
+  },
+
+  async decideRequest(
+    id: string,
+    payload: { decision: 'APPROVED' | 'REJECTED'; comments?: string },
+  ) {
+    const res = await fetchWithAuth<any>(`/leave/requests/${id}/decide`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    return res;
+  },
+
+  async getHolidays(params?: { year?: number; branchId?: string }) {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.branchId) query.set('branchId', params.branchId);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/holidays${qs}`);
+    return res;
+  },
+};
+
 export const reportsApi = {
   getDailyAttendance: attendanceApi.getDailyReport,
   getMonthlyAttendance: attendanceApi.getMonthlyReport,
