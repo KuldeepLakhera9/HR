@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { PermissionsGuard } from '../../common/guards/permissions.guard';
 import { RequirePermissions } from '../../common/decorators/permissions.decorator';
+import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/interfaces/auth.interface';
 import { LeaveService } from './leave.service';
@@ -72,6 +73,28 @@ export class LeaveController {
   @ApiOperation({ summary: 'Get single leave request details' })
   async getRequestById(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.leaveService.getRequestById(user, id);
+  }
+
+  @Get('manager/pending')
+  @RequirePermissions('LEAVE_APPROVE')
+  @ApiOperation({ summary: 'List pending leave applications for manager or HR review' })
+  async getManagerPending(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryLeaveRequestsDto,
+    @Query('escalatedOnly') escalatedOnly?: string,
+  ) {
+    return this.leaveService.getManagerPending(user, {
+      ...query,
+      escalatedOnly: escalatedOnly === 'true',
+    });
+  }
+
+  @Get('overview')
+  @RequirePermissions('LEAVE_VIEW')
+  @Roles('ADMIN', 'HR', 'MANAGER')
+  @ApiOperation({ summary: 'Get aggregated leave analytics, pending counts and today leaves' })
+  async getOverview(@CurrentUser() user: AuthenticatedUser) {
+    return this.leaveService.getLeaveOverview(user);
   }
 
   // ===========================================================================

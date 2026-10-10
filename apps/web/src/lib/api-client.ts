@@ -1422,6 +1422,30 @@ export const leaveApi = {
     return res;
   },
 
+  async getManagerPending(params?: {
+    search?: string;
+    page?: number;
+    limit?: number;
+    leaveTypeId?: string;
+    escalatedOnly?: boolean;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.leaveTypeId && params.leaveTypeId !== 'ALL')
+      query.set('leaveTypeId', params.leaveTypeId);
+    if (params?.escalatedOnly) query.set('escalatedOnly', 'true');
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/manager/pending${qs}`);
+    return res;
+  },
+
+  async getOverview() {
+    const res = await fetchWithAuth<any>('/leave/overview');
+    return res;
+  },
+
   async getRequestById(id: string) {
     const res = await fetchWithAuth<any>(`/leave/requests/${id}`);
     return res;

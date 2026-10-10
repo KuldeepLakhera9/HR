@@ -279,6 +279,19 @@ export class LeaveService {
 
     // 3. Atomic Transaction: Update Request, Record Approval, Post Ledger Transition
     const updatedRequest = await this.prisma.$transaction(async (tx) => {
+      // Concurrency safeguard: Re-verify request status inside tx to prevent race conditions or duplicate decisions
+      const currentReq = await tx.leaveRequest.findUnique({
+        where: { id: requestId },
+      });
+
+      if (!currentReq || currentReq.status !== LeaveRequestStatus.SUBMITTED) {
+        throw new BadRequestException({
+          statusCode: 400,
+          code: 'INVALID_REQUEST_STATUS',
+          message: `Leave request cannot be decided because it is currently ${currentReq?.status || 'NOT FOUND'}.`,
+        });
+      }
+
       const nextStatus =
         dto.decision === ApprovalDecision.APPROVED
           ? LeaveRequestStatus.APPROVED
@@ -321,6 +334,42 @@ export class LeaveService {
           });
         }
 
+        // Cross-domain collision safeguard: check approved official visits
+        const overlappingVisit = await tx.officialVisit.findFirst({
+          where: {
+            employeeId: leaveRequest.employeeId,
+            status: VisitStatus.APPROVED,
+            startDate: { lte: leaveRequest.endDate },
+            endDate: { gte: leaveRequest.startDate },
+          },
+        });
+        if (overlappingVisit) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'OVERLAPPING_OFFICIAL_VISIT',
+            message:
+              'Cannot approve leave request: Conflicting approved official visit exists during this period.',
+          });
+        }
+
+        // Cross-domain collision safeguard: check approved WFH
+        const overlappingWfh = await tx.wfhRequest.findFirst({
+          where: {
+            employeeId: leaveRequest.employeeId,
+            status: WfhStatus.APPROVED,
+            startDate: { lte: leaveRequest.endDate },
+            endDate: { gte: leaveRequest.startDate },
+          },
+        });
+        if (overlappingWfh) {
+          throw new ConflictException({
+            statusCode: 409,
+            code: 'OVERLAPPING_WFH_REQUEST',
+            message:
+              'Cannot approve leave request: Conflicting approved work-from-home schedule exists during this period.',
+          });
+        }
+
         // Transition ledger reservation into consumption
         await this.ledgerService.consumeBalance(requestId, user.id, tx);
       } else {
@@ -333,7 +382,10 @@ export class LeaveService {
         );
       }
 
-      return updated;
+      return {
+        ...updated,
+        chargeableDays: Number(updated.chargeableDays),
+      };
     });
 
     // 4. Notify Employee & Audit
@@ -768,6 +820,225 @@ export class LeaveService {
       data: {
         ...item,
         chargeableDays: Number(item.chargeableDays),
+      },
+    };
+  }
+
+  /**
+   * Get pending leave requests requiring manager or HR approval
+   */
+  async getManagerPending(
+    user: AuthenticatedUser,
+    query: QueryLeaveRequestsDto & { escalatedOnly?: boolean },
+  ) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const where: Prisma.LeaveRequestWhereInput = {
+      organizationId: user.organizationId,
+      status: LeaveRequestStatus.SUBMITTED,
+    };
+
+    if (query.leaveTypeId && query.leaveTypeId !== 'ALL') {
+      where.leaveTypeId = query.leaveTypeId;
+    }
+
+    if (!isAdminOrHr) {
+      // Manager scoping: direct reports + indirect reports
+      const userEmployee = await this.resolveEmployee(user);
+      const subIds = await this.hierarchyService.getTeamMemberIds(
+        userEmployee.id,
+        user.organizationId,
+      );
+
+      // Exclude self from approver pending list (self-approval prevention)
+      const allowedTeamIds = subIds.filter((id) => id !== userEmployee.id);
+
+      where.employeeId = { in: allowedTeamIds };
+    } else if (query.escalatedOnly) {
+      // HR Escalation queue: requests where employee has no active manager assigned
+      where.employee = {
+        managerId: null,
+      };
+    }
+
+    if (query.search?.trim()) {
+      const term = query.search.trim();
+      where.OR = [
+        { reason: { contains: term, mode: 'insensitive' } },
+        { employee: { displayName: { contains: term, mode: 'insensitive' } } },
+        { employee: { employeeCode: { contains: term, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [total, items] = await Promise.all([
+      this.prisma.leaveRequest.count({ where }),
+      this.prisma.leaveRequest.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              displayName: true,
+              profilePhoto: true,
+              managerId: true,
+              employment: {
+                select: {
+                  department: { select: { name: true } },
+                  designation: { select: { title: true } },
+                },
+              },
+            },
+          },
+          leaveType: true,
+          approvals: {
+            include: {
+              approver: { select: { id: true, firstName: true, lastName: true } },
+            },
+            orderBy: { decidedAt: 'desc' },
+          },
+        },
+      }),
+    ]);
+
+    return {
+      success: true,
+      data: items.map((r) => ({
+        id: r.id,
+        organizationId: r.organizationId,
+        employeeId: r.employeeId,
+        employee: {
+          id: r.employee.id,
+          employeeCode: r.employee.employeeCode,
+          displayName: r.employee.displayName,
+          avatarUrl: r.employee.profilePhoto,
+          department: r.employee.employment?.department?.name || null,
+          designation: r.employee.employment?.designation?.title || null,
+          isEscalated: r.employee.managerId === null,
+        },
+        leaveTypeId: r.leaveTypeId,
+        leaveType: r.leaveType,
+        leaveYear: r.leaveYear,
+        startDate: r.startDate.toISOString().split('T')[0],
+        endDate: r.endDate.toISOString().split('T')[0],
+        durationType: r.durationType,
+        chargeableDays: Number(r.chargeableDays),
+        reason: r.reason,
+        attachmentUrl: r.attachmentUrl,
+        attachmentName: r.attachmentName,
+        status: r.status,
+        isEscalated: r.employee.managerId === null,
+        approvals: r.approvals.map((a) => ({
+          id: a.id,
+          approverId: a.approverId,
+          approverName: `${a.approver.firstName} ${a.approver.lastName}`,
+          decision: a.decision,
+          comments: a.comments,
+          decidedAt: a.decidedAt.toISOString(),
+        })),
+        createdAt: r.createdAt.toISOString(),
+        updatedAt: r.updatedAt.toISOString(),
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  /**
+   * Operations & Management Overview: aggregated leave analytics for HR & Managers
+   */
+  async getLeaveOverview(user: AuthenticatedUser) {
+    const today = this.calculatorService.normalizeDateToUtc(new Date());
+    const currentYear = today.getUTCFullYear();
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+
+    let scopedEmployeeIds: string[] | undefined = undefined;
+    if (!isAdminOrHr) {
+      const userEmployee = await this.resolveEmployee(user);
+      const subIds = await this.hierarchyService.getTeamMemberIds(
+        userEmployee.id,
+        user.organizationId,
+      );
+      scopedEmployeeIds = subIds;
+    }
+
+    const baseWhere: Prisma.LeaveRequestWhereInput = {
+      organizationId: user.organizationId,
+      leaveYear: currentYear,
+    };
+    if (scopedEmployeeIds) {
+      baseWhere.employeeId = { in: scopedEmployeeIds };
+    }
+
+    const [pendingCount, approvedCount, rejectedCount, escalatedCount, todayLeaves, leaveTypes] =
+      await Promise.all([
+        this.prisma.leaveRequest.count({
+          where: { ...baseWhere, status: LeaveRequestStatus.SUBMITTED },
+        }),
+        this.prisma.leaveRequest.count({
+          where: { ...baseWhere, status: LeaveRequestStatus.APPROVED },
+        }),
+        this.prisma.leaveRequest.count({
+          where: { ...baseWhere, status: LeaveRequestStatus.REJECTED },
+        }),
+        isAdminOrHr
+          ? this.prisma.leaveRequest.count({
+              where: {
+                organizationId: user.organizationId,
+                status: LeaveRequestStatus.SUBMITTED,
+                employee: { managerId: null },
+              },
+            })
+          : 0,
+        this.prisma.leaveRequest.count({
+          where: {
+            ...baseWhere,
+            status: LeaveRequestStatus.APPROVED,
+            startDate: { lte: today },
+            endDate: { gte: today },
+          },
+        }),
+        this.prisma.leaveType.findMany({
+          where: { organizationId: user.organizationId, isActive: true },
+          select: { id: true, code: true, name: true, color: true },
+        }),
+      ]);
+
+    const categoryBreakdown = await Promise.all(
+      leaveTypes.map(async (lt) => {
+        const count = await this.prisma.leaveRequest.count({
+          where: { ...baseWhere, leaveTypeId: lt.id, status: LeaveRequestStatus.APPROVED },
+        });
+        return {
+          id: lt.id,
+          code: lt.code,
+          name: lt.name,
+          color: lt.color,
+          approvedCount: count,
+        };
+      }),
+    );
+
+    return {
+      success: true,
+      data: {
+        currentYear,
+        pendingCount,
+        approvedCount,
+        rejectedCount,
+        escalatedCount,
+        todayOnLeaveCount: todayLeaves,
+        categoryBreakdown,
       },
     };
   }

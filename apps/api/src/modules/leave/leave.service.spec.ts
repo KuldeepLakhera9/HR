@@ -14,7 +14,14 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { ApprovalDecision, LeaveDurationType, LeaveRequestStatus, Prisma } from '@prisma/client';
+import {
+  ApprovalDecision,
+  LeaveDurationType,
+  LeaveRequestStatus,
+  Prisma,
+  VisitStatus,
+  WfhStatus,
+} from '@prisma/client';
 
 describe('LeaveService', () => {
   let service: LeaveService;
@@ -22,6 +29,8 @@ describe('LeaveService', () => {
   let calculatorService: LeaveCalculatorService;
   let prisma: any;
   let hierarchyService: any;
+  let auditService: any;
+  let notificationsService: any;
 
   const mockEmployeeUser: any = {
     id: 'user-emp-1',
@@ -186,6 +195,8 @@ describe('LeaveService', () => {
     service = module.get<LeaveService>(LeaveService);
     ledgerService = module.get<LeaveLedgerService>(LeaveLedgerService);
     calculatorService = module.get<LeaveCalculatorService>(LeaveCalculatorService);
+    auditService = module.get<AuditService>(AuditService);
+    notificationsService = module.get<NotificationsService>(NotificationsService);
   });
 
   it('should be defined', () => {
@@ -416,6 +427,402 @@ describe('LeaveService', () => {
           comments: '', // Empty comment
         }),
       ).rejects.toThrow(BadRequestException);
+    });
+
+    it('prevents duplicate decision if request is already decided (race condition protection)', async () => {
+      prisma.leaveRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          organizationId: 'org-1',
+          status: LeaveRequestStatus.SUBMITTED,
+          employee: {
+            id: 'emp-1',
+            userId: 'user-emp-1',
+            managerId: 'emp-mgr-1',
+          },
+          leaveType: { name: 'Casual Leave' },
+        })
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          status: LeaveRequestStatus.APPROVED,
+        });
+
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-mgr-1',
+        userId: mockManagerUser.id,
+      });
+
+      await expect(
+        service.decide(mockManagerUser, 'req-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('prevents approval with ConflictException if an overlapping leave request was approved in the meantime', async () => {
+      prisma.leaveRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'lt-cl',
+          leaveYear: 2026,
+          chargeableDays: new Prisma.Decimal(2.0),
+          status: LeaveRequestStatus.SUBMITTED,
+          startDate: new Date('2026-10-15'),
+          endDate: new Date('2026-10-16'),
+          employee: {
+            id: 'emp-1',
+            userId: 'user-emp-1',
+            managerId: 'emp-mgr-1',
+          },
+          leaveType: { name: 'Casual Leave' },
+        })
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          status: LeaveRequestStatus.SUBMITTED,
+        });
+
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-mgr-1',
+        userId: mockManagerUser.id,
+      });
+
+      prisma.leaveRequest.findFirst.mockResolvedValueOnce({
+        id: 'other-approved-req',
+        leaveType: { name: 'Sick Leave' },
+        startDate: new Date('2026-10-15'),
+        endDate: new Date('2026-10-16'),
+      });
+
+      await expect(
+        service.decide(mockManagerUser, 'req-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('prevents approval with ConflictException if an overlapping official visit exists', async () => {
+      prisma.leaveRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'lt-cl',
+          leaveYear: 2026,
+          chargeableDays: new Prisma.Decimal(2.0),
+          status: LeaveRequestStatus.SUBMITTED,
+          startDate: new Date('2026-10-15'),
+          endDate: new Date('2026-10-16'),
+          employee: {
+            id: 'emp-1',
+            userId: 'user-emp-1',
+            managerId: 'emp-mgr-1',
+          },
+          leaveType: { name: 'Casual Leave' },
+        })
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          status: LeaveRequestStatus.SUBMITTED,
+        });
+
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-mgr-1',
+        userId: mockManagerUser.id,
+      });
+
+      prisma.leaveRequest.findFirst.mockResolvedValueOnce(null);
+      prisma.officialVisit.findFirst.mockResolvedValueOnce({
+        id: 'visit-1',
+        status: VisitStatus.APPROVED,
+      });
+
+      await expect(
+        service.decide(mockManagerUser, 'req-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('prevents approval with ConflictException if an overlapping WFH request exists', async () => {
+      prisma.leaveRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'lt-cl',
+          leaveYear: 2026,
+          chargeableDays: new Prisma.Decimal(2.0),
+          status: LeaveRequestStatus.SUBMITTED,
+          startDate: new Date('2026-10-15'),
+          endDate: new Date('2026-10-16'),
+          employee: {
+            id: 'emp-1',
+            userId: 'user-emp-1',
+            managerId: 'emp-mgr-1',
+          },
+          leaveType: { name: 'Casual Leave' },
+        })
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          status: LeaveRequestStatus.SUBMITTED,
+        });
+
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-mgr-1',
+        userId: mockManagerUser.id,
+      });
+
+      prisma.leaveRequest.findFirst.mockResolvedValueOnce(null);
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(null);
+      prisma.wfhRequest.findFirst.mockResolvedValueOnce({
+        id: 'wfh-1',
+        status: WfhStatus.APPROVED,
+      });
+
+      await expect(
+        service.decide(mockManagerUser, 'req-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow(ConflictException);
+    });
+
+    it('rolls back transaction if balance posting fails', async () => {
+      prisma.leaveRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'lt-cl',
+          leaveYear: 2026,
+          chargeableDays: new Prisma.Decimal(2.0),
+          status: LeaveRequestStatus.SUBMITTED,
+          startDate: new Date('2026-10-15'),
+          endDate: new Date('2026-10-16'),
+          employee: {
+            id: 'emp-1',
+            userId: 'user-emp-1',
+            managerId: 'emp-mgr-1',
+          },
+          leaveType: { name: 'Casual Leave' },
+        })
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          status: LeaveRequestStatus.SUBMITTED,
+        });
+
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-mgr-1',
+        userId: mockManagerUser.id,
+      });
+
+      prisma.leaveRequest.findFirst.mockResolvedValueOnce(null);
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(null);
+      prisma.wfhRequest.findFirst.mockResolvedValueOnce(null);
+
+      jest
+        .spyOn(ledgerService, 'consumeBalance')
+        .mockRejectedValueOnce(new Error('Ledger write failed'));
+
+      await expect(
+        service.decide(mockManagerUser, 'req-1', {
+          decision: ApprovalDecision.APPROVED,
+        }),
+      ).rejects.toThrow('Ledger write failed');
+    });
+
+    it('records audit event and dispatches notification on approval', async () => {
+      prisma.leaveRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'lt-cl',
+          leaveYear: 2026,
+          chargeableDays: new Prisma.Decimal(2.0),
+          status: LeaveRequestStatus.SUBMITTED,
+          startDate: new Date('2026-10-15'),
+          endDate: new Date('2026-10-16'),
+          employee: {
+            id: 'emp-1',
+            userId: 'user-emp-1',
+            managerId: 'emp-mgr-1',
+          },
+          leaveType: { name: 'Casual Leave' },
+        })
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          status: LeaveRequestStatus.SUBMITTED,
+        });
+
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-mgr-1',
+        userId: mockManagerUser.id,
+      });
+
+      prisma.leaveRequest.findFirst.mockResolvedValueOnce(null);
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(null);
+      prisma.wfhRequest.findFirst.mockResolvedValueOnce(null);
+
+      jest.spyOn(ledgerService, 'consumeBalance').mockResolvedValueOnce({} as any);
+
+      await service.decide(mockManagerUser, 'req-1', {
+        decision: ApprovalDecision.APPROVED,
+        comments: 'Have a great time',
+      });
+
+      expect(notificationsService.createNotification).toHaveBeenCalledWith(
+        expect.objectContaining({
+          userId: 'user-emp-1',
+          type: 'LEAVE_APPROVED',
+        }),
+      );
+      expect(auditService.record).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: 'LEAVE_APPROVED',
+          entity: 'LeaveRequest',
+          entityId: 'req-1',
+        }),
+      );
+    });
+
+    it('allows HR / Admin to approve escalated requests for employees without a manager', async () => {
+      prisma.leaveRequest.findUnique
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-1',
+          leaveTypeId: 'lt-cl',
+          leaveYear: 2026,
+          chargeableDays: new Prisma.Decimal(1.0),
+          status: LeaveRequestStatus.SUBMITTED,
+          startDate: new Date('2026-10-20'),
+          endDate: new Date('2026-10-20'),
+          employee: {
+            id: 'emp-1',
+            userId: 'user-emp-1',
+            managerId: null, // No manager assigned -> escalated to HR/Admin
+          },
+          leaveType: { name: 'Casual Leave' },
+        })
+        .mockResolvedValueOnce({
+          id: 'req-1',
+          status: LeaveRequestStatus.SUBMITTED,
+        });
+
+      prisma.leaveRequest.findFirst.mockResolvedValueOnce(null);
+      prisma.officialVisit.findFirst.mockResolvedValueOnce(null);
+      prisma.wfhRequest.findFirst.mockResolvedValueOnce(null);
+      jest.spyOn(ledgerService, 'consumeBalance').mockResolvedValueOnce({} as any);
+
+      const res = await service.decide(mockAdminUser, 'req-1', {
+        decision: ApprovalDecision.APPROVED,
+        comments: 'HR approval for unassigned manager employee',
+      });
+
+      expect(res.success).toBe(true);
+      expect(prisma.leaveRequest.update).toHaveBeenCalled();
+    });
+  });
+
+  describe('getManagerPending', () => {
+    it('scopes pending requests to team members excluding self for a manager', async () => {
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-mgr-1',
+        userId: mockManagerUser.id,
+      });
+
+      hierarchyService.getTeamMemberIds.mockResolvedValueOnce([
+        'emp-mgr-1',
+        'emp-report-1',
+        'emp-report-2',
+      ]);
+
+      prisma.leaveRequest.count.mockResolvedValueOnce(2);
+      prisma.leaveRequest.findMany.mockResolvedValueOnce([
+        {
+          id: 'req-sub-1',
+          organizationId: 'org-1',
+          employeeId: 'emp-report-1',
+          employee: {
+            id: 'emp-report-1',
+            employeeCode: 'EMP101',
+            displayName: 'Direct Report 1',
+            profilePhoto: null,
+            managerId: 'emp-mgr-1',
+            employment: null,
+          },
+          leaveTypeId: 'lt-cl',
+          leaveType: { name: 'Casual Leave' },
+          leaveYear: 2026,
+          startDate: new Date('2026-10-15'),
+          endDate: new Date('2026-10-16'),
+          durationType: LeaveDurationType.FULL_DAY,
+          chargeableDays: new Prisma.Decimal(2.0),
+          reason: 'Doctor appointment',
+          attachmentUrl: null,
+          attachmentName: null,
+          status: LeaveRequestStatus.SUBMITTED,
+          approvals: [],
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
+
+      const res = await service.getManagerPending(mockManagerUser, {});
+
+      expect(res.success).toBe(true);
+      expect(res.data.length).toBe(1);
+      expect(prisma.leaveRequest.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            employeeId: { in: ['emp-report-1', 'emp-report-2'] }, // emp-mgr-1 excluded
+          }),
+        }),
+      );
+    });
+
+    it('filters escalated requests without managers for HR/Admin', async () => {
+      prisma.leaveRequest.count.mockResolvedValueOnce(1);
+      prisma.leaveRequest.findMany.mockResolvedValueOnce([]);
+
+      const res = await service.getManagerPending(mockAdminUser, { escalatedOnly: true });
+
+      expect(res.success).toBe(true);
+      expect(prisma.leaveRequest.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            employee: { managerId: null },
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getLeaveOverview', () => {
+    it('calculates leave statistics and category breakdown', async () => {
+      prisma.leaveType.findMany.mockResolvedValueOnce([
+        { id: 'lt-cl', code: 'CL', name: 'Casual Leave', color: '#f59e0b' },
+      ]);
+
+      prisma.leaveRequest.count
+        .mockResolvedValueOnce(5) // pending
+        .mockResolvedValueOnce(12) // approved
+        .mockResolvedValueOnce(2) // rejected
+        .mockResolvedValueOnce(1) // escalated
+        .mockResolvedValueOnce(3) // today on leave
+        .mockResolvedValueOnce(12); // category breakdown count for lt-cl
+
+      const res = await service.getLeaveOverview(mockAdminUser);
+
+      expect(res.success).toBe(true);
+      expect(res.data.pendingCount).toBe(5);
+      expect(res.data.approvedCount).toBe(12);
+      expect(res.data.rejectedCount).toBe(2);
+      expect(res.data.escalatedCount).toBe(1);
+      expect(res.data.todayOnLeaveCount).toBe(3);
+      expect(res.data.categoryBreakdown.length).toBe(1);
+      expect(res.data.categoryBreakdown[0].approvedCount).toBe(12);
     });
   });
 
