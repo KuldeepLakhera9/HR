@@ -20,6 +20,7 @@ import { DocumentsModule } from './modules/documents/documents.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { MailModule } from './modules/mail/mail.module';
 import { AuditModule } from './modules/audit/audit.module';
+import { ManagerModule } from './modules/manager/manager.module';
 
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -55,6 +56,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     NotificationsModule,
     MailModule,
     AuditModule,
+    ManagerModule,
   ],
   providers: [
     {

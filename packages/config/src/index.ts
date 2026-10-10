@@ -320,7 +320,7 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
     {
       id: 'mgr-team',
       label: 'My Team',
-      href: '/employees',
+      href: '/team',
       icon: 'Users',
       allowedRoles: ['MANAGER'],
       requiredPermission: 'EMPLOYEE_VIEW',

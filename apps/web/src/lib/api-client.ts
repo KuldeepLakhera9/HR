@@ -1502,9 +1502,200 @@ export const leaveApi = {
     const res = await fetchWithAuth<any>(`/leave/calendar${qs}`);
     return res;
   },
+
+  // HR / Admin Operations
+  async createLeaveType(data: any) {
+    const res = await fetchWithAuth<any>('/leave/types', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async updateLeaveType(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/leave/types/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async deleteLeaveType(id: string) {
+    const res = await fetchWithAuth<any>(`/leave/types/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async getLeavePolicies() {
+    const res = await fetchWithAuth<any>('/leave/policies');
+    return res;
+  },
+
+  async createLeavePolicy(data: any) {
+    const res = await fetchWithAuth<any>('/leave/policies', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async updateLeavePolicy(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/leave/policies/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async assignPolicy(data: {
+    employeeId: string;
+    leavePolicyId: string;
+    effectiveFrom?: string;
+    effectiveTo?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/leave/policies/assign', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async getPolicyAssignments(params?: {
+    leavePolicyId?: string;
+    departmentId?: string;
+    branchId?: string;
+    employeeId?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.leavePolicyId) query.set('leavePolicyId', params.leavePolicyId);
+    if (params?.departmentId) query.set('departmentId', params.departmentId);
+    if (params?.branchId) query.set('branchId', params.branchId);
+    if (params?.employeeId) query.set('employeeId', params.employeeId);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/policies/assignments${qs}`);
+    return res;
+  },
+
+  async createHoliday(data: any) {
+    const res = await fetchWithAuth<any>('/leave/holidays', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async updateHoliday(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/leave/holidays/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async deleteHoliday(id: string) {
+    const res = await fetchWithAuth<any>(`/leave/holidays/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async adjustBalance(data: {
+    employeeId: string;
+    leaveTypeId: string;
+    leaveYear: number;
+    amount: number;
+    reason: string;
+  }) {
+    const res = await fetchWithAuth<any>('/leave/balances/adjust', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async getBalanceReconciliation(params?: {
+    leaveYear?: number;
+    leaveTypeId?: string;
+    departmentId?: string;
+    employeeId?: string;
+    discrepantOnly?: boolean;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.leaveYear) query.set('leaveYear', String(params.leaveYear));
+    if (params?.leaveTypeId && params.leaveTypeId !== 'ALL')
+      query.set('leaveTypeId', params.leaveTypeId);
+    if (params?.departmentId && params.departmentId !== 'ALL')
+      query.set('departmentId', params.departmentId);
+    if (params?.employeeId) query.set('employeeId', params.employeeId);
+    if (params?.discrepantOnly) query.set('discrepantOnly', 'true');
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/balances/reconciliation${qs}`);
+    return res;
+  },
+
+  async reconcileAccount(id: string) {
+    const res = await fetchWithAuth<any>(`/leave/balances/reconcile/${id}`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async getAccountLedger(accountId: string) {
+    const res = await fetchWithAuth<any>(`/leave/balances/ledger/${accountId}`);
+    return res;
+  },
+
+  async getReports(params?: {
+    startDate?: string;
+    endDate?: string;
+    leaveTypeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+    format?: 'json' | 'csv';
+  }) {
+    const query = new URLSearchParams();
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.leaveTypeId && params.leaveTypeId !== 'ALL')
+      query.set('leaveTypeId', params.leaveTypeId);
+    if (params?.departmentId && params.departmentId !== 'ALL')
+      query.set('departmentId', params.departmentId);
+    if (params?.branchId && params.branchId !== 'ALL') query.set('branchId', params.branchId);
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.format) query.set('format', params.format);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/reports${qs}`);
+    return res;
+  },
 };
 
 export const reportsApi = {
   getDailyAttendance: attendanceApi.getDailyReport,
   getMonthlyAttendance: attendanceApi.getMonthlyReport,
+};
+
+export const managerApi = {
+  async getDashboardOverview(params?: { targetDate?: string }) {
+    const query = new URLSearchParams();
+    if (params?.targetDate) query.set('targetDate', params.targetDate);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/manager/dashboard/overview${qs}`);
+    return res;
+  },
 };
