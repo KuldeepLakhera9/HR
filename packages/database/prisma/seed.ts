@@ -893,6 +893,32 @@ async function main() {
     },
   });
 
+  // 10. Default Primary Office Location (Development & Staging Test Geofence)
+  await prisma.officeLocation.upsert({
+    where: {
+      organizationId_name: {
+        organizationId: org.id,
+        name: 'Tech Park HQ Bangalore',
+      },
+    },
+    update: {
+      latitude: 18.17441,
+      longitude: 74.614057,
+      geofenceRadiusMeters: 100,
+      timezone: 'Asia/Kolkata',
+      isActive: true,
+    },
+    create: {
+      organizationId: org.id,
+      name: 'Tech Park HQ Bangalore',
+      latitude: 18.17441,
+      longitude: 74.614057,
+      geofenceRadiusMeters: 100,
+      timezone: 'Asia/Kolkata',
+      isActive: true,
+    },
+  });
+
   console.log('Phase 3 foundational seeding completed successfully!');
 }
 
