@@ -120,6 +120,20 @@ export class AttendanceReportingService {
               endTime: true,
             },
           },
+          leaveRequest: {
+            select: {
+              id: true,
+              durationType: true,
+              leaveType: {
+                select: {
+                  id: true,
+                  name: true,
+                  code: true,
+                  color: true,
+                },
+              },
+            },
+          },
         },
       }),
       this.prisma.attendanceDailySummary.count({ where }),

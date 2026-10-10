@@ -17,6 +17,7 @@ import { CreateHolidayDto, UpdateHolidayDto } from './dto/create-holiday.dto';
 import { CreateLeaveTypeDto } from './dto/create-leave-type.dto';
 import { CreateLeavePolicyDto, AssignLeavePolicyDto } from './dto/create-leave-policy.dto';
 import { AdjustLeaveBalanceDto } from './dto/adjust-leave-balance.dto';
+import { QueryLeaveCalendarDto } from './dto/query-leave-calendar.dto';
 
 @ApiTags('Leave')
 @ApiBearerAuth()
@@ -95,6 +96,15 @@ export class LeaveController {
   @ApiOperation({ summary: 'Get aggregated leave analytics, pending counts and today leaves' })
   async getOverview(@CurrentUser() user: AuthenticatedUser) {
     return this.leaveService.getLeaveOverview(user);
+  }
+
+  @Get('calendar')
+  @RequirePermissions('LEAVE_VIEW')
+  @ApiOperation({
+    summary: 'Get employee and team leave, holiday, WFH, and official visit availability calendar',
+  })
+  async getCalendar(@CurrentUser() user: AuthenticatedUser, @Query() query: QueryLeaveCalendarDto) {
+    return this.leaveService.getCalendar(user, query);
   }
 
   // ===========================================================================

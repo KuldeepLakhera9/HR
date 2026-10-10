@@ -29,6 +29,7 @@ import {
 import { ApplyLeaveModal, LeaveBalanceItem } from '../../components/leave/ApplyLeaveModal';
 import { LeaveDetailsModal, LeaveRequestItem } from '../../components/leave/LeaveDetailsModal';
 import { DecideLeaveModal } from '../../components/leave/DecideLeaveModal';
+import { LeaveCalendarView } from '../../components/leave/LeaveCalendarView';
 
 export default function LeaveManagementPage() {
   const { user } = useAuth();
@@ -40,9 +41,9 @@ export default function LeaveManagementPage() {
   const isAdminOrHr = user?.roles?.includes('ADMIN') || user?.roles?.includes('HR');
 
   // Navigation tab state
-  const [activeTab, setActiveTab] = useState<'my-leave' | 'manager-approvals' | 'hr-overview'>(
-    'my-leave',
-  );
+  const [activeTab, setActiveTab] = useState<
+    'my-leave' | 'manager-approvals' | 'hr-overview' | 'calendar'
+  >('my-leave');
 
   // Balance accounts state
   const [balances, setBalances] = useState<LeaveBalanceItem[]>([]);
@@ -319,23 +320,36 @@ export default function LeaveManagementPage() {
           </div>
         </div>
 
-        {/* Navigation Tabs (Employee vs Manager Inbox vs HR Overview) */}
-        {isManager && (
-          <div className="border-b border-stone-200">
-            <nav className="flex space-x-6">
-              <button
-                type="button"
-                onClick={() => setActiveTab('my-leave')}
-                className={`py-3 px-1 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
-                  activeTab === 'my-leave'
-                    ? 'border-amber-600 text-amber-700'
-                    : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
-                }`}
-              >
-                <Calendar className="h-4 w-4" />
-                <span>My Leave & Balances</span>
-              </button>
+        {/* Navigation Tabs (Employee vs Calendar vs Manager Inbox vs HR Overview) */}
+        <div className="border-b border-stone-200">
+          <nav className="flex space-x-6">
+            <button
+              type="button"
+              onClick={() => setActiveTab('my-leave')}
+              className={`py-3 px-1 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
+                activeTab === 'my-leave'
+                  ? 'border-amber-600 text-amber-700'
+                  : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
+              }`}
+            >
+              <Calendar className="h-4 w-4" />
+              <span>My Leave & Balances</span>
+            </button>
 
+            <button
+              type="button"
+              onClick={() => setActiveTab('calendar')}
+              className={`py-3 px-1 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
+                activeTab === 'calendar'
+                  ? 'border-amber-600 text-amber-700'
+                  : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
+              }`}
+            >
+              <Users className="h-4 w-4" />
+              <span>Team & Leave Calendar</span>
+            </button>
+
+            {isManager && (
               <button
                 type="button"
                 onClick={() => setActiveTab('manager-approvals')}
@@ -353,24 +367,24 @@ export default function LeaveManagementPage() {
                   </span>
                 )}
               </button>
+            )}
 
-              {isAdminOrHr && (
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('hr-overview')}
-                  className={`py-3 px-1 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
-                    activeTab === 'hr-overview'
-                      ? 'border-amber-600 text-amber-700'
-                      : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
-                  }`}
-                >
-                  <BarChart3 className="h-4 w-4" />
-                  <span>HR & Organization Overview</span>
-                </button>
-              )}
-            </nav>
-          </div>
-        )}
+            {isAdminOrHr && (
+              <button
+                type="button"
+                onClick={() => setActiveTab('hr-overview')}
+                className={`py-3 px-1 text-xs md:text-sm font-semibold border-b-2 flex items-center gap-2 transition-colors ${
+                  activeTab === 'hr-overview'
+                    ? 'border-amber-600 text-amber-700'
+                    : 'border-transparent text-stone-500 hover:text-stone-700 hover:border-stone-300'
+                }`}
+              >
+                <BarChart3 className="h-4 w-4" />
+                <span>HR & Organization Overview</span>
+              </button>
+            )}
+          </nav>
+        </div>
 
         {/* TAB 1: MY LEAVE & BALANCES */}
         {activeTab === 'my-leave' && (
@@ -928,6 +942,9 @@ export default function LeaveManagementPage() {
             ) : null}
           </div>
         )}
+
+        {/* TAB 4: TEAM AVAILABILITY & LEAVE CALENDAR */}
+        {activeTab === 'calendar' && <LeaveCalendarView />}
 
         {/* Modals */}
         <ApplyLeaveModal

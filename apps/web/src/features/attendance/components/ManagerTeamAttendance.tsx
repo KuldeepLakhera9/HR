@@ -235,8 +235,8 @@ export const ManagerTeamAttendance: React.FC<ManagerTeamAttendanceProps> = () =>
         );
       case 'ON_LEAVE':
         return (
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-800 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-            ON LEAVE
+          <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
+            <Calendar className="h-3 w-3 text-amber-600" /> ON LEAVE
           </span>
         );
       default:

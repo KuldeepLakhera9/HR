@@ -44,6 +44,7 @@ import {
   WfhStatus,
   WfhDurationType,
   WfhRequest,
+  LeaveRequestStatus,
 } from '@hrms/database';
 
 export function formatCorrectionReason(
@@ -2027,6 +2028,20 @@ export class AttendanceService {
     const workingDateStr = workingDateUtc.toISOString().split('T')[0];
     const allEvents = allSessions.flatMap((s: any) => s.events || []);
 
+    let approvedLeave: any = null;
+    if (options?.isApprovedLeave === undefined && tx.leaveRequest) {
+      approvedLeave = await tx.leaveRequest.findFirst({
+        where: {
+          employeeId,
+          status: LeaveRequestStatus.APPROVED,
+          startDate: { lte: workingDateUtc },
+          endDate: { gte: workingDateUtc },
+        },
+      });
+    }
+    const isApprovedLeave = options?.isApprovedLeave ?? approvedLeave != null;
+    const primaryLeaveId = approvedLeave?.id ?? null;
+
     const calculation = calculateDailyAttendance({
       workingDate: workingDateStr,
       sessions: allSessions,
@@ -2034,7 +2049,8 @@ export class AttendanceService {
       shift,
       policy,
       isHoliday: options?.isHoliday ?? false,
-      isApprovedLeave: options?.isApprovedLeave ?? false,
+      isApprovedLeave,
+      leaveType: approvedLeave?.durationType === 'FULL_DAY' ? 'FULL_DAY' : 'HALF_DAY',
       referenceNow: options?.referenceNow ?? new Date(),
     });
 
@@ -2074,6 +2090,7 @@ export class AttendanceService {
         primaryAttendanceMode: primaryMode as AttendanceMode,
         officialVisitId: primaryVisitId,
         wfhRequestId: primaryWfhId,
+        leaveRequestId: primaryLeaveId,
       },
       update: {
         firstCheckIn: calculation.firstCheckIn,
@@ -2089,6 +2106,7 @@ export class AttendanceService {
         primaryAttendanceMode: primaryMode as AttendanceMode,
         officialVisitId: primaryVisitId,
         wfhRequestId: primaryWfhId,
+        leaveRequestId: primaryLeaveId,
       },
     });
   }

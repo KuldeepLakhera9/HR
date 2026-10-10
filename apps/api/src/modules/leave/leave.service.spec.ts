@@ -70,6 +70,7 @@ describe('LeaveService', () => {
           userId: 'user-mgr-1',
           displayName: 'Rajesh Manager',
         }),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       leaveType: {
         findFirst: jest.fn().mockResolvedValue({
@@ -154,9 +155,11 @@ describe('LeaveService', () => {
       },
       officialVisit: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       wfhRequest: {
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       shiftAssignment: {
         findFirst: jest.fn().mockResolvedValue({
@@ -164,7 +167,22 @@ describe('LeaveService', () => {
         }),
       },
       holiday: {
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
+      },
+      attendanceDailySummary: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        findUnique: jest.fn().mockResolvedValue(null),
+        upsert: jest.fn().mockResolvedValue({ id: 'summary-1', status: 'ON_LEAVE' }),
+        update: jest.fn().mockResolvedValue({ id: 'summary-1' }),
+      },
+      attendanceSession: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      attendancePolicy: {
+        findFirst: jest.fn().mockResolvedValue({
+          halfDayThresholdMinutes: 240,
+        }),
       },
     };
 
@@ -875,6 +893,234 @@ describe('LeaveService', () => {
           data: expect.objectContaining({ status: LeaveRequestStatus.CANCELLED }),
         }),
       );
+    });
+  });
+
+  describe('Attendance Integration (Step 5)', () => {
+    it('synchronizes approved full-day leave into attendance daily summary as ON_LEAVE', async () => {
+      const mockReq = {
+        id: 'req-full-1',
+        organizationId: 'org-1',
+        employeeId: 'emp-1',
+        startDate: new Date('2026-10-15T00:00:00.000Z'), // Thursday (working day)
+        endDate: new Date('2026-10-15T00:00:00.000Z'),
+        durationType: LeaveDurationType.FULL_DAY,
+      };
+
+      await service.syncLeaveToAttendance(mockReq, prisma);
+
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            organizationId_employeeId_date: {
+              organizationId: 'org-1',
+              employeeId: 'emp-1',
+              date: new Date('2026-10-15T00:00:00.000Z'),
+            },
+          },
+          create: expect.objectContaining({
+            status: 'ON_LEAVE',
+            leaveRequestId: 'req-full-1',
+            totalWorkMinutes: 0,
+          }),
+          update: expect.objectContaining({
+            status: 'ON_LEAVE',
+            leaveRequestId: 'req-full-1',
+          }),
+        }),
+      );
+    });
+
+    it('credits HALF_DAY status when half-day leave has completed attendance sessions meeting threshold', async () => {
+      const mockReq = {
+        id: 'req-half-1',
+        organizationId: 'org-1',
+        employeeId: 'emp-1',
+        startDate: new Date('2026-10-15T00:00:00.000Z'),
+        endDate: new Date('2026-10-15T00:00:00.000Z'),
+        durationType: LeaveDurationType.FIRST_HALF,
+      };
+
+      // Completed session with 5 hours (300 mins > 240 mins half-day threshold)
+      prisma.attendanceSession.findMany.mockResolvedValueOnce([
+        {
+          id: 'sess-1',
+          checkInTime: new Date('2026-10-15T13:00:00.000Z'),
+          checkOutTime: new Date('2026-10-15T18:00:00.000Z'),
+          totalBreakMinutes: 0,
+          events: [],
+        },
+      ]);
+
+      await service.syncLeaveToAttendance(mockReq, prisma);
+
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            status: 'HALF_DAY',
+            leaveRequestId: 'req-half-1',
+          }),
+          update: expect.objectContaining({
+            status: 'HALF_DAY',
+            leaveRequestId: 'req-half-1',
+          }),
+        }),
+      );
+    });
+
+    it('reverts attendance daily summary upon approved leave cancellation', async () => {
+      const mockReq = {
+        id: 'req-rev-1',
+        organizationId: 'org-1',
+        employeeId: 'emp-1',
+        startDate: new Date('2026-10-01T00:00:00.000Z'), // Past date
+        endDate: new Date('2026-10-01T00:00:00.000Z'),
+        durationType: LeaveDurationType.FULL_DAY,
+      };
+
+      prisma.attendanceDailySummary.findFirst.mockResolvedValueOnce({
+        id: 'summary-rev-1',
+        status: 'ON_LEAVE',
+        totalWorkMinutes: 0,
+        leaveRequestId: 'req-rev-1',
+      });
+
+      await service.revertLeaveFromAttendance(mockReq, prisma);
+
+      expect(prisma.attendanceDailySummary.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'summary-rev-1' },
+          data: expect.objectContaining({
+            leaveRequestId: null,
+            status: 'ABSENT', // Past date with no punches reverts to ABSENT
+          }),
+        }),
+      );
+    });
+  });
+
+  describe('getCalendar (Step 5)', () => {
+    it('rejects invalid date ranges with BadRequestException', async () => {
+      await expect(
+        service.getCalendar(mockEmployeeUser, {
+          startDate: '2026-10-20',
+          endDate: '2026-10-10', // End before start
+        }),
+      ).rejects.toThrow(BadRequestException);
+
+      await expect(
+        service.getCalendar(mockEmployeeUser, {
+          startDate: '2026-01-01',
+          endDate: '2026-12-31', // Range > 185 days
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+
+    it('returns segregated calendar events across approved leaves, pending requests, holidays, WFH and visits', async () => {
+      prisma.employee.findFirst.mockResolvedValueOnce({
+        id: 'emp-1',
+        userId: mockEmployeeUser.id,
+        employment: { departmentId: 'dept-1' },
+      });
+
+      // Peer employees
+      prisma.employee.findMany.mockResolvedValueOnce([{ id: 'emp-1' }, { id: 'emp-2' }]);
+
+      // Mock parallel queries: approved leaves, pending leaves, holidays, wfh, visits
+      prisma.leaveRequest.findMany
+        .mockResolvedValueOnce([
+          {
+            id: 'l-appr-1',
+            startDate: new Date('2026-10-15'),
+            endDate: new Date('2026-10-16'),
+            status: LeaveRequestStatus.APPROVED,
+            durationType: LeaveDurationType.FULL_DAY,
+            chargeableDays: new Prisma.Decimal(2),
+            employee: {
+              id: 'emp-1',
+              displayName: 'Vikram Aditya',
+              employeeCode: 'EMP001',
+              profilePhoto: null,
+              employment: null,
+            },
+            leaveType: { id: 'lt-cl', name: 'Casual Leave', code: 'CL', color: '#f59e0b' },
+          },
+        ])
+        .mockResolvedValueOnce([
+          {
+            id: 'l-sub-1',
+            startDate: new Date('2026-10-25'),
+            endDate: new Date('2026-10-25'),
+            status: LeaveRequestStatus.SUBMITTED,
+            durationType: LeaveDurationType.FULL_DAY,
+            chargeableDays: new Prisma.Decimal(1),
+            employee: {
+              id: 'emp-1',
+              displayName: 'Vikram Aditya',
+              employeeCode: 'EMP001',
+              profilePhoto: null,
+              employment: null,
+            },
+            leaveType: { id: 'lt-cl', name: 'Casual Leave', code: 'CL', color: '#f59e0b' },
+          },
+        ]);
+
+      prisma.holiday.findMany.mockResolvedValueOnce([
+        {
+          id: 'h-1',
+          name: 'Diwali',
+          date: new Date('2026-10-20'),
+          isOptional: false,
+        },
+      ]);
+
+      prisma.wfhRequest.findMany.mockResolvedValueOnce([
+        {
+          id: 'w-1',
+          startDate: new Date('2026-10-22'),
+          endDate: new Date('2026-10-22'),
+          status: WfhStatus.APPROVED,
+          durationType: 'FULL_DAY',
+          employee: {
+            id: 'emp-2',
+            displayName: 'Peer 2',
+            employeeCode: 'EMP002',
+            profilePhoto: null,
+            employment: null,
+          },
+        },
+      ]);
+
+      prisma.officialVisit.findMany.mockResolvedValueOnce([
+        {
+          id: 'v-1',
+          title: 'Client Inspection',
+          startDate: new Date('2026-10-28'),
+          endDate: new Date('2026-10-29'),
+          status: VisitStatus.APPROVED,
+          destinations: [{ id: 'd-1' }],
+          employee: {
+            id: 'emp-2',
+            displayName: 'Peer 2',
+            employeeCode: 'EMP002',
+            profilePhoto: null,
+            employment: null,
+          },
+        },
+      ]);
+
+      const res = await service.getCalendar(mockEmployeeUser, {
+        startDate: '2026-10-01',
+        endDate: '2026-10-31',
+      });
+
+      expect(res.success).toBe(true);
+      expect(res.data.summary.totalApprovedLeaves).toBe(1);
+      expect(res.data.summary.totalPendingLeaves).toBe(1);
+      expect(res.data.summary.totalHolidays).toBe(1);
+      expect(res.data.summary.totalWfh).toBe(1);
+      expect(res.data.summary.totalVisits).toBe(1);
+      expect(res.data.summary.totalEvents).toBe(5);
     });
   });
 });

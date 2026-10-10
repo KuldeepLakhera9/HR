@@ -28,6 +28,7 @@ import {
   AssignLeavePolicyDto,
 } from './dto/create-leave-policy.dto';
 import { AdjustLeaveBalanceDto } from './dto/adjust-leave-balance.dto';
+import { QueryLeaveCalendarDto } from './dto/query-leave-calendar.dto';
 import {
   ApprovalDecision,
   LeaveDurationType,
@@ -59,6 +60,9 @@ export class LeaveService {
         organizationId: user.organizationId,
         OR: [{ userId: user.id }, { employeeCode: user.employeeCode }],
         deletedAt: null,
+      },
+      include: {
+        employment: true,
       },
     });
 
@@ -372,6 +376,9 @@ export class LeaveService {
 
         // Transition ledger reservation into consumption
         await this.ledgerService.consumeBalance(requestId, user.id, tx);
+
+        // Synchronize approved leave with daily attendance summaries
+        await this.syncLeaveToAttendance(leaveRequest, tx);
       } else {
         // Release ledger reservation back to available balance
         await this.ledgerService.releaseReservation(
@@ -487,6 +494,9 @@ export class LeaveService {
           user.id,
           tx,
         );
+
+        // Revert approved leave from daily attendance summaries
+        await this.revertLeaveFromAttendance(leaveRequest, tx);
       }
 
       return res;
@@ -1331,5 +1341,549 @@ export class LeaveService {
     }
 
     return { hasOverlap: false };
+  }
+
+  // ===========================================================================
+  // 6. ATTENDANCE INTEGRATION BOUNDARY (Phase 6 Step 5)
+  // ===========================================================================
+
+  /**
+   * Synchronizes an approved leave request into attendance daily summaries across all affected days.
+   * Ensures idempotency: retrying approval does not create duplicate summaries or duplicate transactions.
+   * Preserves raw attendance events and existing session records (never creates fake check-in/out events).
+   */
+  async syncLeaveToAttendance(leaveRequest: any, tx: any) {
+    if (!tx.attendanceDailySummary) return;
+
+    const start = new Date(leaveRequest.startDate);
+    const end = new Date(leaveRequest.endDate);
+    const walker = new Date(
+      Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+    );
+    const endUtc = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+
+    // Resolve active/default policy for the organization
+    const policy = await tx.attendancePolicy?.findFirst({
+      where: { organizationId: leaveRequest.organizationId, isDefault: true },
+    });
+    const halfDayThresholdMinutes = policy?.halfDayThresholdMinutes ?? 240;
+
+    // Fetch shift assignment
+    const shiftAssignment = await tx.shiftAssignment?.findFirst({
+      where: {
+        employeeId: leaveRequest.employeeId,
+        effectiveFrom: { lte: endUtc },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: walker } }],
+      },
+      include: { shift: true },
+    });
+    const shift = shiftAssignment?.shift || null;
+    const workDays = shift?.workDays || [1, 2, 3, 4, 5];
+
+    while (walker.getTime() <= endUtc.getTime()) {
+      const dayUtc = new Date(walker);
+      const jsDay = dayUtc.getUTCDay();
+      const isoDay = jsDay === 0 ? 7 : jsDay;
+
+      // 1. Check if public holiday
+      const holiday = await tx.holiday?.findFirst({
+        where: {
+          organizationId: leaveRequest.organizationId,
+          date: dayUtc,
+        },
+      });
+
+      // 2. Check if weekly off
+      const isWeekOff = shift ? !workDays.includes(isoDay) : isoDay === 6 || isoDay === 7;
+
+      // 3. Check existing attendance sessions (raw attendance events preserved!)
+      const sessions =
+        (await tx.attendanceSession?.findMany({
+          where: {
+            employeeId: leaveRequest.employeeId,
+            date: dayUtc,
+          },
+          include: { events: true },
+        })) || [];
+
+      let status = 'ON_LEAVE';
+
+      if (holiday) {
+        status = 'HOLIDAY';
+      } else if (isWeekOff) {
+        status = 'WEEK_OFF';
+      } else if (sessions.length > 0) {
+        // Sessions exist: Calculate net work minutes from completed sessions
+        let grossMinutes = 0;
+        let breakMinutes = 0;
+        for (const s of sessions) {
+          if (s.checkInTime && s.checkOutTime) {
+            const inMs = new Date(s.checkInTime).getTime();
+            const outMs = new Date(s.checkOutTime).getTime();
+            if (outMs > inMs) {
+              grossMinutes += Math.round((outMs - inMs) / 60000);
+            }
+          }
+          breakMinutes += s.totalBreakMinutes || 0;
+        }
+        const netWorkMinutes = Math.max(0, grossMinutes - breakMinutes);
+
+        if (
+          leaveRequest.durationType !== LeaveDurationType.FULL_DAY &&
+          netWorkMinutes >= halfDayThresholdMinutes
+        ) {
+          status = 'HALF_DAY';
+        } else {
+          status = 'ON_LEAVE';
+        }
+      } else {
+        status = 'ON_LEAVE';
+      }
+
+      // 4. Upsert AttendanceDailySummary (Idempotent: unique on organizationId_employeeId_date)
+      await tx.attendanceDailySummary.upsert({
+        where: {
+          organizationId_employeeId_date: {
+            organizationId: leaveRequest.organizationId,
+            employeeId: leaveRequest.employeeId,
+            date: dayUtc,
+          },
+        },
+        create: {
+          organizationId: leaveRequest.organizationId,
+          employeeId: leaveRequest.employeeId,
+          date: dayUtc,
+          firstCheckIn: null,
+          lastCheckOut: null,
+          totalWorkMinutes: 0,
+          totalBreakMinutes: 0,
+          lateMinutes: 0,
+          earlyExitMinutes: 0,
+          overtimeMinutes: 0,
+          status: status as any,
+          shiftId: shift?.id ?? null,
+          policyId: policy?.id ?? null,
+          primaryAttendanceMode: 'OFFICE',
+          leaveRequestId: leaveRequest.id,
+        },
+        update: {
+          status: status as any,
+          leaveRequestId: leaveRequest.id,
+        },
+      });
+
+      walker.setUTCDate(walker.getUTCDate() + 1);
+    }
+  }
+
+  /**
+   * Reverts approved leave from attendance daily summaries upon cancellation.
+   * Restores status from actual attendance sessions, or sets WEEK_OFF / HOLIDAY / ABSENT.
+   * Keeps the leave balance ledger and attendance summary logically separate.
+   */
+  async revertLeaveFromAttendance(leaveRequest: any, tx: any) {
+    if (!tx.attendanceDailySummary) return;
+
+    const start = new Date(leaveRequest.startDate);
+    const end = new Date(leaveRequest.endDate);
+    const walker = new Date(
+      Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()),
+    );
+    const endUtc = new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate()));
+    const todayUtc = this.calculatorService.normalizeDateToUtc(new Date());
+
+    while (walker.getTime() <= endUtc.getTime()) {
+      const dayUtc = new Date(walker);
+
+      const summary = await tx.attendanceDailySummary.findFirst({
+        where: {
+          organizationId: leaveRequest.organizationId,
+          employeeId: leaveRequest.employeeId,
+          date: dayUtc,
+          leaveRequestId: leaveRequest.id,
+        },
+      });
+
+      if (summary) {
+        const sessions =
+          (await tx.attendanceSession?.findMany({
+            where: {
+              employeeId: leaveRequest.employeeId,
+              date: dayUtc,
+            },
+            include: { events: true },
+          })) || [];
+
+        let nextStatus = 'PENDING';
+
+        const holiday = await tx.holiday?.findFirst({
+          where: { organizationId: leaveRequest.organizationId, date: dayUtc },
+        });
+
+        const jsDay = dayUtc.getUTCDay();
+        const isoDay = jsDay === 0 ? 7 : jsDay;
+        const shiftAssignment = await tx.shiftAssignment?.findFirst({
+          where: {
+            employeeId: leaveRequest.employeeId,
+            effectiveFrom: { lte: dayUtc },
+            OR: [{ effectiveTo: null }, { effectiveTo: { gte: dayUtc } }],
+          },
+          include: { shift: true },
+        });
+        const shift = shiftAssignment?.shift || null;
+        const workDays = shift?.workDays || [1, 2, 3, 4, 5];
+        const isWeekOff = shift ? !workDays.includes(isoDay) : isoDay === 6 || isoDay === 7;
+
+        if (holiday) {
+          nextStatus = 'HOLIDAY';
+        } else if (isWeekOff) {
+          nextStatus = 'WEEK_OFF';
+        } else if (sessions.length > 0) {
+          const completed = sessions.filter((s: any) => s.status === 'COMPLETED' || s.checkOutTime);
+          if (completed.length > 0) {
+            nextStatus = summary.totalWorkMinutes >= 240 ? 'PRESENT' : 'HALF_DAY';
+          } else {
+            nextStatus = 'INCOMPLETE';
+          }
+        } else if (dayUtc.getTime() < todayUtc.getTime()) {
+          nextStatus = 'ABSENT';
+        } else {
+          nextStatus = 'NOT_SCHEDULED';
+        }
+
+        await tx.attendanceDailySummary.update({
+          where: { id: summary.id },
+          data: {
+            status: nextStatus as any,
+            leaveRequestId: null,
+          },
+        });
+      }
+
+      walker.setUTCDate(walker.getUTCDate() + 1);
+    }
+  }
+
+  // ===========================================================================
+  // 7. LEAVE CALENDAR & TEAM AVAILABILITY
+  // ===========================================================================
+
+  /**
+   * Leave, holiday, WFH, and official visit availability calendar
+   * Respects caller scoping: employee (self + team availability), manager (team reports), HR/Admin (org-wide)
+   */
+  async getCalendar(user: AuthenticatedUser, query: QueryLeaveCalendarDto) {
+    const startUtc = new Date(`${query.startDate}T00:00:00.000Z`);
+    const endUtc = new Date(`${query.endDate}T23:59:59.999Z`);
+
+    if (startUtc.getTime() > endUtc.getTime()) {
+      throw new BadRequestException('startDate must be before or equal to endDate.');
+    }
+
+    const diffDays = Math.round((endUtc.getTime() - startUtc.getTime()) / 86400000);
+    if (diffDays > 185) {
+      throw new BadRequestException('Calendar date range cannot exceed 185 days (6 months).');
+    }
+
+    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const isManager = user.roles.includes('MANAGER');
+    const userEmployee = await this.resolveEmployee(user);
+
+    let scopedEmployeeIds: string[] = [];
+    const requestedScope =
+      query.scope || (isAdminOrHr ? 'organization' : isManager ? 'team' : 'team');
+
+    if (requestedScope === 'my') {
+      scopedEmployeeIds = [userEmployee.id];
+    } else if (requestedScope === 'team' && !isAdminOrHr) {
+      if (isManager) {
+        const teamMemberIds = await this.hierarchyService.getTeamMemberIds(
+          userEmployee.id,
+          user.organizationId,
+        );
+        scopedEmployeeIds = [userEmployee.id, ...teamMemberIds];
+      } else {
+        // Regular employee: peer team members in same department
+        const peers = await this.prisma.employee.findMany({
+          where: {
+            organizationId: user.organizationId,
+            isActive: true,
+            deletedAt: null,
+            employment: userEmployee.employment?.departmentId
+              ? { departmentId: userEmployee.employment.departmentId }
+              : undefined,
+          },
+          select: { id: true },
+        });
+        scopedEmployeeIds = peers.map((p) => p.id);
+        if (!scopedEmployeeIds.includes(userEmployee.id)) {
+          scopedEmployeeIds.push(userEmployee.id);
+        }
+      }
+    } else {
+      // Organization scope (or admin/hr querying)
+      if (query.employeeId) {
+        scopedEmployeeIds = [query.employeeId];
+      } else {
+        const whereEmp: Prisma.EmployeeWhereInput = {
+          organizationId: user.organizationId,
+          isActive: true,
+          deletedAt: null,
+        };
+        if (query.departmentId || query.branchId) {
+          whereEmp.employment = {
+            ...(query.departmentId ? { departmentId: query.departmentId } : {}),
+            ...(query.branchId ? { branchId: query.branchId } : {}),
+          };
+        }
+        const emps = await this.prisma.employee.findMany({
+          where: whereEmp,
+          select: { id: true },
+        });
+        scopedEmployeeIds = emps.map((e) => e.id);
+      }
+    }
+
+    // Parallel fetch: Approved Leaves, Pending Leaves, Holidays, WFH, Official Visits
+    const [approvedLeaves, pendingLeaves, holidays, wfhList, visitsList] = await Promise.all([
+      // 1. Approved leaves
+      this.prisma.leaveRequest.findMany({
+        where: {
+          organizationId: user.organizationId,
+          employeeId: { in: scopedEmployeeIds },
+          status: LeaveRequestStatus.APPROVED,
+          startDate: { lte: endUtc },
+          endDate: { gte: startUtc },
+          ...(query.leaveTypeId ? { leaveTypeId: query.leaveTypeId } : {}),
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              displayName: true,
+              employeeCode: true,
+              profilePhoto: true,
+              employment: { select: { department: { select: { name: true } } } },
+            },
+          },
+          leaveType: true,
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+
+      // 2. Pending leaves (visible to owner, or managers/HR for their subordinates)
+      this.prisma.leaveRequest.findMany({
+        where: {
+          organizationId: user.organizationId,
+          employeeId: { in: scopedEmployeeIds },
+          status: LeaveRequestStatus.SUBMITTED,
+          startDate: { lte: endUtc },
+          endDate: { gte: startUtc },
+          ...(query.leaveTypeId ? { leaveTypeId: query.leaveTypeId } : {}),
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              displayName: true,
+              employeeCode: true,
+              profilePhoto: true,
+              employment: { select: { department: { select: { name: true } } } },
+            },
+          },
+          leaveType: true,
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+
+      // 3. Holidays
+      this.prisma.holiday.findMany({
+        where: {
+          organizationId: user.organizationId,
+          date: { gte: startUtc, lte: endUtc },
+        },
+        orderBy: { date: 'asc' },
+      }),
+
+      // 4. Approved WFH
+      this.prisma.wfhRequest.findMany({
+        where: {
+          organizationId: user.organizationId,
+          employeeId: { in: scopedEmployeeIds },
+          status: WfhStatus.APPROVED,
+          startDate: { lte: endUtc },
+          endDate: { gte: startUtc },
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              displayName: true,
+              employeeCode: true,
+              profilePhoto: true,
+              employment: { select: { department: { select: { name: true } } } },
+            },
+          },
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+
+      // 5. Approved / In Progress Official Visits
+      this.prisma.officialVisit.findMany({
+        where: {
+          organizationId: user.organizationId,
+          employeeId: { in: scopedEmployeeIds },
+          status: { in: [VisitStatus.APPROVED, VisitStatus.IN_PROGRESS] },
+          startDate: { lte: endUtc },
+          endDate: { gte: startUtc },
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              displayName: true,
+              employeeCode: true,
+              profilePhoto: true,
+              employment: { select: { department: { select: { name: true } } } },
+            },
+          },
+          destinations: true,
+        },
+        orderBy: { startDate: 'asc' },
+      }),
+    ]);
+
+    const events: any[] = [];
+
+    // Map Approved Leaves
+    for (const l of approvedLeaves) {
+      events.push({
+        id: l.id,
+        type: 'APPROVED_LEAVE',
+        title: `${l.employee.displayName} - ${l.leaveType.name} (${l.durationType === 'FULL_DAY' ? 'Full Day' : 'Half Day'})`,
+        startDate: l.startDate.toISOString().split('T')[0],
+        endDate: l.endDate.toISOString().split('T')[0],
+        status: l.status,
+        durationType: l.durationType,
+        chargeableDays: Number(l.chargeableDays),
+        color: l.leaveType.color || '#f59e0b',
+        employee: {
+          id: l.employee.id,
+          displayName: l.employee.displayName,
+          employeeCode: l.employee.employeeCode,
+          avatarUrl: l.employee.profilePhoto,
+          department: l.employee.employment?.department?.name || null,
+        },
+        leaveType: {
+          id: l.leaveType.id,
+          name: l.leaveType.name,
+          code: l.leaveType.code,
+          color: l.leaveType.color || '#f59e0b',
+        },
+      });
+    }
+
+    // Map Pending Leaves
+    for (const l of pendingLeaves) {
+      events.push({
+        id: l.id,
+        type: 'PENDING_LEAVE',
+        title: `${l.employee.displayName} - Pending ${l.leaveType.name} Request`,
+        startDate: l.startDate.toISOString().split('T')[0],
+        endDate: l.endDate.toISOString().split('T')[0],
+        status: l.status,
+        durationType: l.durationType,
+        chargeableDays: Number(l.chargeableDays),
+        color: '#f97316',
+        employee: {
+          id: l.employee.id,
+          displayName: l.employee.displayName,
+          employeeCode: l.employee.employeeCode,
+          avatarUrl: l.employee.profilePhoto,
+          department: l.employee.employment?.department?.name || null,
+        },
+        leaveType: {
+          id: l.leaveType.id,
+          name: l.leaveType.name,
+          code: l.leaveType.code,
+          color: l.leaveType.color || '#f59e0b',
+        },
+      });
+    }
+
+    // Map Holidays
+    for (const h of holidays) {
+      const hDate = h.date.toISOString().split('T')[0];
+      events.push({
+        id: h.id,
+        type: 'HOLIDAY',
+        title: `${h.name} (${h.isOptional ? 'Optional' : 'Public Holiday'})`,
+        startDate: hDate,
+        endDate: hDate,
+        status: 'HOLIDAY',
+        color: '#10b981',
+        isOptional: h.isOptional,
+      });
+    }
+
+    // Map WFH
+    for (const w of wfhList) {
+      events.push({
+        id: w.id,
+        type: 'WFH',
+        title: `${w.employee.displayName} - Work From Home (${w.durationType === 'FULL_DAY' ? 'Full Day' : 'Half Day'})`,
+        startDate: w.startDate.toISOString().split('T')[0],
+        endDate: w.endDate.toISOString().split('T')[0],
+        status: w.status,
+        durationType: w.durationType,
+        color: '#8b5cf6',
+        employee: {
+          id: w.employee.id,
+          displayName: w.employee.displayName,
+          employeeCode: w.employee.employeeCode,
+          avatarUrl: w.employee.profilePhoto,
+          department: w.employee.employment?.department?.name || null,
+        },
+      });
+    }
+
+    // Map Official Visits
+    for (const v of visitsList) {
+      events.push({
+        id: v.id,
+        type: 'OFFICIAL_VISIT',
+        title: `${v.employee.displayName} - Official Visit: ${v.title}`,
+        startDate: v.startDate.toISOString().split('T')[0],
+        endDate: v.endDate.toISOString().split('T')[0],
+        status: v.status,
+        color: '#3b82f6',
+        employee: {
+          id: v.employee.id,
+          displayName: v.employee.displayName,
+          employeeCode: v.employee.employeeCode,
+          avatarUrl: v.employee.profilePhoto,
+          department: v.employee.employment?.department?.name || null,
+        },
+        destinationsCount: v.destinations.length,
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        startDate: query.startDate,
+        endDate: query.endDate,
+        scope: requestedScope,
+        events,
+        summary: {
+          totalApprovedLeaves: approvedLeaves.length,
+          totalPendingLeaves: pendingLeaves.length,
+          totalHolidays: holidays.length,
+          totalWfh: wfhList.length,
+          totalVisits: visitsList.length,
+          totalEvents: events.length,
+        },
+      },
+    };
   }
 }

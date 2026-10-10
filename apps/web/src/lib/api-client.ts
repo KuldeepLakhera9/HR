@@ -1480,6 +1480,28 @@ export const leaveApi = {
     const res = await fetchWithAuth<any>(`/leave/holidays${qs}`);
     return res;
   },
+
+  async getCalendar(params: {
+    startDate: string;
+    endDate: string;
+    scope?: 'my' | 'team' | 'organization';
+    employeeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    leaveTypeId?: string;
+  }) {
+    const query = new URLSearchParams();
+    query.set('startDate', params.startDate);
+    query.set('endDate', params.endDate);
+    if (params.scope) query.set('scope', params.scope);
+    if (params.employeeId) query.set('employeeId', params.employeeId);
+    if (params.departmentId) query.set('departmentId', params.departmentId);
+    if (params.branchId) query.set('branchId', params.branchId);
+    if (params.leaveTypeId) query.set('leaveTypeId', params.leaveTypeId);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/leave/calendar${qs}`);
+    return res;
+  },
 };
 
 export const reportsApi = {
