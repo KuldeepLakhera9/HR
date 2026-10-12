@@ -1864,3 +1864,253 @@ export interface UserNotificationPreferences {
   wfhUpdates: boolean;
   officialVisitUpdates: boolean;
 }
+
+// -----------------------------------------------------------------------------
+// 15. Performance Management Types (Phase 9)
+// -----------------------------------------------------------------------------
+
+export type ReviewCycleType = 'ANNUAL' | 'SEMI_ANNUAL' | 'QUARTERLY' | 'PROBATION';
+
+export type ReviewCycleStatus =
+  | 'DRAFT'
+  | 'GOAL_SETTING'
+  | 'SELF_ASSESSMENT'
+  | 'MANAGER_REVIEW'
+  | 'HR_CALIBRATION'
+  | 'FINALIZED'
+  | 'ARCHIVED';
+
+export type GoalCategory = 'QUANTITATIVE' | 'QUALITATIVE' | 'DEVELOPMENT' | 'TEAM';
+
+export type GoalMeasurementType =
+  'NUMERIC' | 'PERCENTAGE' | 'CURRENCY' | 'BOOLEAN' | 'MILESTONE' | 'QUALITATIVE';
+
+export type GoalStatus =
+  | 'DRAFT'
+  | 'PENDING_APPROVAL'
+  | 'APPROVED'
+  | 'IN_PROGRESS'
+  | 'ON_TRACK'
+  | 'NEEDS_ATTENTION'
+  | 'AT_RISK'
+  | 'COMPLETED'
+  | 'CANCELLED';
+
+export type GoalActionType =
+  | 'CREATED'
+  | 'UPDATED'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'TARGET_CHANGED'
+  | 'WEIGHT_CHANGED'
+  | 'STATUS_CHANGED'
+  | 'PROGRESS_UPDATED'
+  | 'CANCELLED'
+  | 'COMPLETED';
+
+export type PerformanceReviewStatus =
+  | 'NOT_STARTED'
+  | 'SELF_ASSESSMENT_DRAFT'
+  | 'SELF_ASSESSMENT_SUBMITTED'
+  | 'MANAGER_REVIEW_DRAFT'
+  | 'MANAGER_REVIEW_SUBMITTED'
+  | 'HR_CALIBRATION'
+  | 'REOPENED'
+  | 'FINALIZED';
+
+export type CompetencyCategory =
+  'CORE_VALUES' | 'FUNCTIONAL_EXPERTISE' | 'LEADERSHIP' | 'COMMUNICATION' | 'PROBLEM_SOLVING';
+
+export type DevelopmentPlanStatus =
+  'PLANNED' | 'IN_PROGRESS' | 'ON_HOLD' | 'COMPLETED' | 'CANCELLED';
+
+export type FeedbackVisibility = 'EMPLOYEE_VISIBLE' | 'MANAGER_ONLY' | 'HR_CONFIDENTIAL';
+
+export interface PerformanceGoalDto {
+  id: string;
+  organizationId: string;
+  cycleId?: string | null;
+  cycle?: {
+    id: string;
+    name: string;
+    code: string;
+    status: ReviewCycleStatus;
+  } | null;
+  employeeId: string;
+  employee?: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    profilePhoto?: string | null;
+    employment?: {
+      designation?: { title: string } | null;
+      department?: { name: string } | null;
+    } | null;
+  };
+  assignedById?: string | null;
+  assignedBy?: {
+    id: string;
+    displayName: string;
+  } | null;
+  title: string;
+  description: string;
+  businessRationale?: string | null;
+  alignmentKey?: string | null;
+  category: GoalCategory;
+  measurementType: GoalMeasurementType;
+  unit?: string | null;
+  baselineValue?: number | null;
+  targetValue?: number | null;
+  currentValue?: number | null;
+  evaluationCriteria?: string | null;
+  weight: number;
+  status: GoalStatus;
+  progressPercentage: number;
+  startDate?: string | null;
+  dueDate?: string | null;
+  approvedById?: string | null;
+  approvedBy?: {
+    id: string;
+    displayName: string;
+  } | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
+  policyReference?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  progressUpdates?: GoalProgressUpdateDto[];
+  history?: GoalHistoryDto[];
+}
+
+export interface CreateGoalDto {
+  employeeId?: string; // If omitted, defaults to caller's employee ID
+  cycleId?: string | null;
+  title: string;
+  description: string;
+  businessRationale?: string;
+  alignmentKey?: string;
+  category?: GoalCategory;
+  measurementType?: GoalMeasurementType;
+  unit?: string;
+  baselineValue?: number;
+  targetValue?: number;
+  evaluationCriteria?: string;
+  weight: number;
+  startDate?: string;
+  dueDate?: string;
+  policyReference?: string;
+  submitForApproval?: boolean;
+}
+
+export interface UpdateGoalDto {
+  title?: string;
+  description?: string;
+  businessRationale?: string;
+  alignmentKey?: string;
+  category?: GoalCategory;
+  measurementType?: GoalMeasurementType;
+  unit?: string;
+  baselineValue?: number;
+  targetValue?: number;
+  currentValue?: number;
+  evaluationCriteria?: string;
+  weight?: number;
+  status?: GoalStatus;
+  startDate?: string;
+  dueDate?: string;
+  policyReference?: string;
+  changeReason?: string;
+}
+
+export interface GoalProgressUpdateDto {
+  id: string;
+  goalId: string;
+  updatedById: string;
+  updatedBy?: {
+    id: string;
+    displayName: string;
+    employeeCode: string;
+  };
+  previousValue?: number | null;
+  newValue?: number | null;
+  previousProgress: number;
+  newProgress: number;
+  note: string;
+  evidenceUrl?: string | null;
+  evidenceFileName?: string | null;
+  evidenceFileSize?: number | null;
+  evidenceMimeType?: string | null;
+  createdAt: string;
+}
+
+export interface CreateGoalProgressUpdateDto {
+  currentValue?: number;
+  progressPercentage?: number;
+  note: string;
+  evidenceUrl?: string;
+  evidenceFileName?: string;
+  evidenceFileSize?: number;
+  evidenceMimeType?: string;
+}
+
+export interface ApproveGoalDto {
+  approved: boolean;
+  rejectionReason?: string;
+}
+
+export interface GoalHistoryDto {
+  id: string;
+  goalId: string;
+  actorId: string;
+  actor?: {
+    id: string;
+    displayName: string;
+  };
+  action: GoalActionType;
+  changeReason?: string | null;
+  previousState?: any;
+  newState?: any;
+  createdAt: string;
+}
+
+export interface PerformanceGoalStats {
+  totalGoals: number;
+  draft: number;
+  pendingApproval: number;
+  approved: number;
+  inProgress: number;
+  completed: number;
+  cancelled: number;
+  averageProgress: number;
+  totalWeight: number;
+}
+
+export interface ReviewCycleDto {
+  id: string;
+  organizationId: string;
+  name: string;
+  code: string;
+  description?: string | null;
+  type: ReviewCycleType;
+  status: ReviewCycleStatus;
+  startDate: string;
+  endDate: string;
+  goalSettingDeadline?: string | null;
+  selfAssessmentDeadline?: string | null;
+  managerReviewDeadline?: string | null;
+  finalizationDeadline?: string | null;
+  goalsWeightPercentage: number;
+  competenciesWeightPercentage: number;
+  allowEmployeeGoalCreation: boolean;
+  requireGoalApproval: boolean;
+  ratingScaleMax: number;
+  eligibleDepartmentIds?: string[] | null;
+  eligibleBranchIds?: string[] | null;
+  createdAt: string;
+  updatedAt: string;
+  _count?: {
+    goals?: number;
+    reviews?: number;
+  };
+}

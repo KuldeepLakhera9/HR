@@ -15,6 +15,13 @@ import {
   CreateAnnouncementDto,
   UpdateAnnouncementDto,
   UserSessionItem,
+  PerformanceGoalDto,
+  CreateGoalDto,
+  UpdateGoalDto,
+  CreateGoalProgressUpdateDto,
+  GoalProgressUpdateDto,
+  ApproveGoalDto,
+  PerformanceGoalStats,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2242,6 +2249,108 @@ export const announcementsApi = {
 
   async archiveAnnouncement(id: string): Promise<{ success: boolean; message: string }> {
     const res = await fetchWithAuth<any>(`/announcements/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+};
+
+export const performanceApi = {
+  async getGoals(params?: {
+    employeeId?: string;
+    cycleId?: string;
+    status?: string;
+    category?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    items: PerformanceGoalDto[];
+    meta: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const q = new URLSearchParams();
+    if (params?.employeeId) q.append('employeeId', params.employeeId);
+    if (params?.cycleId) q.append('cycleId', params.cycleId);
+    if (params?.status) q.append('status', params.status);
+    if (params?.category) q.append('category', params.category);
+    if (params?.search) q.append('search', params.search);
+    if (params?.page) q.append('page', params.page.toString());
+    if (params?.limit) q.append('limit', params.limit.toString());
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/performance/goals${queryString}`);
+    return res.data;
+  },
+
+  async getGoalStats(cycleId?: string): Promise<PerformanceGoalStats> {
+    const q = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : '';
+    const res = await fetchWithAuth<any>(`/performance/goals/stats${q}`);
+    return res.data;
+  },
+
+  async getGoalById(id: string): Promise<PerformanceGoalDto> {
+    const res = await fetchWithAuth<any>(`/performance/goals/${id}`);
+    return res.data;
+  },
+
+  async createGoal(data: CreateGoalDto): Promise<PerformanceGoalDto> {
+    const res = await fetchWithAuth<any>('/performance/goals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateGoal(id: string, data: UpdateGoalDto): Promise<PerformanceGoalDto> {
+    const res = await fetchWithAuth<any>(`/performance/goals/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async submitGoal(id: string): Promise<PerformanceGoalDto> {
+    const res = await fetchWithAuth<any>(`/performance/goals/${id}/submit`, {
+      method: 'POST',
+    });
+    return res.data;
+  },
+
+  async approveGoal(id: string, data: ApproveGoalDto): Promise<PerformanceGoalDto> {
+    const res = await fetchWithAuth<any>(`/performance/goals/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateProgress(
+    id: string,
+    data: CreateGoalProgressUpdateDto,
+    file?: File,
+  ): Promise<{ progressRecord: GoalProgressUpdateDto; updatedGoal: PerformanceGoalDto }> {
+    let body: any;
+    if (file) {
+      const formData = new FormData();
+      formData.append('note', data.note);
+      if (data.currentValue !== undefined)
+        formData.append('currentValue', data.currentValue.toString());
+      if (data.progressPercentage !== undefined)
+        formData.append('progressPercentage', data.progressPercentage.toString());
+      formData.append('evidence', file);
+      body = formData;
+    } else {
+      body = JSON.stringify(data);
+    }
+
+    const res = await fetchWithAuth<any>(`/performance/goals/${id}/progress`, {
+      method: 'POST',
+      body,
+    });
+    return res.data;
+  },
+
+  async deleteGoal(id: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetchWithAuth<any>(`/performance/goals/${id}`, {
       method: 'DELETE',
     });
     return res;

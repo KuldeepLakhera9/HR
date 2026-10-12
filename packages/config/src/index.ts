@@ -202,6 +202,13 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       requiredPermission: 'AUDIT_VIEW',
     },
     {
+      id: 'admin-progress',
+      label: 'Performance & Goals',
+      href: '/progress',
+      icon: 'TrendingUp',
+      allowedRoles: ['ADMIN'],
+    },
+    {
       id: 'admin-settings',
       label: 'System Settings',
       href: '/settings',
@@ -421,6 +428,13 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       label: 'My Requests',
       href: '/requests',
       icon: 'CheckSquare',
+      allowedRoles: ['EMPLOYEE'],
+    },
+    {
+      id: 'emp-progress',
+      label: 'Performance & Goals',
+      href: '/progress',
+      icon: 'TrendingUp',
       allowedRoles: ['EMPLOYEE'],
     },
     {
