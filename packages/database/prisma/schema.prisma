@@ -512,6 +512,8 @@ model Employee {
   managerReviews               PerformanceReview[]             @relation("ManagerReviews")
   authoredFeedbacks            PerformanceFeedback[]           @relation("FeedbackAuthor")
   developmentPlans             DevelopmentPlan[]               @relation("EmployeeDevelopmentPlans")
+  participatingCycles          ReviewCycleParticipant[]        @relation("CycleParticipantEmployee")
+  evaluatingParticipants       ReviewCycleParticipant[]        @relation("CycleParticipantManager")
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -1652,6 +1654,13 @@ enum FeedbackVisibility {
   HR_CONFIDENTIAL
 }
 
+enum ParticipantStatus {
+  ENROLLED
+  EXEMPTED
+  WITHDRAWN
+  COMPLETED
+}
+
 model ReviewCycle {
   id             String       @id @default(uuid())
   organizationId String
@@ -1677,8 +1686,18 @@ model ReviewCycle {
   requireGoalApproval          Boolean @default(true)
   ratingScaleMax               Int     @default(5)
 
-  eligibleDepartmentIds Json?
-  eligibleBranchIds     Json?
+  eligibleDepartmentIds      Json?
+  eligibleBranchIds          Json?
+  eligibleEmploymentStatuses Json?
+  joiningDateCutoff          DateTime?
+
+  templateVersion   Int     @default(1)
+  ratingScaleRubric Json?
+  instructions      String?
+
+  reopenedAt   DateTime?
+  reopenedById String?
+  reopenReason String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1686,6 +1705,8 @@ model ReviewCycle {
   goals        PerformanceGoal[]
   reviews      PerformanceReview[]
   competencies PerformanceCompetency[]
+  participants ReviewCycleParticipant[]
+  history      ReviewCycleHistory[]
 
   @@unique([organizationId, code])
   @@index([organizationId, status])
@@ -1916,4 +1937,54 @@ model DevelopmentPlan {
   @@index([reviewId])
   @@index([employeeId, status])
   @@map("development_plans")
+}
+
+model ReviewCycleParticipant {
+  id         String      @id @default(uuid())
+  cycleId    String
+  cycle      ReviewCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee    @relation("CycleParticipantEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  managerId     String?
+  manager       Employee? @relation("CycleParticipantManager", fields: [managerId], references: [id], onDelete: SetNull)
+  departmentId  String?
+  branchId      String?
+  designationId String?
+
+  status          ParticipantStatus @default(ENROLLED)
+  exemptionReason String?
+
+  policySnapshot Json?
+
+  managerReassignedAt DateTime?
+  previousManagerId   String?
+  reassignmentReason  String?
+
+  enrolledAt DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([cycleId, employeeId])
+  @@index([cycleId, status])
+  @@index([employeeId])
+  @@index([managerId])
+  @@map("review_cycle_participants")
+}
+
+model ReviewCycleHistory {
+  id      String      @id @default(uuid())
+  cycleId String
+  cycle   ReviewCycle @relation(fields: [cycleId], references: [id], onDelete: Cascade)
+  actorId String
+
+  action        String
+  changeReason  String?
+  previousState Json?
+  newState      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([cycleId])
+  @@index([createdAt])
+  @@map("review_cycle_histories")
 }

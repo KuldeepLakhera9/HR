@@ -22,6 +22,15 @@ import {
   GoalProgressUpdateDto,
   ApproveGoalDto,
   PerformanceGoalStats,
+  ReviewCycleDto,
+  ReviewCycleParticipantDto,
+  CreateReviewCycleDto,
+  UpdateReviewCycleDto,
+  TransitionCycleStageDto,
+  ReopenCycleDto,
+  ReassignManagerDto,
+  ExemptParticipantDto,
+  EligibilityPreviewDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2354,5 +2363,113 @@ export const performanceApi = {
       method: 'DELETE',
     });
     return res;
+  },
+
+  // Review Cycles Administration
+  async getCycles(params?: { status?: string; search?: string }): Promise<ReviewCycleDto[]> {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.search) q.append('search', params.search);
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/performance/cycles${queryString}`);
+    return res.data;
+  },
+
+  async getCycleById(id: string): Promise<ReviewCycleDto> {
+    const res = await fetchWithAuth<any>(`/performance/cycles/${id}`);
+    return res.data;
+  },
+
+  async createCycle(data: CreateReviewCycleDto): Promise<ReviewCycleDto> {
+    const res = await fetchWithAuth<any>('/performance/cycles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateCycle(id: string, data: UpdateReviewCycleDto): Promise<ReviewCycleDto> {
+    const res = await fetchWithAuth<any>(`/performance/cycles/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async previewEligibility(id: string): Promise<EligibilityPreviewDto> {
+    const res = await fetchWithAuth<any>(`/performance/cycles/${id}/eligibility-preview`);
+    return res.data;
+  },
+
+  async enrollParticipants(
+    id: string,
+  ): Promise<{ success: boolean; enrolledCount: number; message: string }> {
+    const res = await fetchWithAuth<any>(`/performance/cycles/${id}/enroll`, {
+      method: 'POST',
+    });
+    return res.data;
+  },
+
+  async transitionCycleStage(id: string, data: TransitionCycleStageDto): Promise<ReviewCycleDto> {
+    const res = await fetchWithAuth<any>(`/performance/cycles/${id}/transition`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async reopenCycle(id: string, data: ReopenCycleDto): Promise<ReviewCycleDto> {
+    const res = await fetchWithAuth<any>(`/performance/cycles/${id}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async getCycleParticipants(
+    id: string,
+    params?: { status?: string; search?: string; page?: number; limit?: number },
+  ): Promise<{
+    items: ReviewCycleParticipantDto[];
+    meta: { total: number; page: number; limit: number; totalPages: number };
+  }> {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.search) q.append('search', params.search);
+    if (params?.page) q.append('page', params.page.toString());
+    if (params?.limit) q.append('limit', params.limit.toString());
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/performance/cycles/${id}/participants${queryString}`);
+    return res.data;
+  },
+
+  async reassignManager(
+    cycleId: string,
+    participantId: string,
+    data: ReassignManagerDto,
+  ): Promise<ReviewCycleParticipantDto> {
+    const res = await fetchWithAuth<any>(
+      `/performance/cycles/${cycleId}/participants/${participantId}/reassign-manager`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    );
+    return res.data;
+  },
+
+  async exemptParticipant(
+    cycleId: string,
+    participantId: string,
+    data: ExemptParticipantDto,
+  ): Promise<ReviewCycleParticipantDto> {
+    const res = await fetchWithAuth<any>(
+      `/performance/cycles/${cycleId}/participants/${participantId}/exempt`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      },
+    );
+    return res.data;
   },
 };

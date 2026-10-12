@@ -6,11 +6,13 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { GoalsService } from './goals.service';
 import { GoalsController } from './goals.controller';
+import { ReviewCyclesService } from './review-cycles.service';
+import { ReviewCyclesController } from './review-cycles.controller';
 
 @Module({
   imports: [PrismaModule, AuthorizationModule, AuditModule, NotificationsModule, EmployeesModule],
-  controllers: [GoalsController],
-  providers: [GoalsService],
-  exports: [GoalsService],
+  controllers: [GoalsController, ReviewCyclesController],
+  providers: [GoalsService, ReviewCyclesService],
+  exports: [GoalsService, ReviewCyclesService],
 })
 export class PerformanceModule {}

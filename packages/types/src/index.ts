@@ -2086,6 +2086,8 @@ export interface PerformanceGoalStats {
   totalWeight: number;
 }
 
+export type ParticipantStatus = 'ENROLLED' | 'EXEMPTED' | 'WITHDRAWN' | 'COMPLETED';
+
 export interface ReviewCycleDto {
   id: string;
   organizationId: string;
@@ -2107,10 +2109,150 @@ export interface ReviewCycleDto {
   ratingScaleMax: number;
   eligibleDepartmentIds?: string[] | null;
   eligibleBranchIds?: string[] | null;
+  eligibleEmploymentStatuses?: string[] | null;
+  joiningDateCutoff?: string | null;
+  templateVersion: number;
+  ratingScaleRubric?: any;
+  instructions?: string | null;
+  reopenedAt?: string | null;
+  reopenedById?: string | null;
+  reopenReason?: string | null;
   createdAt: string;
   updatedAt: string;
   _count?: {
     goals?: number;
     reviews?: number;
+    participants?: number;
   };
+}
+
+export interface ReviewCycleParticipantDto {
+  id: string;
+  cycleId: string;
+  employeeId: string;
+  employee?: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    profilePhoto?: string | null;
+    employment?: {
+      department?: { id: string; name: string } | null;
+      designation?: { id: string; title: string } | null;
+      branch?: { id: string; name: string } | null;
+    } | null;
+  };
+  managerId?: string | null;
+  manager?: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+  } | null;
+  departmentId?: string | null;
+  branchId?: string | null;
+  designationId?: string | null;
+  status: ParticipantStatus;
+  exemptionReason?: string | null;
+  policySnapshot?: any;
+  managerReassignedAt?: string | null;
+  previousManagerId?: string | null;
+  reassignmentReason?: string | null;
+  enrolledAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewCycleHistoryDto {
+  id: string;
+  cycleId: string;
+  actorId: string;
+  actor?: {
+    id: string;
+    displayName: string;
+  };
+  action: string;
+  changeReason?: string | null;
+  previousState?: any;
+  newState?: any;
+  createdAt: string;
+}
+
+export interface CreateReviewCycleDto {
+  name: string;
+  code: string;
+  description?: string;
+  type: ReviewCycleType;
+  startDate: string;
+  endDate: string;
+  goalSettingDeadline?: string;
+  selfAssessmentDeadline?: string;
+  managerReviewDeadline?: string;
+  finalizationDeadline?: string;
+  goalsWeightPercentage?: number;
+  competenciesWeightPercentage?: number;
+  allowEmployeeGoalCreation?: boolean;
+  requireGoalApproval?: boolean;
+  ratingScaleMax?: number;
+  eligibleDepartmentIds?: string[];
+  eligibleBranchIds?: string[];
+  eligibleEmploymentStatuses?: string[];
+  joiningDateCutoff?: string;
+  ratingScaleRubric?: any;
+  instructions?: string;
+  autoEnroll?: boolean;
+}
+
+export interface UpdateReviewCycleDto {
+  name?: string;
+  description?: string;
+  startDate?: string;
+  endDate?: string;
+  goalSettingDeadline?: string;
+  selfAssessmentDeadline?: string;
+  managerReviewDeadline?: string;
+  finalizationDeadline?: string;
+  goalsWeightPercentage?: number;
+  competenciesWeightPercentage?: number;
+  allowEmployeeGoalCreation?: boolean;
+  requireGoalApproval?: boolean;
+  ratingScaleMax?: number;
+  eligibleDepartmentIds?: string[];
+  eligibleBranchIds?: string[];
+  eligibleEmploymentStatuses?: string[];
+  joiningDateCutoff?: string;
+  ratingScaleRubric?: any;
+  instructions?: string;
+  changeReason?: string;
+}
+
+export interface TransitionCycleStageDto {
+  targetStatus: ReviewCycleStatus;
+  reason?: string;
+}
+
+export interface ReopenCycleDto {
+  reopenReason: string;
+  extendedFinalizationDeadline?: string;
+}
+
+export interface ReassignManagerDto {
+  newManagerId: string;
+  reason: string;
+}
+
+export interface ExemptParticipantDto {
+  exemptionReason: string;
+}
+
+export interface EligibilityPreviewDto {
+  totalEligible: number;
+  alreadyEnrolled: number;
+  newlyEligible: number;
+  sampleEmployees: Array<{
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    department?: string | null;
+    designation?: string | null;
+    manager?: string | null;
+    joiningDate?: string | null;
+  }>;
 }
