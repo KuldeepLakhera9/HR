@@ -69,6 +69,13 @@ model Organization {
   performanceGoals               PerformanceGoal[]
   performanceReviews             PerformanceReview[]
   savedReports                   SavedReportDefinition[]
+  salaryComponents               SalaryComponent[]
+  salaryStructures               SalaryStructure[]
+  employeeCompensations          EmployeeCompensation[]
+  payrollPeriods                 PayrollPeriod[]
+  payrollRuns                    PayrollRun[]
+  payrollAdjustments             PayrollAdjustment[]
+  payrollSnapshots               EmployeePayrollSnapshot[]
 
   @@index([code])
   @@index([isActive])
@@ -239,6 +246,10 @@ model User {
   performedLeaveTransactions   LeaveBalanceTransaction[]      @relation("LeaveTransactionActor")
   reviewedProfileChanges       ProfileChangeRequest[]         @relation("ProfileChangeReviewer")
   savedReports                 SavedReportDefinition[]
+  approvedPayrollRuns          PayrollRun[]                   @relation("PayrollApprover")
+  lockedPayrollRuns            PayrollRun[]                   @relation("PayrollLocker")
+  payrollApprovalHistories     PayrollApprovalHistory[]       @relation("PayrollApprovalActor")
+  approvedAdjustments          PayrollAdjustment[]            @relation("AdjustmentApprover")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -517,6 +528,9 @@ model Employee {
   participatingCycles          ReviewCycleParticipant[]        @relation("CycleParticipantEmployee")
   evaluatingParticipants       ReviewCycleParticipant[]        @relation("CycleParticipantManager")
   reviewHistories              PerformanceReviewHistory[]      @relation("ReviewHistoryActor")
+  compensations                EmployeeCompensation[]
+  payrollAdjustments           PayrollAdjustment[]
+  payrollSnapshots             EmployeePayrollSnapshot[]
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -2051,6 +2065,379 @@ model SavedReportDefinition {
   @@index([organizationId, userId])
   @@index([reportKey])
   @@map("saved_report_definitions")
+}
+
+// -----------------------------------------------------------------------------
+// 17. Phase 11: Enterprise Payroll Management Entities
+// -----------------------------------------------------------------------------
+
+enum ComponentType {
+  EARNING
+  DEDUCTION
+}
+
+enum ComponentCalculationType {
+  FLAT_AMOUNT
+  PERCENTAGE_OF_BASIC
+  PERCENTAGE_OF_GROSS
+  FORMULA
+}
+
+enum PayrollPeriodStatus {
+  UPCOMING
+  OPEN
+  PROCESSING
+  COMPLETED
+  CLOSED
+}
+
+enum PayrollRunStatus {
+  DRAFT
+  CALCULATING
+  CALCULATED
+  REVIEW_PENDING
+  APPROVED
+  LOCKED
+  PAID
+  CANCELLED
+}
+
+enum AdjustmentType {
+  BONUS
+  ARREAR
+  OVERTIME
+  INCENTIVE
+  REIMBURSEMENT
+  DEDUCTION_OTHER
+  ADVANCE_RECOVERY
+}
+
+enum AdjustmentStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  PROCESSED
+}
+
+enum PayslipStatus {
+  GENERATED
+  PUBLISHED
+  WITHHELD
+}
+
+enum PaymentStatus {
+  UNPAID
+  PROCESSING
+  PAID
+  FAILED
+}
+
+model SalaryComponent {
+  id                  String                   @id @default(uuid())
+  organizationId      String
+  organization        Organization             @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code                String
+  name                String
+  description         String?
+  type                ComponentType
+  calculationType     ComponentCalculationType
+  formula             String?
+  isTaxable           Boolean                  @default(true)
+  isStatutory         Boolean                  @default(false)
+  isProRataApplicable Boolean                  @default(true)
+  affectsNetSalary    Boolean                  @default(true)
+  displayOrder        Int                      @default(0)
+  isActive            Boolean                  @default(true)
+  createdAt           DateTime                 @default(now())
+  updatedAt           DateTime                 @updatedAt
+  deletedAt           DateTime?
+
+  structureItems    SalaryStructureItem[]
+  compensationItems EmployeeCompensationItem[]
+  payrollItems      PayrollItem[]
+
+  @@unique([organizationId, code])
+  @@index([organizationId, type])
+  @@index([isActive])
+  @@map("salary_components")
+}
+
+model SalaryStructure {
+  id             String          @id @default(uuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  code           String
+  name           String
+  description    String?
+  version        Int             @default(1)
+  currency       String          @default("INR")
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  deletedAt      DateTime?
+
+  items         SalaryStructureItem[]
+  compensations EmployeeCompensation[]
+
+  @@unique([organizationId, code, version])
+  @@index([organizationId])
+  @@index([isActive])
+  @@map("salary_structures")
+}
+
+model SalaryStructureItem {
+  id                 String                   @id @default(uuid())
+  structureId        String
+  structure          SalaryStructure          @relation(fields: [structureId], references: [id], onDelete: Cascade)
+  componentId        String
+  component          SalaryComponent          @relation(fields: [componentId], references: [id], onDelete: Restrict)
+  calculationType    ComponentCalculationType
+  amountOrPercentage Decimal                  @db.Decimal(12, 4)
+  formula            String?
+  displayOrder       Int                      @default(0)
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+
+  @@unique([structureId, componentId])
+  @@index([structureId])
+  @@index([componentId])
+  @@map("salary_structure_items")
+}
+
+model EmployeeCompensation {
+  id             String          @id @default(uuid())
+  organizationId String
+  organization   Organization    @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  structureId    String
+  structure      SalaryStructure @relation(fields: [structureId], references: [id], onDelete: Restrict)
+
+  ctcAnnual     Decimal   @db.Decimal(14, 2)
+  grossMonthly  Decimal   @db.Decimal(14, 2)
+  effectiveFrom DateTime
+  effectiveTo   DateTime?
+  reason        String?
+  isLocked      Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  items EmployeeCompensationItem[]
+
+  @@index([organizationId])
+  @@index([employeeId, effectiveFrom, effectiveTo])
+  @@index([structureId])
+  @@map("employee_compensations")
+}
+
+model EmployeeCompensationItem {
+  id             String               @id @default(uuid())
+  compensationId String
+  compensation   EmployeeCompensation @relation(fields: [compensationId], references: [id], onDelete: Cascade)
+  componentId    String
+  component      SalaryComponent      @relation(fields: [componentId], references: [id], onDelete: Restrict)
+  monthlyAmount  Decimal              @db.Decimal(12, 2)
+  annualAmount   Decimal              @db.Decimal(14, 2)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@unique([compensationId, componentId])
+  @@index([compensationId])
+  @@index([componentId])
+  @@map("employee_compensation_items")
+}
+
+model PayrollPeriod {
+  id             String              @id @default(uuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  year           Int
+  month          Int
+  startDate      DateTime
+  endDate        DateTime
+  totalDays      Int
+  payoutDate     DateTime?
+  status         PayrollPeriodStatus @default(OPEN)
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  runs        PayrollRun[]
+  adjustments PayrollAdjustment[]
+
+  @@unique([organizationId, year, month])
+  @@index([organizationId, status])
+  @@map("payroll_periods")
+}
+
+model PayrollRun {
+  id                 String           @id @default(uuid())
+  organizationId     String
+  organization       Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  periodId           String
+  period             PayrollPeriod    @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  runNumber          Int              @default(1)
+  scope              String           @default("ALL")
+  calculationVersion Int              @default(1)
+  title              String
+  status             PayrollRunStatus @default(DRAFT)
+
+  totalEmployees  Int     @default(0)
+  totalGross      Decimal @default(0.0) @db.Decimal(14, 2)
+  totalDeductions Decimal @default(0.0) @db.Decimal(14, 2)
+  totalNet        Decimal @default(0.0) @db.Decimal(14, 2)
+
+  calculatedAt DateTime?
+  approvedAt   DateTime?
+  approvedById String?
+  approvedBy   User?     @relation("PayrollApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  lockedAt     DateTime?
+  lockedById   String?
+  lockedBy     User?     @relation("PayrollLocker", fields: [lockedById], references: [id], onDelete: SetNull)
+  paidAt       DateTime?
+
+  notes          String?
+  calculationLog Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  snapshots         EmployeePayrollSnapshot[]
+  adjustments       PayrollAdjustment[]
+  approvalHistories PayrollApprovalHistory[]
+
+  @@unique([organizationId, periodId, scope, runNumber, calculationVersion])
+  @@index([organizationId, status])
+  @@index([periodId])
+  @@map("payroll_runs")
+}
+
+model PayrollApprovalHistory {
+  id             String            @id @default(uuid())
+  payrollRunId   String
+  payrollRun     PayrollRun        @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  actorId        String
+  actor          User              @relation("PayrollApprovalActor", fields: [actorId], references: [id], onDelete: Restrict)
+  action         String
+  comments       String?
+  previousStatus PayrollRunStatus?
+  newStatus      PayrollRunStatus
+  metadata       Json?
+  createdAt      DateTime          @default(now())
+
+  @@index([payrollRunId])
+  @@index([actorId])
+  @@map("payroll_approval_histories")
+}
+
+model PayrollAdjustment {
+  id               String           @id @default(uuid())
+  organizationId   String
+  organization     Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId       String
+  employee         Employee         @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  periodId         String
+  period           PayrollPeriod    @relation(fields: [periodId], references: [id], onDelete: Restrict)
+  payrollRunId     String?
+  payrollRun       PayrollRun?      @relation(fields: [payrollRunId], references: [id], onDelete: SetNull)
+
+  type             AdjustmentType
+  title            String
+  amount           Decimal          @db.Decimal(12, 2)
+  isTaxable        Boolean          @default(true)
+  status           AdjustmentStatus @default(PENDING)
+  reason           String?
+  supportingDocKey String?
+  approvedById     String?
+  approvedBy       User?            @relation("AdjustmentApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt       DateTime?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+
+  @@index([organizationId, employeeId])
+  @@index([periodId, status])
+  @@index([payrollRunId])
+  @@map("payroll_adjustments")
+}
+
+model EmployeePayrollSnapshot {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  payrollRunId   String
+  payrollRun     PayrollRun    @relation(fields: [payrollRunId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee      @relation(fields: [employeeId], references: [id], onDelete: Restrict)
+
+  payslipNumber String
+  payslipStatus PayslipStatus @default(GENERATED)
+  publishedAt   DateTime?
+
+  // Frozen profile metadata (sanitized, no sensitive PII stored unmasked)
+  employeeCode      String
+  employeeName      String
+  departmentName    String?
+  designationTitle  String?
+  branchName        String?
+  bankName          String?
+  bankAccountMasked String?
+  panMasked         String?
+  pfUan             String?
+
+  // Working day metrics snapshot
+  calendarDays Decimal @db.Decimal(5, 2)
+  workingDays  Decimal @db.Decimal(5, 2)
+  paidDays     Decimal @db.Decimal(5, 2)
+  lopDays      Decimal @db.Decimal(5, 2)
+
+  // Financial snapshot
+  baseMonthlyGross   Decimal @db.Decimal(12, 2)
+  earnedGross        Decimal @db.Decimal(12, 2)
+  totalDeductions    Decimal @db.Decimal(12, 2)
+  netSalary          Decimal @db.Decimal(12, 2)
+  roundingAdjustment Decimal @default(0.0) @db.Decimal(5, 2)
+  currency           String  @default("INR")
+
+  // Optional payment tracking metadata
+  paymentStatus    PaymentStatus @default(UNPAID)
+  paymentMethod    String?
+  paymentReference String?
+  paidAt           DateTime?
+
+  // Calculation inputs snapshot for audit and reproduction
+  calculationInputSnapshot Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items PayrollItem[]
+
+  @@unique([payrollRunId, employeeId])
+  @@unique([organizationId, payslipNumber])
+  @@index([employeeId, payslipStatus])
+  @@index([payrollRunId])
+  @@index([organizationId, paymentStatus])
+  @@map("employee_payroll_snapshots")
+}
+
+model PayrollItem {
+  id             String                  @id @default(uuid())
+  snapshotId     String
+  snapshot       EmployeePayrollSnapshot @relation(fields: [snapshotId], references: [id], onDelete: Cascade)
+  componentId    String?
+  component      SalaryComponent?        @relation(fields: [componentId], references: [id], onDelete: SetNull)
+
+  componentCode  String
+  componentName  String
+  type           ComponentType
+  standardAmount Decimal                 @db.Decimal(12, 2)
+  earnedAmount   Decimal                 @db.Decimal(12, 2)
+  displayOrder   Int                     @default(0)
+  createdAt      DateTime                @default(now())
+
+  @@index([snapshotId])
+  @@index([componentId])
+  @@map("payroll_items")
 }
 
 

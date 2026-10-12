@@ -3190,3 +3190,211 @@ export interface ExecuteSavedReportResultDto {
   scopeType: 'ORGANIZATION' | 'TEAM';
   data: any;
 }
+
+// -----------------------------------------------------------------------------
+// Phase 11: Enterprise Payroll Management Types
+// -----------------------------------------------------------------------------
+
+export type ComponentType = 'EARNING' | 'DEDUCTION';
+
+export type ComponentCalculationType =
+  'FLAT_AMOUNT' | 'PERCENTAGE_OF_BASIC' | 'PERCENTAGE_OF_GROSS' | 'FORMULA';
+
+export type PayrollPeriodStatus = 'UPCOMING' | 'OPEN' | 'PROCESSING' | 'COMPLETED' | 'CLOSED';
+
+export type PayrollRunStatus =
+  | 'DRAFT'
+  | 'CALCULATING'
+  | 'CALCULATED'
+  | 'REVIEW_PENDING'
+  | 'APPROVED'
+  | 'LOCKED'
+  | 'PAID'
+  | 'CANCELLED';
+
+export type AdjustmentType =
+  | 'BONUS'
+  | 'ARREAR'
+  | 'OVERTIME'
+  | 'INCENTIVE'
+  | 'REIMBURSEMENT'
+  | 'DEDUCTION_OTHER'
+  | 'ADVANCE_RECOVERY';
+
+export type AdjustmentStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'PROCESSED';
+
+export type PayslipStatus = 'GENERATED' | 'PUBLISHED' | 'WITHHELD';
+
+export type PaymentStatus = 'UNPAID' | 'PROCESSING' | 'PAID' | 'FAILED';
+
+export interface SalaryComponentDto {
+  id: string;
+  organizationId: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  type: ComponentType;
+  calculationType: ComponentCalculationType;
+  formula?: string | null;
+  isTaxable: boolean;
+  isStatutory: boolean;
+  isProRataApplicable: boolean;
+  affectsNetSalary: boolean;
+  displayOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SalaryStructureItemDto {
+  id: string;
+  structureId: string;
+  componentId: string;
+  component?: SalaryComponentDto;
+  calculationType: ComponentCalculationType;
+  amountOrPercentage: number;
+  formula?: string | null;
+  displayOrder: number;
+}
+
+export interface SalaryStructureDto {
+  id: string;
+  organizationId: string;
+  code: string;
+  name: string;
+  description?: string | null;
+  version: number;
+  currency: string;
+  isActive: boolean;
+  items?: SalaryStructureItemDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeCompensationItemDto {
+  id: string;
+  compensationId: string;
+  componentId: string;
+  component?: SalaryComponentDto;
+  monthlyAmount: number;
+  annualAmount: number;
+}
+
+export interface EmployeeCompensationDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  structureId: string;
+  structure?: SalaryStructureDto;
+  ctcAnnual: number;
+  grossMonthly: number;
+  effectiveFrom: string;
+  effectiveTo?: string | null;
+  reason?: string | null;
+  isLocked: boolean;
+  items?: EmployeeCompensationItemDto[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PayrollPeriodDto {
+  id: string;
+  organizationId: string;
+  year: number;
+  month: number;
+  startDate: string;
+  endDate: string;
+  totalDays: number;
+  payoutDate?: string | null;
+  status: PayrollPeriodStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PayrollRunDto {
+  id: string;
+  organizationId: string;
+  periodId: string;
+  period?: PayrollPeriodDto;
+  runNumber: number;
+  scope: string;
+  calculationVersion: number;
+  title: string;
+  status: PayrollRunStatus;
+  totalEmployees: number;
+  totalGross: number;
+  totalDeductions: number;
+  totalNet: number;
+  calculatedAt?: string | null;
+  approvedAt?: string | null;
+  lockedAt?: string | null;
+  paidAt?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PayrollAdjustmentDto {
+  id: string;
+  organizationId: string;
+  employeeId: string;
+  periodId: string;
+  payrollRunId?: string | null;
+  type: AdjustmentType;
+  title: string;
+  amount: number;
+  isTaxable: boolean;
+  status: AdjustmentStatus;
+  reason?: string | null;
+  supportingDocKey?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PayrollItemDto {
+  id: string;
+  snapshotId: string;
+  componentId?: string | null;
+  componentCode: string;
+  componentName: string;
+  type: ComponentType;
+  standardAmount: number;
+  earnedAmount: number;
+  displayOrder: number;
+}
+
+export interface EmployeePayrollSnapshotDto {
+  id: string;
+  organizationId: string;
+  payrollRunId: string;
+  employeeId: string;
+  payslipNumber: string;
+  payslipStatus: PayslipStatus;
+  publishedAt?: string | null;
+  employeeCode: string;
+  employeeName: string;
+  departmentName?: string | null;
+  designationTitle?: string | null;
+  branchName?: string | null;
+  bankName?: string | null;
+  bankAccountMasked?: string | null;
+  panMasked?: string | null;
+  pfUan?: string | null;
+  calendarDays: number;
+  workingDays: number;
+  paidDays: number;
+  lopDays: number;
+  baseMonthlyGross: number;
+  earnedGross: number;
+  totalDeductions: number;
+  netSalary: number;
+  roundingAdjustment: number;
+  currency: string;
+  paymentStatus: PaymentStatus;
+  paymentMethod?: string | null;
+  paymentReference?: string | null;
+  paidAt?: string | null;
+  items?: PayrollItemDto[];
+  createdAt: string;
+  updatedAt: string;
+}
