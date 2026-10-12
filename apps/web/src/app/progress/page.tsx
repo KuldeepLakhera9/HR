@@ -26,6 +26,7 @@ import {
 } from '@hrms/ui';
 import { ReviewCyclesView } from '../../components/performance/ReviewCyclesView';
 import { SelfAssessmentView } from '../../components/performance/SelfAssessmentView';
+import { ManagerReviewsView } from '../../components/performance/ManagerReviewsView';
 import {
   TrendingUp,
   Target,
@@ -59,13 +60,14 @@ export default function ProgressGoalsPage() {
   const { user } = useAuth();
   const { role } = useRole();
   const isHrOrAdmin = role === 'ADMIN' || role === 'HR';
+  const isManagerOrAdmin = role === 'MANAGER' || role === 'ADMIN' || role === 'HR';
 
-  // Section Switcher: Goals, Review Cycles, or Employee Self-Assessment
-  const [activeSection, setActiveSection] = useState<'GOALS' | 'CYCLES' | 'SELF_ASSESSMENT'>(
-    'GOALS',
-  );
+  // Section Switcher: Goals, Review Cycles, Employee Self-Assessment, or Team Reviews
+  const [activeSection, setActiveSection] = useState<
+    'GOALS' | 'CYCLES' | 'SELF_ASSESSMENT' | 'MANAGER_REVIEWS'
+  >('GOALS');
 
-  // URL query param support for deep linking to self-assessment
+  // URL query param support for deep linking to self-assessment or manager-reviews
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -74,9 +76,15 @@ export default function ProgressGoalsPage() {
         setActiveSection('SELF_ASSESSMENT');
       } else if (tabParam === 'cycles' || tabParam === 'CYCLES') {
         if (isHrOrAdmin) setActiveSection('CYCLES');
+      } else if (
+        tabParam === 'manager-reviews' ||
+        tabParam === 'reviews' ||
+        tabParam === 'MANAGER_REVIEWS'
+      ) {
+        if (isManagerOrAdmin) setActiveSection('MANAGER_REVIEWS');
       }
     }
-  }, [isHrOrAdmin]);
+  }, [isHrOrAdmin, isManagerOrAdmin]);
 
   // Navigation Scope Tabs: 'MY_GOALS' | 'TEAM_GOALS' | 'ORG_GOALS'
   const [activeTab, setActiveTab] = useState<'MY_GOALS' | 'TEAM_GOALS' | 'ORG_GOALS'>('MY_GOALS');
@@ -135,8 +143,6 @@ export default function ProgressGoalsPage() {
 
   // Form state for Approval / Rejection
   const [decisionReason, setDecisionReason] = useState('');
-
-  const isManagerOrAdmin = role === 'MANAGER' || role === 'ADMIN' || role === 'HR';
 
   const fetchGoalsData = useCallback(async () => {
     setIsLoading(true);
@@ -484,6 +490,20 @@ export default function ProgressGoalsPage() {
             My Self-Assessment
           </button>
 
+          {isManagerOrAdmin && (
+            <button
+              onClick={() => setActiveSection('MANAGER_REVIEWS')}
+              className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
+                activeSection === 'MANAGER_REVIEWS'
+                  ? 'border-amber-600 text-amber-900'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              <Award className="h-4 w-4" />
+              Team Performance Reviews
+            </button>
+          )}
+
           {isHrOrAdmin && (
             <button
               onClick={() => setActiveSection('CYCLES')}
@@ -507,6 +527,12 @@ export default function ProgressGoalsPage() {
           />
         ) : activeSection === 'SELF_ASSESSMENT' ? (
           <SelfAssessmentView onRefreshParent={fetchGoalsData} />
+        ) : activeSection === 'MANAGER_REVIEWS' && isManagerOrAdmin ? (
+          <ManagerReviewsView
+            onNotify={(msg, type) =>
+              type === 'success' ? setFeedbackSuccess(msg) : setFeedbackError(msg)
+            }
+          />
         ) : (
           <>
             {/* KPI Overview Cards */}

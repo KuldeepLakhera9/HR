@@ -43,6 +43,7 @@ import {
 import { managerApi } from '../../lib/api-client';
 import { TeamMemberDetailModal } from '../../components/team/TeamMemberDetailModal';
 import { TeamReportsView } from '../../components/team/TeamReportsView';
+import { ManagerReviewsView } from '../../components/performance/ManagerReviewsView';
 
 interface ManagerDashboardData {
   success: boolean;
@@ -126,7 +127,9 @@ interface ManagerDashboardData {
 
 export default function TeamManagerPage() {
   // Top-level View Navigation
-  const [activeTab, setActiveTab] = useState<'overview' | 'directory' | 'reports'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'directory' | 'reports' | 'reviews'>(
+    'overview',
+  );
 
   // Check URL query param for tab deeplinking
   useEffect(() => {
@@ -137,6 +140,8 @@ export default function TeamManagerPage() {
         setActiveTab('reports');
       } else if (tabParam === 'directory') {
         setActiveTab('directory');
+      } else if (tabParam === 'reviews' || tabParam === 'performance') {
+        setActiveTab('reviews');
       }
     }
   }, []);
@@ -430,6 +435,16 @@ export default function TeamManagerPage() {
                 }`}
               >
                 Team Reports
+              </button>
+              <button
+                onClick={() => setActiveTab('reviews')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  activeTab === 'reviews'
+                    ? 'bg-white text-stone-900 shadow-xs'
+                    : 'text-stone-500 hover:text-stone-900'
+                }`}
+              >
+                Performance Reviews
               </button>
             </div>
 
@@ -1255,6 +1270,9 @@ export default function TeamManagerPage() {
 
         {/* Team Reports Tab */}
         {activeTab === 'reports' && <TeamReportsView />}
+
+        {/* Performance Reviews Tab */}
+        {activeTab === 'reviews' && <ManagerReviewsView />}
       </div>
 
       {/* Authorized Member Detail Modal */}

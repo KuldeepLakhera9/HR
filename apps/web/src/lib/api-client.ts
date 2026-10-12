@@ -37,6 +37,12 @@ import {
   ReopenSelfAssessmentDto,
   EmployeeActiveReviewContextDto,
   SelfAssessmentAttachment,
+  ManagerReviewInboxItemDto,
+  ManagerReviewDetailDto,
+  SaveManagerReviewDraftDto,
+  SubmitManagerReviewDto,
+  ReturnReviewForCorrectionDto,
+  FinalizeReviewDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2521,6 +2527,78 @@ export const performanceApi = {
     const res = await fetchWithAuth<any>('/performance/self-assessment/evidence', {
       method: 'POST',
       body: formData,
+    });
+    return res.data;
+  },
+
+  // Manager Performance Assessment
+  async getManagerReviewInbox(params?: {
+    cycleId?: string;
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{
+    items: ManagerReviewInboxItemDto[];
+    meta: { total: number; page: number; limit: number; totalPages: number };
+    counts: {
+      all: number;
+      pendingReview: number;
+      submitted: number;
+      finalized: number;
+      overdue: number;
+    };
+  }> {
+    const q = new URLSearchParams();
+    if (params?.cycleId) q.append('cycleId', params.cycleId);
+    if (params?.status) q.append('status', params.status);
+    if (params?.search) q.append('search', params.search);
+    if (params?.page) q.append('page', params.page.toString());
+    if (params?.limit) q.append('limit', params.limit.toString());
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/performance/manager-reviews/inbox${queryString}`);
+    return res.data;
+  },
+
+  async getManagerReviewDetail(id: string): Promise<ManagerReviewDetailDto> {
+    const res = await fetchWithAuth<any>(`/performance/manager-reviews/${id}`);
+    return res.data;
+  },
+
+  async saveManagerReviewDraft(
+    id: string,
+    data: SaveManagerReviewDraftDto,
+  ): Promise<ManagerReviewDetailDto> {
+    const res = await fetchWithAuth<any>(`/performance/manager-reviews/${id}/draft`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async submitManagerReview(
+    id: string,
+    data: SubmitManagerReviewDto,
+  ): Promise<ManagerReviewDetailDto> {
+    const res = await fetchWithAuth<any>(`/performance/manager-reviews/${id}/submit`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async returnReviewForCorrection(id: string, reason: string): Promise<ManagerReviewDetailDto> {
+    const res = await fetchWithAuth<any>(`/performance/manager-reviews/${id}/return`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    return res.data;
+  },
+
+  async finalizeManagerReview(id: string, finalComments?: string): Promise<ManagerReviewDetailDto> {
+    const res = await fetchWithAuth<any>(`/performance/manager-reviews/${id}/finalize`, {
+      method: 'POST',
+      body: JSON.stringify({ finalComments }),
     });
     return res.data;
   },

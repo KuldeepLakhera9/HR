@@ -2413,3 +2413,120 @@ export interface EmployeeActiveReviewContextDto {
   canEdit: boolean;
   canSubmit: boolean;
 }
+
+// -----------------------------------------------------------------------------
+// Manager Review DTOs & Inbox Models
+// -----------------------------------------------------------------------------
+
+export interface DevelopmentPlanDto {
+  id: string;
+  reviewId: string;
+  employeeId: string;
+  objective: string;
+  actionSteps: string;
+  targetDate?: string | null;
+  status: DevelopmentPlanStatus;
+  responsiblePerson?: string | null;
+  trainingNeeds?: string | null;
+  followUpNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PerformanceFeedbackDto {
+  id: string;
+  reviewId: string;
+  authorId: string;
+  author?: {
+    id: string;
+    displayName: string;
+    employeeCode: string;
+  };
+  visibility: FeedbackVisibility;
+  title: string;
+  content: string;
+  createdAt: string;
+}
+
+export interface ManagerReviewItemInput {
+  goalId?: string;
+  competencyId?: string;
+  managerRating: number;
+  managerComments?: string;
+  isNotApplicable?: boolean;
+}
+
+export interface DevelopmentPlanInput {
+  objective: string;
+  actionSteps: string;
+  targetDate?: string;
+  trainingNeeds?: string;
+  responsiblePerson?: string;
+}
+
+export interface PerformanceFeedbackInput {
+  title: string;
+  content: string;
+  visibility?: FeedbackVisibility;
+}
+
+export interface SaveManagerReviewDraftDto {
+  managerSummary?: string;
+  managerStrengths?: string;
+  managerImprovements?: string;
+  items?: ManagerReviewItemInput[];
+  developmentPlans?: DevelopmentPlanInput[];
+  feedbackNotes?: PerformanceFeedbackInput[];
+}
+
+export interface SubmitManagerReviewDto {
+  managerSummary: string;
+  managerStrengths: string;
+  managerImprovements: string;
+  items?: ManagerReviewItemInput[];
+  developmentPlans?: DevelopmentPlanInput[];
+  feedbackNotes?: PerformanceFeedbackInput[];
+}
+
+export interface ReturnReviewForCorrectionDto {
+  reason: string;
+}
+
+export interface FinalizeReviewDto {
+  finalComments?: string;
+}
+
+export interface ManagerReviewInboxItemDto {
+  id: string;
+  cycleId: string;
+  cycleName: string;
+  cycleCode: string;
+  cycleStatus: ReviewCycleStatus;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  employeePhoto?: string | null;
+  departmentName?: string | null;
+  designationTitle?: string | null;
+  status: PerformanceReviewStatus;
+  selfSubmittedAt?: string | null;
+  managerSubmittedAt?: string | null;
+  managerReviewDeadline?: string | null;
+  isOverdue: boolean;
+  overallScore?: number | null;
+  goalsCount: number;
+  competenciesCount: number;
+}
+
+export interface ManagerReviewDetailDto {
+  review: PerformanceReviewDto;
+  developmentPlans: DevelopmentPlanDto[];
+  feedbackNotes: PerformanceFeedbackDto[];
+  canEdit: boolean;
+  canSubmit: boolean;
+  canReturn: boolean;
+  canFinalize: boolean;
+  isDeadlinePassed: boolean;
+  ratingScaleMax: number;
+  scoreBreakdown?: any;
+}
