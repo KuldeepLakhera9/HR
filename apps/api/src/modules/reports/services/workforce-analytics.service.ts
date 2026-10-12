@@ -258,7 +258,7 @@ export class WorkforceAnalyticsService {
    * 2. Joiners and Exits Movement Report (M-WF-02, M-WF-03) with paginated rosters.
    */
   async getMovementReport(user: AuthenticatedUser, query: WorkforceMovementQueryDto) {
-    const { scopedEmployeeIds, scopeType } = await this.resolveScopedEmployeeIds(user);
+    const { scopedEmployeeIds } = await this.resolveScopedEmployeeIds(user);
     const org = await this.prisma.organization.findUnique({
       where: { id: user.organizationId },
       select: { timezone: true },

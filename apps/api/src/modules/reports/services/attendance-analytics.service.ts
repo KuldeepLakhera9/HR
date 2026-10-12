@@ -84,7 +84,7 @@ export class AttendanceAnalyticsService {
     const { scopedEmployeeIds, scopeType } = await this.resolveScopedEmployeeIds(user);
 
     // If manager, validate or enforce employee scope
-    let effectiveQuery = { ...query };
+    const effectiveQuery = { ...query };
     if (scopedEmployeeIds) {
       if (query.employeeId) {
         if (!scopedEmployeeIds.includes(query.employeeId)) {

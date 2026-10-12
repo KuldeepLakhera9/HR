@@ -8,7 +8,6 @@ describe('Phase 10 — Step 7: MIS Report Library Specification Tests', () => {
   let mockHierarchy: any;
   let mockWorkforce: any;
   let mockAttendanceAnalytics: any;
-  let mockAttendanceReporting: any;
   let mockRequestAnalytics: any;
   let mockPerformanceAnalytics: any;
 

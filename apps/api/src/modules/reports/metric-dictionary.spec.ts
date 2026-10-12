@@ -1,9 +1,3 @@
-import {
-  MetricDefinitionDto,
-  ExecutiveDashboardSummaryDto,
-  WorkforceHeadcountAnalyticsDto,
-} from '@hrms/types';
-
 describe('Phase 10 — Step 1: Metric Dictionary & Data Definitions Specification Tests', () => {
   describe('M-WF-01: Active Headcount Calculation Engine', () => {
     interface EmployeeSample {

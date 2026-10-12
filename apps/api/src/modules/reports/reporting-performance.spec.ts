@@ -175,8 +175,6 @@ describe('Phase 10 — Step 9: Reporting Performance & Data Quality', () => {
 
   describe('3. Data Quality & Aggregation Correctness', () => {
     it('accurately computes active headcount excluding future joiners, past exits, and inactive status', async () => {
-      const asOfDate = new Date('2026-06-30T23:59:59.999Z');
-
       const mockEmployees = [
         // Valid: Active employee joined before asOfDate
         {

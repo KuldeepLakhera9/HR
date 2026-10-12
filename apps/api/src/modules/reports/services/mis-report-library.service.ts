@@ -393,7 +393,7 @@ export class MisReportLibraryService {
   ): Promise<MisReportCatalogItemDto[]> {
     this.checkReportAccess(user);
 
-    let items = this.REPORT_CATALOG.filter((item) => {
+    const items = this.REPORT_CATALOG.filter((item) => {
       // Role filter check
       const matchesRole = item.allowedRoles.some((r) => user.roles.includes(r as any));
       if (!matchesRole) return false;

@@ -3,7 +3,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { HierarchyService } from '../../employees/hierarchy.service';
 import { AuthenticatedUser } from '../../auth/interfaces/auth.interface';
 import { ExecutiveDashboardQueryDto } from '../dto/executive-dashboard-query.dto';
-import { ExecutiveDashboardSummaryDto, MetricValueDto } from '@hrms/types';
+import { ExecutiveDashboardSummaryDto } from '@hrms/types';
 
 @Injectable()
 export class ExecutiveDashboardService {
@@ -285,12 +285,9 @@ export class ExecutiveDashboardService {
 
     let presentCount = 0;
     let halfDayCount = 0;
-    let absentCount = 0;
     let leaveCount = 0;
     let holidayCount = 0;
     let weekOffCount = 0;
-    let remoteCount = 0;
-    let fieldCount = 0;
     let onTimeCheckIns = 0;
     let totalPunches = 0;
 
@@ -310,14 +307,11 @@ export class ExecutiveDashboardService {
         presentCount++;
         dayBucket.present += 1;
         dayBucket.totalWorking += 1;
-        if (s.primaryAttendanceMode === 'WFH') remoteCount++;
-        if (s.primaryAttendanceMode === 'OFFICIAL_VISIT') fieldCount++;
       } else if (s.status === 'HALF_DAY') {
         halfDayCount++;
         dayBucket.present += 0.5;
         dayBucket.totalWorking += 1;
       } else if (s.status === 'ABSENT') {
-        absentCount++;
         dayBucket.absent += 1;
         dayBucket.totalWorking += 1;
       } else if (s.status === 'ON_LEAVE') {

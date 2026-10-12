@@ -342,7 +342,7 @@ export class ReportReconciliationService {
         leavesByEmp.set(l.employeeId, list);
       }
 
-      for (const [empId, list] of leavesByEmp.entries()) {
+      for (const [, list] of leavesByEmp.entries()) {
         for (let i = 0; i < list.length - 1; i++) {
           const a = list[i];
           const b = list[i + 1];
