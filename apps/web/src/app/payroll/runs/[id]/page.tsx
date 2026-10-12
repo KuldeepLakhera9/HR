@@ -81,6 +81,12 @@ export default function PayrollRunDetailPage() {
   const [calculationDetail, setCalculationDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
+  // Phase 11.6: Attendance & Leave Reconciliation and Late Change Detection
+  const [activeTab, setActiveTab] = useState<'snapshots' | 'attendance'>('snapshots');
+  const [reconciliationData, setReconciliationData] = useState<any>(null);
+  const [lateReport, setLateReport] = useState<any>(null);
+  const [filterLateOnly, setFilterLateOnly] = useState(false);
+
   const handleOpenSnapshotDetail = async (snapshot: any) => {
     setSelectedSnapshot(snapshot);
     setLoadingDetail(true);
@@ -98,7 +104,7 @@ export default function PayrollRunDetailPage() {
   const fetchRunData = useCallback(async () => {
     try {
       setLoading(true);
-      const [runRes, snapsRes] = await Promise.all([
+      const [runRes, snapsRes, reconRes, lateRes] = await Promise.all([
         apiClient.getPayrollRun(runId),
         apiClient.getPayrollRunSnapshots(runId, {
           search: search || undefined,
@@ -106,11 +112,15 @@ export default function PayrollRunDetailPage() {
             filterException === 'true' ? true : filterException === 'false' ? false : undefined,
           limit: 50,
         }),
+        apiClient.getPayrollAttendanceReconciliation(runId).catch(() => null),
+        apiClient.getPayrollLateChanges(runId).catch(() => null),
       ]);
 
       setRun(runRes?.data || null);
       setSnapshots(snapsRes?.data || []);
       setSnapshotsMeta(snapsRes?.meta || { total: 0 });
+      setReconciliationData(reconRes?.data || null);
+      setLateReport(lateRes?.data || null);
     } catch (err) {
       console.error('Failed to load run detail', err);
     } finally {
@@ -616,142 +626,439 @@ export default function PayrollRunDetailPage() {
             </div>
           )}
 
-          {/* Employee Snapshots Table */}
-          <Card className="border border-stone-200/80 shadow-xs bg-white overflow-hidden">
-            <CardHeader className="border-b border-stone-100 pb-3">
-              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          {/* Late Source Changes Banner */}
+          {lateReport && lateReport.totalLateChanges > 0 && (
+            <div
+              className={`p-4 rounded-xl border text-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                lateReport.requiresCorrectionRun
+                  ? 'bg-rose-50 border-rose-200 text-rose-900'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}
+            >
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle
+                  className={`w-5 h-5 shrink-0 mt-0.5 ${
+                    lateReport.requiresCorrectionRun ? 'text-rose-600' : 'text-amber-600'
+                  }`}
+                />
                 <div>
-                  <CardTitle className="text-sm font-bold text-stone-900">
-                    Employee Calculation Snapshots ({snapshotsMeta.total || snapshots.length})
-                  </CardTitle>
-                  <CardDescription className="text-xs text-stone-500">
-                    Individual payslip line items, working metrics, earned pay, and exception flags.
-                  </CardDescription>
+                  <div className="font-bold text-sm">
+                    {lateReport.requiresCorrectionRun
+                      ? 'Late Attendance / Leave Changes Detected on Finalized Run'
+                      : 'Late Attendance / Leave Changes Detected'}
+                  </div>
+                  <p className="text-xs opacity-90 mt-0.5">
+                    {lateReport.totalLateChanges} source record(s) across{' '}
+                    {lateReport.affectedEmployeesCount} employee(s) were modified or approved since
+                    this calculation.
+                    {lateReport.requiresCorrectionRun
+                      ? ' This run is locked/published and cannot be mutated automatically. Please issue a controlled correction run.'
+                      : ' Recalculation is required to capture the latest source data.'}
+                  </p>
                 </div>
+              </div>
+              {lateReport.requiresCorrectionRun
+                ? canApprove && (
+                    <Button
+                      size="sm"
+                      onClick={() => setIsCorrectionOpen(true)}
+                      className="bg-amber-600 hover:bg-amber-700 text-white shrink-0"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                      Issue Correction Run
+                    </Button>
+                  )
+                : canManage && (
+                    <Button
+                      size="sm"
+                      onClick={handleRecalculate}
+                      className="bg-amber-800 hover:bg-amber-900 text-white shrink-0"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5" />
+                      Recalculate Run
+                    </Button>
+                  )}
+            </div>
+          )}
 
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400" />
-                    <input
-                      type="text"
-                      placeholder="Search code or name..."
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      className="text-xs pl-8 pr-3 py-1.5 rounded-lg border border-stone-300 w-44 bg-stone-50 focus:bg-white"
-                    />
+          {/* View Tabs */}
+          <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
+            <button
+              type="button"
+              onClick={() => setActiveTab('snapshots')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+                activeTab === 'snapshots'
+                  ? 'bg-amber-800 text-white shadow-xs'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <Banknote className="w-3.5 h-3.5" />
+              Financial Snapshots
+              <Badge
+                variant="outline"
+                className={`text-[10px] ml-1 ${
+                  activeTab === 'snapshots'
+                    ? 'bg-amber-900 text-amber-100 border-amber-700'
+                    : 'text-stone-500'
+                }`}
+              >
+                {snapshotsMeta.total || snapshots.length}
+              </Badge>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('attendance')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+                activeTab === 'attendance'
+                  ? 'bg-amber-800 text-white shadow-xs'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              Attendance & Leave Reconciliation
+              {lateReport && lateReport.totalLateChanges > 0 && (
+                <Badge
+                  variant="outline"
+                  className="text-[10px] ml-1 bg-amber-500 text-white border-none"
+                >
+                  {lateReport.totalLateChanges} Late
+                </Badge>
+              )}
+            </button>
+          </div>
+
+          {/* TAB 1: Financial Snapshots Table */}
+          {activeTab === 'snapshots' && (
+            <Card className="border border-stone-200/80 shadow-xs bg-white overflow-hidden">
+              <CardHeader className="border-b border-stone-100 pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-sm font-bold text-stone-900">
+                      Employee Calculation Snapshots ({snapshotsMeta.total || snapshots.length})
+                    </CardTitle>
+                    <CardDescription className="text-xs text-stone-500">
+                      Individual payslip line items, working metrics, earned pay, and exception
+                      flags.
+                    </CardDescription>
                   </div>
 
-                  <select
-                    value={filterException}
-                    onChange={(e) => setFilterException(e.target.value)}
-                    className="text-xs px-2.5 py-1.5 rounded-lg border border-stone-300 bg-stone-50 focus:bg-white"
-                  >
-                    <option value="ALL">All Records</option>
-                    <option value="true">Exceptions Only</option>
-                    <option value="false">Valid Only</option>
-                  </select>
-                </div>
-              </div>
-            </CardHeader>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-stone-400" />
+                      <input
+                        type="text"
+                        placeholder="Search code or name..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="text-xs pl-8 pr-3 py-1.5 rounded-lg border border-stone-300 w-44 bg-stone-50 focus:bg-white"
+                      />
+                    </div>
 
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full text-xs text-left">
-                  <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 uppercase tracking-wider text-[11px]">
-                    <tr>
-                      <th className="py-3 px-4 font-semibold">Employee</th>
-                      <th className="py-3 px-4 font-semibold">Department</th>
-                      <th className="py-3 px-4 font-semibold text-center">Calendar / Paid Days</th>
-                      <th className="py-3 px-4 font-semibold text-right">Base Monthly</th>
-                      <th className="py-3 px-4 font-semibold text-right">Earned Gross</th>
-                      <th className="py-3 px-4 font-semibold text-right">Deductions</th>
-                      <th className="py-3 px-4 font-semibold text-right">Net Payable</th>
-                      <th className="py-3 px-4 font-semibold text-center">Status</th>
-                      <th className="py-3 px-4 font-semibold text-right">Breakdown</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100">
-                    {snapshots.length === 0 ? (
+                    <select
+                      value={filterException}
+                      onChange={(e) => setFilterException(e.target.value)}
+                      className="text-xs px-2.5 py-1.5 rounded-lg border border-stone-300 bg-stone-50 focus:bg-white"
+                    >
+                      <option value="ALL">All Records</option>
+                      <option value="true">Exceptions Only</option>
+                      <option value="false">Valid Only</option>
+                    </select>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 uppercase tracking-wider text-[11px]">
                       <tr>
-                        <td colSpan={9} className="py-12 text-center text-stone-400">
-                          {run.status === 'DRAFT'
-                            ? 'Run is in DRAFT. Click "Calculate Run" above to generate snapshots.'
-                            : 'No snapshots matching filters.'}
-                        </td>
+                        <th className="py-3 px-4 font-semibold">Employee</th>
+                        <th className="py-3 px-4 font-semibold">Department</th>
+                        <th className="py-3 px-4 font-semibold text-center">
+                          Calendar / Paid Days
+                        </th>
+                        <th className="py-3 px-4 font-semibold text-right">Base Monthly</th>
+                        <th className="py-3 px-4 font-semibold text-right">Earned Gross</th>
+                        <th className="py-3 px-4 font-semibold text-right">Deductions</th>
+                        <th className="py-3 px-4 font-semibold text-right">Net Payable</th>
+                        <th className="py-3 px-4 font-semibold text-center">Status</th>
+                        <th className="py-3 px-4 font-semibold text-right">Breakdown</th>
                       </tr>
-                    ) : (
-                      snapshots.map((s) => (
-                        <tr key={s.id} className="hover:bg-stone-50/60 transition-colors">
-                          <td className="py-3 px-4">
-                            <div className="font-semibold text-stone-900">{s.employeeName}</div>
-                            <div className="text-[10px] text-stone-400 font-mono">
-                              {s.employeeCode} • {s.payslipNumber}
-                            </div>
-                          </td>
-                          <td className="py-3 px-4 text-stone-600">{s.departmentName || '—'}</td>
-                          <td className="py-3 px-4 text-center font-mono text-stone-700">
-                            {Number(s.calendarDays)} / {Number(s.paidDays)}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono text-stone-600">
-                            ₹
-                            {Number(s.baseMonthlyGross).toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono font-medium text-stone-900">
-                            ₹
-                            {Number(s.earnedGross).toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono text-rose-700">
-                            ₹
-                            {Number(s.totalDeductions).toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td className="py-3 px-4 text-right font-mono font-bold text-emerald-800">
-                            ₹
-                            {Number(s.netSalary).toLocaleString('en-IN', {
-                              minimumFractionDigits: 2,
-                            })}
-                          </td>
-                          <td className="py-3 px-4 text-center">
-                            {s.isException ? (
-                              <Badge
-                                variant="outline"
-                                className="bg-amber-50 text-amber-800 border-amber-300 text-[10px]"
-                              >
-                                EXCEPTION
-                              </Badge>
-                            ) : (
-                              <Badge
-                                variant="outline"
-                                className="bg-emerald-50 text-emerald-800 border-emerald-300 text-[10px]"
-                              >
-                                {s.payslipStatus}
-                              </Badge>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-right">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleOpenSnapshotDetail(s)}
-                              className="h-7 text-[11px] border-stone-200"
-                            >
-                              <Eye className="w-3 h-3 mr-1 text-stone-400" />
-                              View
-                            </Button>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {snapshots.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-12 text-center text-stone-400">
+                            {run.status === 'DRAFT'
+                              ? 'Run is in DRAFT. Click "Calculate Run" above to generate snapshots.'
+                              : 'No snapshots matching filters.'}
                           </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                      ) : (
+                        snapshots.map((s) => (
+                          <tr key={s.id} className="hover:bg-stone-50/60 transition-colors">
+                            <td className="py-3 px-4">
+                              <div className="font-semibold text-stone-900">{s.employeeName}</div>
+                              <div className="text-[10px] text-stone-400 font-mono">
+                                {s.employeeCode} • {s.payslipNumber}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-stone-600">{s.departmentName || '—'}</td>
+                            <td className="py-3 px-4 text-center font-mono text-stone-700">
+                              {Number(s.calendarDays)} / {Number(s.paidDays)}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono text-stone-600">
+                              ₹
+                              {Number(s.baseMonthlyGross).toLocaleString('en-IN', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-medium text-stone-900">
+                              ₹
+                              {Number(s.earnedGross).toLocaleString('en-IN', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono text-rose-700">
+                              ₹
+                              {Number(s.totalDeductions).toLocaleString('en-IN', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono font-bold text-emerald-800">
+                              ₹
+                              {Number(s.netSalary).toLocaleString('en-IN', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </td>
+                            <td className="py-3 px-4 text-center">
+                              {s.isException ? (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-amber-50 text-amber-800 border-amber-300 text-[10px]"
+                                >
+                                  EXCEPTION
+                                </Badge>
+                              ) : (
+                                <Badge
+                                  variant="outline"
+                                  className="bg-emerald-50 text-emerald-800 border-emerald-300 text-[10px]"
+                                >
+                                  {s.payslipStatus}
+                                </Badge>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenSnapshotDetail(s)}
+                                className="h-7 text-[11px] border-stone-200"
+                              >
+                                <Eye className="w-3 h-3 mr-1 text-stone-400" />
+                                View
+                              </Button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* TAB 2: Attendance & Leave Reconciliation Table */}
+          {activeTab === 'attendance' && (
+            <Card className="border border-stone-200/80 shadow-xs bg-white overflow-hidden space-y-4">
+              <CardHeader className="border-b border-stone-100 pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <CardTitle className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                      <Calendar className="w-4 h-4 text-amber-800" />
+                      Attendance, Leave, WFH & Shift Reconciliation
+                    </CardTitle>
+                    <CardDescription className="text-xs text-stone-500">
+                      Cross-verification between canonical working records, approved leaves, and
+                      resultant payroll paid days.
+                    </CardDescription>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setFilterLateOnly(!filterLateOnly)}
+                      className={`text-xs px-2.5 py-1.5 rounded-lg border font-semibold transition-colors ${
+                        filterLateOnly
+                          ? 'bg-amber-100 text-amber-900 border-amber-300'
+                          : 'bg-stone-50 text-stone-600 border-stone-300'
+                      }`}
+                    >
+                      {filterLateOnly ? 'Showing Late Only' : 'Filter Late Changes'}
+                    </button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              {/* KPI Strip for Attendance & Leave */}
+              {reconciliationData && (
+                <div className="grid grid-cols-2 sm:grid-cols-6 gap-2 px-6">
+                  <div className="p-2.5 bg-stone-50 rounded-lg border border-stone-200 text-xs">
+                    <span className="text-[10px] text-stone-400 block uppercase">
+                      Expected Workdays
+                    </span>
+                    <span className="font-bold font-mono text-stone-900 text-sm">
+                      {reconciliationData.totalExpectedWorkdays}
+                    </span>
+                  </div>
+                  <div className="p-2.5 bg-stone-50 rounded-lg border border-stone-200 text-xs">
+                    <span className="text-[10px] text-stone-400 block uppercase">
+                      Recognized Work
+                    </span>
+                    <span className="font-bold font-mono text-emerald-800 text-sm">
+                      {reconciliationData.totalRecognizedWorkdays}
+                    </span>
+                  </div>
+                  <div className="p-2.5 bg-stone-50 rounded-lg border border-stone-200 text-xs">
+                    <span className="text-[10px] text-stone-400 block uppercase">Paid Leave</span>
+                    <span className="font-bold font-mono text-blue-800 text-sm">
+                      {reconciliationData.totalPaidLeaveDays}
+                    </span>
+                  </div>
+                  <div className="p-2.5 bg-stone-50 rounded-lg border border-stone-200 text-xs">
+                    <span className="text-[10px] text-stone-400 block uppercase">Unpaid (LOP)</span>
+                    <span className="font-bold font-mono text-rose-700 text-sm">
+                      {reconciliationData.totalUnpaidLeaveDays}
+                    </span>
+                  </div>
+                  <div className="p-2.5 bg-stone-50 rounded-lg border border-stone-200 text-xs">
+                    <span className="text-[10px] text-stone-400 block uppercase">Exceptions</span>
+                    <span
+                      className={`font-bold font-mono text-sm ${
+                        reconciliationData.totalExceptions > 0 ? 'text-amber-700' : 'text-stone-500'
+                      }`}
+                    >
+                      {reconciliationData.totalExceptions}
+                    </span>
+                  </div>
+                  <div className="p-2.5 bg-stone-50 rounded-lg border border-stone-200 text-xs">
+                    <span className="text-[10px] text-stone-400 block uppercase">Late Changes</span>
+                    <span
+                      className={`font-bold font-mono text-sm ${
+                        reconciliationData.lateChangesDetected > 0
+                          ? 'text-amber-700'
+                          : 'text-stone-500'
+                      }`}
+                    >
+                      {reconciliationData.lateChangesDetected}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs text-left">
+                    <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 uppercase tracking-wider text-[11px]">
+                      <tr>
+                        <th className="py-3 px-4 font-semibold">Employee</th>
+                        <th className="py-3 px-4 font-semibold text-center">Cal / Eligible</th>
+                        <th className="py-3 px-4 font-semibold text-center">Expected</th>
+                        <th className="py-3 px-4 font-semibold text-center">
+                          Recognized (Work/WFH/Visit)
+                        </th>
+                        <th className="py-3 px-4 font-semibold text-center">Paid Leave</th>
+                        <th className="py-3 px-4 font-semibold text-center">Unpaid (LOP)</th>
+                        <th className="py-3 px-4 font-semibold text-center">Holidays / Offs</th>
+                        <th className="py-3 px-4 font-semibold text-center">Final Paid Days</th>
+                        <th className="py-3 px-4 font-semibold text-right">Payroll Treatment</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100">
+                      {!reconciliationData || reconciliationData.items.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="py-12 text-center text-stone-400">
+                            No attendance reconciliation records available for this run.
+                          </td>
+                        </tr>
+                      ) : (
+                        reconciliationData.items
+                          .filter((item: any) => (filterLateOnly ? item.hasLateChanges : true))
+                          .map((item: any) => (
+                            <tr
+                              key={item.employeeId}
+                              className={`hover:bg-stone-50/60 transition-colors ${
+                                item.hasLateChanges ? 'bg-amber-50/40' : ''
+                              }`}
+                            >
+                              <td className="py-3 px-4">
+                                <div className="font-semibold text-stone-900">
+                                  {item.employeeName}
+                                </div>
+                                <div className="text-[10px] text-stone-400 font-mono">
+                                  {item.employeeCode} • {item.departmentName || 'General'}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono">
+                                {item.calendarDays} / {item.eligibleDays}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono text-stone-700">
+                                {item.expectedWorkdays}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono text-emerald-800">
+                                <span className="font-semibold">{item.recognizedWorkdays}</span>
+                                <div className="text-[10px] text-stone-400">
+                                  {item.officeWorkedDays} off / {item.wfhDays} wfh /{' '}
+                                  {item.officialVisitDays} vis
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono text-blue-800 font-medium">
+                                {item.approvedPaidLeaveDays}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono text-rose-700 font-medium">
+                                {item.approvedUnpaidLeaveDays}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono text-stone-500">
+                                {item.holidays} / {item.weeklyOffs}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono font-bold text-stone-900">
+                                {item.paidDays}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <div className="flex flex-col items-end gap-1">
+                                  <Badge
+                                    variant="outline"
+                                    className={`text-[9px] px-1.5 py-0 ${
+                                      item.treatment === 'STANDARD_ATTENDANCE'
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                                        : item.treatment === 'LOP_PRORATED'
+                                          ? 'bg-rose-50 text-rose-800 border-rose-300'
+                                          : 'bg-blue-50 text-blue-800 border-blue-300'
+                                    }`}
+                                  >
+                                    {item.treatment}
+                                  </Badge>
+                                  {item.hasLateChanges && (
+                                    <Badge
+                                      variant="outline"
+                                      className="text-[9px] px-1 py-0 bg-amber-100 text-amber-800 border-amber-300"
+                                    >
+                                      LATE CHANGE
+                                    </Badge>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Approval & State Machine Audit Trail */}
           <Card className="border border-stone-200/80 shadow-xs bg-white">

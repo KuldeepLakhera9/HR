@@ -3552,3 +3552,115 @@ export interface CalculationDetailSnapshotDto {
   isException: boolean;
   exceptionReason?: string | null;
 }
+
+export interface PayrollWorkSummary {
+  employeeId: string;
+  employeeCode: string;
+  periodId: string;
+  startDate: string;
+  endDate: string;
+  totalCalendarDays: number;
+  eligibleDaysInPeriod: number;
+  joiningDate?: string | null;
+  exitDate?: string | null;
+  isMidPeriodJoiner: boolean;
+  isMidPeriodLeaver: boolean;
+  expectedWorkdays: number;
+  recognizedWorkdays: number;
+  officeWorkedDays: number;
+  wfhDays: number;
+  officialVisitDays: number;
+  approvedPaidLeaveDays: number;
+  approvedUnpaidLeaveDays: number;
+  holidays: number;
+  weeklyOffs: number;
+  halfDays: number;
+  absentDays: number;
+  unresolvedExceptionCount: number;
+  missingAttendanceDays: number;
+  paidDays: number;
+  lopDays: number;
+  sources: {
+    attendanceSummaryIds: string[];
+    leaveRequestIds: string[];
+    wfhRequestIds: string[];
+    officialVisitIds: string[];
+    holidayIds: string[];
+    shiftId?: string | null;
+    shiftName?: string | null;
+    unresolvedExceptionIds: string[];
+    sourceHash: string;
+    maxSourceUpdatedAt: string;
+  };
+  warnings: string[];
+  isException: boolean;
+  exceptionReason?: string | null;
+  treatment: string;
+}
+
+export interface PayrollLateSourceChangeDto {
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  snapshotId?: string;
+  calculatedAt: string;
+  sourceType: 'ATTENDANCE' | 'LEAVE' | 'WFH' | 'OFFICIAL_VISIT' | 'CORRECTION';
+  sourceRecordId: string;
+  sourceDate: string;
+  changeDescription: string;
+  sourceUpdatedAt: string;
+}
+
+export interface PayrollLateSourceChangesReportDto {
+  runId: string;
+  runStatus: string;
+  totalLateChanges: number;
+  affectedEmployeesCount: number;
+  requiresRecalculation: boolean;
+  requiresCorrectionRun: boolean;
+  changes: PayrollLateSourceChangeDto[];
+}
+
+export interface PayrollAttendanceReconciliationItemDto {
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentName?: string | null;
+  calendarDays: number;
+  eligibleDays: number;
+  expectedWorkdays: number;
+  recognizedWorkdays: number;
+  officeWorkedDays: number;
+  wfhDays: number;
+  officialVisitDays: number;
+  approvedPaidLeaveDays: number;
+  approvedUnpaidLeaveDays: number;
+  holidays: number;
+  weeklyOffs: number;
+  unresolvedExceptions: number;
+  missingAttendanceDays: number;
+  paidDays: number;
+  lopDays: number;
+  hasLateChanges: boolean;
+  lateChangesCount: number;
+  treatment: string;
+  warnings: string[];
+  isException: boolean;
+  exceptionReason?: string | null;
+}
+
+export interface PayrollAttendanceReconciliationResponseDto {
+  runId: string;
+  periodId: string;
+  year: number;
+  month: number;
+  runStatus: string;
+  totalEmployees: number;
+  totalExpectedWorkdays: number;
+  totalRecognizedWorkdays: number;
+  totalPaidLeaveDays: number;
+  totalUnpaidLeaveDays: number;
+  totalExceptions: number;
+  lateChangesDetected: number;
+  items: PayrollAttendanceReconciliationItemDto[];
+}

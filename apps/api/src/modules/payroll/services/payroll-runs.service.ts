@@ -19,6 +19,7 @@ import {
 } from '../dto/payroll-run.dto';
 
 import { PayrollCalculationEngineService } from './payroll-calculation-engine.service';
+import { PayrollInputsService } from './payroll-inputs.service';
 
 @Injectable()
 export class PayrollRunsService {
@@ -28,6 +29,7 @@ export class PayrollRunsService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly calculationEngine: PayrollCalculationEngineService,
+    private readonly payrollInputs: PayrollInputsService,
   ) {}
 
   /**
@@ -481,7 +483,14 @@ export class PayrollRunsService {
           };
         });
 
-        // Delegate calculation to domain service
+        // 1. Obtain canonical work summary (attendance, leave, WFH, visits, holidays, shifts, lifecycle boundaries)
+        const workSummary = await this.payrollInputs.getEmployeeWorkSummary(
+          organizationId,
+          emp.id,
+          period,
+        );
+
+        // 2. Delegate calculation to domain service
         const calcOutput = this.calculationEngine.calculateEmployeePayroll(
           {
             employeeId: emp.id,
@@ -498,10 +507,10 @@ export class PayrollRunsService {
               endDate: period.endDate,
               totalDays: period.totalDays,
             },
-            calendarDays: totalCalendarDays,
-            workingDays: totalCalendarDays,
-            paidDays: totalCalendarDays,
-            lopDays: 0,
+            calendarDays: workSummary.totalCalendarDays,
+            workingDays: workSummary.expectedWorkdays,
+            paidDays: workSummary.paidDays,
+            lopDays: workSummary.lopDays,
             compensations: compensationSegments,
             adjustments: adjustments.map((adj) => ({
               adjustmentId: adj.id,
@@ -519,17 +528,20 @@ export class PayrollRunsService {
         runDeductions = runDeductions.plus(calcOutput.totalEmployeeDeductions);
         runNet = runNet.plus(calcOutput.netSalary);
 
-        if (calcOutput.isException) {
+        const isSnapshotException = calcOutput.isException || workSummary.isException;
+        const exceptionReasonText = calcOutput.exceptionReason || workSummary.exceptionReason;
+
+        if (isSnapshotException) {
           exceptionCount++;
           exceptionsList.push({
             employeeId: emp.id,
             employeeCode: emp.employeeCode,
             displayName: emp.displayName,
-            reason: calcOutput.exceptionReason,
+            reason: exceptionReasonText,
           });
         }
 
-        // Persist reproducible snapshot with line items
+        // Persist reproducible snapshot with line items and canonical work summary
         await this.prisma.employeePayrollSnapshot.create({
           data: {
             organizationId,
@@ -552,9 +564,12 @@ export class PayrollRunsService {
             netSalary: calcOutput.netSalary,
             roundingAdjustment: calcOutput.roundingAdjustment,
             currency: calcOutput.currency,
-            calculationInputSnapshot: calcOutput.calculationInputSnapshot as any,
-            isException: calcOutput.isException,
-            exceptionReason: calcOutput.exceptionReason,
+            calculationInputSnapshot: {
+              ...(calcOutput.calculationInputSnapshot as any),
+              workSummary,
+            },
+            isException: isSnapshotException,
+            exceptionReason: exceptionReasonText,
             items: {
               create: calcOutput.items.map((it) => ({
                 componentId: it.componentId || null,
@@ -1065,5 +1080,19 @@ export class PayrollRunsService {
     }
 
     return snapshot;
+  }
+
+  /**
+   * Get period attendance & leave reconciliation report
+   */
+  async getAttendanceReconciliation(organizationId: string, runId: string) {
+    return this.payrollInputs.getPayrollAttendanceReconciliation(organizationId, runId);
+  }
+
+  /**
+   * Detect late-arriving changes to attendance, leave, WFH, or visits
+   */
+  async getLateSourceChanges(organizationId: string, runId: string) {
+    return this.payrollInputs.detectLateSourceChanges(organizationId, runId);
   }
 }

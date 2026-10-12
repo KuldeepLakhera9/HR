@@ -12,6 +12,7 @@ import { EmployeeCompensationService } from './services/employee-compensation.se
 import { PayrollPeriodsService } from './services/payroll-periods.service';
 import { PayrollRunsService } from './services/payroll-runs.service';
 import { PayrollCalculationEngineService } from './services/payroll-calculation-engine.service';
+import { PayrollInputsService } from './services/payroll-inputs.service';
 
 @Module({
   imports: [PrismaModule, AuditModule],
@@ -29,6 +30,7 @@ import { PayrollCalculationEngineService } from './services/payroll-calculation-
     PayrollPeriodsService,
     PayrollRunsService,
     PayrollCalculationEngineService,
+    PayrollInputsService,
   ],
   exports: [
     SalaryComponentsService,
@@ -37,6 +39,7 @@ import { PayrollCalculationEngineService } from './services/payroll-calculation-
     PayrollPeriodsService,
     PayrollRunsService,
     PayrollCalculationEngineService,
+    PayrollInputsService,
   ],
 })
 export class PayrollModule {}

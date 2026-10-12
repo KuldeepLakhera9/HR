@@ -3629,6 +3629,16 @@ export const payrollApi = {
     );
     return res;
   },
+
+  async getPayrollAttendanceReconciliation(runId: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${runId}/attendance-reconciliation`);
+    return res;
+  },
+
+  async getPayrollLateChanges(runId: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${runId}/late-changes`);
+    return res;
+  },
 };
 
 export const apiClient = {

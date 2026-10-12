@@ -63,11 +63,48 @@ describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () =
       }),
     };
 
+    const mockInputs = {
+      getEmployeeWorkSummary: jest
+        .fn()
+        .mockImplementation((orgId: string, empId: string, p: any) => ({
+          employeeId: empId,
+          employeeCode: 'EMP-001',
+          periodId: p.id,
+          startDate: p.startDate.toISOString(),
+          endDate: p.endDate.toISOString(),
+          totalCalendarDays: p.totalDays,
+          eligibleDaysInPeriod: p.totalDays,
+          expectedWorkdays: p.totalDays,
+          recognizedWorkdays: p.totalDays,
+          officeWorkedDays: p.totalDays,
+          wfhDays: 0,
+          officialVisitDays: 0,
+          approvedPaidLeaveDays: 0,
+          approvedUnpaidLeaveDays: 0,
+          holidays: 0,
+          weeklyOffs: 0,
+          halfDays: 0,
+          absentDays: 0,
+          unresolvedExceptionCount: 0,
+          missingAttendanceDays: 0,
+          paidDays: p.totalDays,
+          lopDays: 0,
+          sources: { sourceHash: 'mock-hash' },
+          warnings: [],
+          isException: false,
+          exceptionReason: null,
+          treatment: 'STANDARD_ATTENDANCE',
+        })),
+      detectLateSourceChanges: jest.fn().mockResolvedValue({ totalLateChanges: 0, changes: [] }),
+      getPayrollAttendanceReconciliation: jest.fn().mockResolvedValue({ items: [] }),
+    };
+
     periodsService = new PayrollPeriodsService(mockPrisma, mockAudit);
     runsService = new PayrollRunsService(
       mockPrisma,
       mockAudit,
       new PayrollCalculationEngineService(),
+      mockInputs as any,
     );
   });
 

@@ -250,4 +250,31 @@ export class PayrollRunsController {
       data,
     };
   }
+
+  @Get(':id/attendance-reconciliation')
+  @RequirePermissions('PAYROLL_VIEW')
+  @ApiOperation({ summary: 'Get period attendance, leave, WFH, and visit reconciliation' })
+  async getAttendanceReconciliation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') runId: string,
+  ) {
+    const data = await this.runsService.getAttendanceReconciliation(user.organizationId, runId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Attendance and leave reconciliation retrieved successfully',
+      data,
+    };
+  }
+
+  @Get(':id/late-changes')
+  @RequirePermissions('PAYROLL_VIEW')
+  @ApiOperation({ summary: 'Detect late changes to attendance and leave since run calculation' })
+  async getLateSourceChanges(@CurrentUser() user: AuthenticatedUser, @Param('id') runId: string) {
+    const data = await this.runsService.getLateSourceChanges(user.organizationId, runId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Late source changes report generated successfully',
+      data,
+    };
+  }
 }
