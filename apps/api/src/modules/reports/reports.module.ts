@@ -9,7 +9,9 @@ import {
   Module,
   Query,
   UseGuards,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -46,6 +48,8 @@ import {
   QueryReportCatalogDto,
 } from './dto/mis-library.dto';
 import { MisReportLibraryService } from './services/mis-report-library.service';
+import { ExportReportQueryDto } from './dto/report-export-query.dto';
+import { ReportExportService } from './services/report-export.service';
 
 @Injectable()
 export class ReportsService {
@@ -73,6 +77,7 @@ export class ReportsController {
     private readonly requestAnalyticsService: RequestAnalyticsService,
     private readonly performanceAnalyticsService: PerformanceAnalyticsService,
     private readonly misReportLibraryService: MisReportLibraryService,
+    private readonly reportExportService: ReportExportService,
   ) {}
 
   @Get('executive/dashboard')
@@ -369,6 +374,36 @@ export class ReportsController {
       data,
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Secure Report Export Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Get('export/csv')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary:
+      'Export authorized MIS report to sanitized CSV with formula injection protection and RBAC scope',
+  })
+  async exportReportCsv(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ExportReportQueryDto,
+    @Res() res: Response,
+  ) {
+    const { filename, csv, contentType } = await this.reportExportService.exportReportCsv(
+      user,
+      query,
+    );
+
+    res.set({
+      'Content-Type': contentType,
+      'Content-Disposition': `attachment; filename="${filename}"`,
+      'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+      Pragma: 'no-cache',
+    });
+
+    return res.status(200).send(csv);
+  }
 }
 
 @Module({
@@ -382,6 +417,7 @@ export class ReportsController {
     RequestAnalyticsService,
     PerformanceAnalyticsService,
     MisReportLibraryService,
+    ReportExportService,
   ],
   exports: [
     ReportsService,
@@ -391,6 +427,7 @@ export class ReportsController {
     RequestAnalyticsService,
     PerformanceAnalyticsService,
     MisReportLibraryService,
+    ReportExportService,
   ],
 })
 export class ReportsModule {}

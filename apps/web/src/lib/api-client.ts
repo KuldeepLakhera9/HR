@@ -2301,6 +2301,62 @@ export const reportsApi = {
     });
     return res.data;
   },
+
+  async exportReportCsv(query: {
+    reportKey: string;
+    asOfDate?: string;
+    startDate?: string;
+    endDate?: string;
+    departmentId?: string;
+    branchId?: string;
+    cycleId?: string;
+    requestType?: string;
+    status?: string;
+    limit?: number;
+  }): Promise<void> {
+    const params = new URLSearchParams();
+    params.append('reportKey', query.reportKey);
+    if (query.asOfDate) params.append('asOfDate', query.asOfDate);
+    if (query.startDate) params.append('startDate', query.startDate);
+    if (query.endDate) params.append('endDate', query.endDate);
+    if (query.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query.cycleId && query.cycleId !== 'ALL') params.append('cycleId', query.cycleId);
+    if (query.requestType && query.requestType !== 'ALL')
+      params.append('requestType', query.requestType);
+    if (query.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query.limit) params.append('limit', String(query.limit));
+
+    const token = getAccessToken();
+    const response = await fetch(`${API_BASE_URL}/reports/export/csv?${params.toString()}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Report export failed');
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition');
+    let filename = `hrms-export-${query.reportKey}-${new Date().toISOString().split('T')[0]}.csv`;
+    if (disposition && disposition.indexOf('filename=') !== -1) {
+      const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+      if (matches != null && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+      }
+    }
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
 };
 
 export const managerApi = {

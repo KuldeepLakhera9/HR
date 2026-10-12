@@ -31,6 +31,7 @@ import {
   ExternalLink,
   ChevronRight,
   Info,
+  Download,
 } from 'lucide-react';
 
 export function MisReportLibraryTab() {
@@ -38,6 +39,7 @@ export function MisReportLibraryTab() {
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportingKey, setExportingKey] = useState<string | null>(null);
 
   // Filter States
   const [category, setCategory] = useState<string>('ALL');
@@ -57,6 +59,21 @@ export function MisReportLibraryTab() {
   const [saveDesc, setSaveDesc] = useState<string>('');
   const [saveConfigJson, setSaveConfigJson] = useState<string>('{}');
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Handle Secure Report Export
+  const handleExportReport = async (reportKey: string, params?: Record<string, any>) => {
+    try {
+      setExportingKey(reportKey);
+      await reportsApi.exportReportCsv({
+        reportKey,
+        ...params,
+      });
+    } catch (err: any) {
+      setError(err.message || `Failed to export report ${reportKey}`);
+    } finally {
+      setExportingKey(null);
+    }
+  };
 
   // Load catalog
   const loadCatalog = useCallback(async () => {
@@ -381,18 +398,29 @@ export function MisReportLibraryTab() {
 
                   {/* Actions Footer */}
                   <div className="pt-4 mt-3 border-t border-stone-100 flex items-center justify-between gap-2">
-                    <button
-                      onClick={() => {
-                        setTargetCatalogItem(item);
-                        setSaveName(`${item.title} (Preset)`);
-                        setSaveDesc(`Preset configuration for ${item.title}`);
-                        setSaveConfigJson('{}');
-                        setSaveModalOpen(true);
-                      }}
-                      className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 transition-colors"
-                    >
-                      <Plus className="h-3.5 w-3.5" /> Save Preset
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => handleExportReport(item.key)}
+                        disabled={exportingKey === item.key}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-stone-700 hover:text-stone-900 bg-stone-100 hover:bg-stone-200 px-2.5 py-1 rounded-md transition-colors disabled:opacity-50"
+                        title="Download authorized sanitized CSV export"
+                      >
+                        <Download className="h-3.5 w-3.5 text-stone-600" />
+                        {exportingKey === item.key ? 'Exporting...' : 'Export CSV'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          setTargetCatalogItem(item);
+                          setSaveName(`${item.title} (Preset)`);
+                          setSaveDesc(`Preset configuration for ${item.title}`);
+                          setSaveConfigJson('{}');
+                          setSaveModalOpen(true);
+                        }}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-amber-700 hover:text-amber-900 transition-colors"
+                      >
+                        <Plus className="h-3.5 w-3.5" /> Save Preset
+                      </button>
+                    </div>
                     <span className="text-[10px] text-stone-400">
                       Roles: {item.allowedRoles.join(', ')}
                     </span>
@@ -492,9 +520,27 @@ export function MisReportLibraryTab() {
                     {new Date(executionResult.executedAt).toLocaleTimeString()}
                   </p>
                 </div>
-                <Button size="sm" variant="outline" onClick={() => setExecutionResult(null)}>
-                  Close
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      handleExportReport(
+                        executionResult.savedReport.reportKey,
+                        executionResult.savedReport.filterConfig,
+                      )
+                    }
+                    disabled={exportingKey === executionResult.savedReport.reportKey}
+                    leftIcon={<Download className="h-3.5 w-3.5" />}
+                  >
+                    {exportingKey === executionResult.savedReport.reportKey
+                      ? 'Exporting...'
+                      : 'Export CSV'}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => setExecutionResult(null)}>
+                    Close
+                  </Button>
+                </div>
               </div>
 
               {/* Dynamic JSON Output Inspector */}
