@@ -1906,8 +1906,116 @@ export const leaveApi = {
 };
 
 export const reportsApi = {
-  getDailyAttendance: attendanceApi.getDailyReport,
-  getMonthlyAttendance: attendanceApi.getMonthlyReport,
+  async getDailyAttendance(query?: {
+    startDate?: string;
+    endDate?: string;
+    branchId?: string;
+    departmentId?: string;
+    employeeId?: string;
+    shiftId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    if (query?.shiftId && query.shiftId !== 'ALL') params.append('shiftId', query.shiftId);
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/attendance/daily${qs}`);
+    return res.data || res;
+  },
+
+  async getWeeklyAttendance(query?: {
+    startDate?: string;
+    endDate?: string;
+    branchId?: string;
+    departmentId?: string;
+    shiftId?: string;
+    employeeId?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.shiftId && query.shiftId !== 'ALL') params.append('shiftId', query.shiftId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/attendance/weekly${qs}`);
+    return res.data;
+  },
+
+  async getMonthlyAttendance(query?: {
+    year?: number;
+    month?: number;
+    branchId?: string;
+    departmentId?: string;
+    employeeId?: string;
+    shiftId?: string;
+    status?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.year) params.append('year', String(query.year));
+    if (query?.month) params.append('month', String(query.month));
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    if (query?.shiftId && query.shiftId !== 'ALL') params.append('shiftId', query.shiftId);
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/attendance/monthly${qs}`);
+    return res.data || res;
+  },
+
+  async getAttendanceExceptions(query?: {
+    startDate?: string;
+    endDate?: string;
+    status?: string;
+    exceptionType?: string;
+    severity?: string;
+    branchId?: string;
+    departmentId?: string;
+    shiftId?: string;
+    employeeId?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.exceptionType && query.exceptionType !== 'ALL')
+      params.append('exceptionType', query.exceptionType);
+    if (query?.severity && query.severity !== 'ALL') params.append('severity', query.severity);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.shiftId && query.shiftId !== 'ALL') params.append('shiftId', query.shiftId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/attendance/exceptions${qs}`);
+    return res.data;
+  },
 
   async getExecutiveDashboard(query?: {
     asOfDate?: string;

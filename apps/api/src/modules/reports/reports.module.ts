@@ -20,6 +20,11 @@ import {
   WorkforceTrendsQueryDto,
 } from './dto/workforce-analytics-query.dto';
 import { WorkforceAnalyticsService } from './services/workforce-analytics.service';
+import {
+  WeeklyAttendanceReportQueryDto,
+  AttendanceExceptionsReportQueryDto,
+} from './dto/attendance-analytics-query.dto';
+import { AttendanceAnalyticsService } from './services/attendance-analytics.service';
 
 @Injectable()
 export class ReportsService {
@@ -43,6 +48,7 @@ export class ReportsController {
     private readonly attendanceReportingService: AttendanceReportingService,
     private readonly executiveDashboardService: ExecutiveDashboardService,
     private readonly workforceAnalyticsService: WorkforceAnalyticsService,
+    private readonly attendanceAnalyticsService: AttendanceAnalyticsService,
   ) {}
 
   @Get('executive/dashboard')
@@ -114,29 +120,76 @@ export class ReportsController {
 
   @Get('attendance/daily')
   @RequirePermissions('REPORT_VIEW')
-  @ApiOperation({ summary: 'Get daily attendance report with working-hour summaries' })
+  @ApiOperation({
+    summary: 'Get daily attendance report with working-hour summaries and mode indicators',
+  })
   async getDailyAttendanceReport(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: DailyAttendanceReportQueryDto,
   ) {
-    return this.attendanceReportingService.getDailyReport(user.organizationId, query);
+    return this.attendanceAnalyticsService.getDailyReport(user, query);
+  }
+
+  @Get('attendance/weekly')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Get weekly attendance matrix, day-of-week breakdown and shift performance',
+  })
+  async getWeeklyAttendanceReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: WeeklyAttendanceReportQueryDto,
+  ) {
+    const data = await this.attendanceAnalyticsService.getWeeklyReport(user, query);
+    return {
+      message: 'Weekly attendance report retrieved successfully',
+      data,
+    };
   }
 
   @Get('attendance/monthly')
   @RequirePermissions('REPORT_VIEW')
-  @ApiOperation({ summary: 'Get monthly attendance report with employee rollups' })
+  @ApiOperation({
+    summary: 'Get monthly attendance report with employee rollups and shift metrics',
+  })
   async getMonthlyAttendanceReport(
     @CurrentUser() user: AuthenticatedUser,
     @Query() query: MonthlyAttendanceReportQueryDto,
   ) {
-    return this.attendanceReportingService.getMonthlyReport(user.organizationId, query);
+    return this.attendanceAnalyticsService.getMonthlyReport(user, query);
+  }
+
+  @Get('attendance/exceptions')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary:
+      'Get attendance exception reports (late arrivals, missing checkout, geofence, incomplete)',
+  })
+  async getAttendanceExceptionsReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: AttendanceExceptionsReportQueryDto,
+  ) {
+    const data = await this.attendanceAnalyticsService.getExceptionsReport(user, query);
+    return {
+      message: 'Attendance exceptions report retrieved successfully',
+      data,
+    };
   }
 }
 
 @Module({
   imports: [AttendanceModule, EmployeesModule, PrismaModule],
   controllers: [ReportsController],
-  providers: [ReportsService, ExecutiveDashboardService, WorkforceAnalyticsService],
-  exports: [ReportsService, ExecutiveDashboardService, WorkforceAnalyticsService],
+  providers: [
+    ReportsService,
+    ExecutiveDashboardService,
+    WorkforceAnalyticsService,
+    AttendanceAnalyticsService,
+  ],
+  exports: [
+    ReportsService,
+    ExecutiveDashboardService,
+    WorkforceAnalyticsService,
+    AttendanceAnalyticsService,
+  ],
 })
 export class ReportsModule {}

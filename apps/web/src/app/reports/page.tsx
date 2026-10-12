@@ -7,6 +7,7 @@ import { reportsApi, organizationApi } from '../../lib/api-client';
 import { useAuth } from '../../context/AuthContext';
 import { ExecutiveDashboardSummaryDto } from '@hrms/types';
 import { WorkforceAnalyticsTab } from './components/WorkforceAnalyticsTab';
+import { AttendanceAnalyticsTab } from './components/AttendanceAnalyticsTab';
 import {
   Users,
   UserCheck,
@@ -44,7 +45,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [mainTab, setMainTab] = useState<'EXECUTIVE' | 'WORKFORCE'>('EXECUTIVE');
+  const [mainTab, setMainTab] = useState<'EXECUTIVE' | 'WORKFORCE' | 'ATTENDANCE'>('EXECUTIVE');
 
   // Filter States
   const [datePreset, setDatePreset] = useState<'7D' | '30D' | 'MTD' | 'CUSTOM'>('30D');
@@ -240,10 +241,23 @@ export default function ReportsPage() {
             <Users className="h-4 w-4 text-amber-600" />
             Workforce & Headcount Analytics
           </button>
+          <button
+            onClick={() => setMainTab('ATTENDANCE')}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-all ${
+              mainTab === 'ATTENDANCE'
+                ? 'border-amber-600 text-amber-900 bg-amber-50/40'
+                : 'border-transparent text-stone-600 hover:text-stone-900 hover:border-stone-300'
+            }`}
+          >
+            <Clock className="h-4 w-4 text-amber-600" />
+            Attendance Analytics & Exceptions
+          </button>
         </div>
 
         {mainTab === 'WORKFORCE' ? (
           <WorkforceAnalyticsTab />
+        ) : mainTab === 'ATTENDANCE' ? (
+          <AttendanceAnalyticsTab />
         ) : (
           <>
             {/* Filter Bar */}
