@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { HierarchyService } from '../../employees/hierarchy.service';
 import { AttendanceReportingService } from '../../attendance/attendance-reporting.service';
@@ -60,9 +60,27 @@ export class AttendanceAnalyticsService {
   }
 
   /**
+   * Helper: Validate date boundaries to prevent unbounded database table scans.
+   */
+  private validateDateRange(startDate?: string, endDate?: string): void {
+    if (startDate && endDate) {
+      const s = new Date(startDate).getTime();
+      const e = new Date(endDate).getTime();
+      if (s > e) {
+        throw new BadRequestException('startDate cannot be after endDate');
+      }
+      const daysDiff = (e - s) / (1000 * 60 * 60 * 24);
+      if (daysDiff > 366) {
+        throw new BadRequestException('Reporting date range cannot exceed 366 days');
+      }
+    }
+  }
+
+  /**
    * 1. Daily Attendance Report with manager scope enforcement and work mode indicators.
    */
   async getDailyReport(user: AuthenticatedUser, query: DailyAttendanceReportQueryDto) {
+    this.validateDateRange(query.startDate, query.endDate);
     const { scopedEmployeeIds, scopeType } = await this.resolveScopedEmployeeIds(user);
 
     // If manager, validate or enforce employee scope
@@ -173,13 +191,9 @@ export class AttendanceAnalyticsService {
       this.prisma.attendanceDailySummary.findMany({
         where,
         select: {
-          id: true,
           date: true,
           status: true,
           primaryAttendanceMode: true,
-          officialVisitId: true,
-          wfhRequestId: true,
-          leaveRequestId: true,
           totalWorkMinutes: true,
           totalBreakMinutes: true,
           lateMinutes: true,
@@ -893,6 +907,7 @@ export class AttendanceAnalyticsService {
    * 4. Supported Late-Arrival, Missing-Check-Out, Geofence, and Exception Reports.
    */
   async getExceptionsReport(user: AuthenticatedUser, query: AttendanceExceptionsReportQueryDto) {
+    this.validateDateRange(query.startDate, query.endDate);
     const { scopedEmployeeIds, scopeType } = await this.resolveScopedEmployeeIds(user);
 
     const page = Math.max(1, Number(query.page) || 1);

@@ -127,37 +127,38 @@ export class ExecutiveDashboardService {
       OR: [{ exitDate: null }, { exitDate: { gt: asOfUtcEnd } }],
     };
 
-    const activeHeadcount = await this.prisma.employee.count({
-      where: activeHeadcountWhere,
-    });
-
-    // 4. Metric 2: Period Joiners (M-WF-02)
-    const periodJoiners = await this.prisma.employee.count({
-      where: {
-        ...baseEmpWhere,
-        joiningDate: { gte: startUtc, lte: endUtc },
-      },
-    });
-
-    // 5. Metric 3: Period Exits (M-WF-03) & Annualized Attrition Rate
-    const periodExits = await this.prisma.employee.count({
-      where: {
-        ...baseEmpWhere,
-        exitDate: { gte: startUtc, lte: endUtc },
-        status: { in: ['RESIGNED', 'TERMINATED', 'EXITED'] },
-      },
-    });
-
-    // Headcount at start of period for average headcount calculation
-    const startHeadcount = await this.prisma.employee.count({
-      where: {
-        ...baseEmpWhere,
-        status: { in: ['ACTIVE', 'PROBATION', 'ON_NOTICE'] },
-        isActive: true,
-        joiningDate: { lte: startUtc },
-        OR: [{ exitDate: null }, { exitDate: { gt: startUtc } }],
-      },
-    });
+    // 3-5. Metrics 1-3 Headcount counts executed concurrently
+    const [activeHeadcount, periodJoiners, periodExits, startHeadcount] = await Promise.all([
+      // Metric 1: Active Headcount Snapshot (M-WF-01)
+      this.prisma.employee.count({
+        where: activeHeadcountWhere,
+      }),
+      // Metric 2: Period Joiners (M-WF-02)
+      this.prisma.employee.count({
+        where: {
+          ...baseEmpWhere,
+          joiningDate: { gte: startUtc, lte: endUtc },
+        },
+      }),
+      // Metric 3: Period Exits (M-WF-03)
+      this.prisma.employee.count({
+        where: {
+          ...baseEmpWhere,
+          exitDate: { gte: startUtc, lte: endUtc },
+          status: { in: ['RESIGNED', 'TERMINATED', 'EXITED'] },
+        },
+      }),
+      // Headcount at start of period for average headcount calculation
+      this.prisma.employee.count({
+        where: {
+          ...baseEmpWhere,
+          status: { in: ['ACTIVE', 'PROBATION', 'ON_NOTICE'] },
+          isActive: true,
+          joiningDate: { lte: startUtc },
+          OR: [{ exitDate: null }, { exitDate: { gt: startUtc } }],
+        },
+      }),
+    ]);
 
     const avgHeadcount = (startHeadcount + activeHeadcount) / 2;
     const annualizedAttritionRate =
@@ -165,33 +166,122 @@ export class ExecutiveDashboardService {
         ? Math.round((periodExits / avgHeadcount) * (365.25 / periodDays) * 10000) / 100
         : 0.0;
 
-    // 6. Attendance Analytics (M-ATT-01, M-ATT-02, M-ATT-03)
-    const attendanceWhere: any = {
-      organizationId: user.organizationId,
-      date: { gte: startUtc, lte: endUtc },
-    };
-
+    // Single resolution for target employees when filtering by scope, department, or branch
+    let targetEmployeeIds: string[] | null = null;
     if (scopedEmployeeIds || query.departmentId || query.branchId) {
-      // Filter summaries by target employee IDs
       const targetEmployees = await this.prisma.employee.findMany({
         where: baseEmpWhere,
         select: { id: true },
       });
-      const targetIds = targetEmployees.map((e) => e.id);
-      attendanceWhere.employeeId = { in: targetIds };
+      targetEmployeeIds = targetEmployees.map((e) => e.id);
     }
 
-    const attendanceSummaries = await this.prisma.attendanceDailySummary.findMany({
-      where: attendanceWhere,
-      select: {
-        date: true,
-        status: true,
-        primaryAttendanceMode: true,
-        firstCheckIn: true,
-        lateMinutes: true,
-        totalWorkMinutes: true,
-      },
-    });
+    // 6. Attendance Query Where
+    const attendanceWhere: any = {
+      organizationId: user.organizationId,
+      date: { gte: startUtc, lte: endUtc },
+      ...(targetEmployeeIds ? { employeeId: { in: targetEmployeeIds } } : {}),
+    };
+
+    // 7. Leave Account Query Where
+    const currentYear = new Date(asOfDateStr).getFullYear();
+    const leaveAccountWhere: any = {
+      organizationId: user.organizationId,
+      leaveYear: currentYear,
+      ...(targetEmployeeIds ? { employeeId: { in: targetEmployeeIds } } : {}),
+    };
+
+    // 8. Workflow Request Query Where (with manager team scope enforcement)
+    const decidedWhere: any = {
+      organizationId: user.organizationId,
+      status: { in: ['APPROVED', 'REJECTED'] },
+      updatedAt: { gte: startUtc, lte: endUtc },
+      ...(targetEmployeeIds ? { employeeId: { in: targetEmployeeIds } } : {}),
+    };
+
+    const pendingWhere: any = {
+      organizationId: user.organizationId,
+      status: 'SUBMITTED',
+      ...(targetEmployeeIds ? { employeeId: { in: targetEmployeeIds } } : {}),
+    };
+
+    // Parallel fetch of domain metrics and department/branch active roster
+    const [
+      attendanceSummaries,
+      leaveAccounts,
+      decidedLeaves,
+      decidedWfh,
+      pendingLeaves,
+      pendingWfh,
+      activeCycle,
+      activeEmployees,
+    ] = await Promise.all([
+      this.prisma.attendanceDailySummary.findMany({
+        where: attendanceWhere,
+        select: {
+          date: true,
+          status: true,
+          primaryAttendanceMode: true,
+          firstCheckIn: true,
+          lateMinutes: true,
+          totalWorkMinutes: true,
+        },
+      }),
+      this.prisma.leaveBalanceAccount.findMany({
+        where: leaveAccountWhere,
+        select: { allocatedBalance: true, usedBalance: true },
+      }),
+      this.prisma.leaveRequest.findMany({
+        where: decidedWhere,
+        select: { createdAt: true, updatedAt: true },
+      }),
+      this.prisma.wfhRequest.findMany({
+        where: decidedWhere,
+        select: { createdAt: true, updatedAt: true },
+      }),
+      this.prisma.leaveRequest.findMany({
+        where: pendingWhere,
+        select: { createdAt: true },
+      }),
+      this.prisma.wfhRequest.findMany({
+        where: pendingWhere,
+        select: { createdAt: true },
+      }),
+      this.prisma.reviewCycle.findFirst({
+        where: {
+          organizationId: user.organizationId,
+          status: {
+            in: [
+              'GOAL_SETTING',
+              'SELF_ASSESSMENT',
+              'MANAGER_REVIEW',
+              'HR_CALIBRATION',
+              'FINALIZED',
+            ],
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        include: {
+          participants: {
+            select: { id: true, employeeId: true, status: true },
+          },
+          reviews: {
+            select: { id: true, employeeId: true, status: true },
+          },
+        },
+      }),
+      this.prisma.employee.findMany({
+        where: activeHeadcountWhere,
+        select: {
+          employment: {
+            select: {
+              department: { select: { id: true, name: true } },
+              branch: { select: { id: true, name: true } },
+            },
+          },
+        },
+      }),
+    ]);
 
     let presentCount = 0;
     let halfDayCount = 0;
@@ -272,24 +362,6 @@ export class ExecutiveDashboardService {
       });
 
     // 7. Leave Utilization (M-LV-01)
-    const currentYear = new Date(asOfDateStr).getFullYear();
-    const leaveAccountWhere: any = {
-      organizationId: user.organizationId,
-      leaveYear: currentYear,
-    };
-    if (scopedEmployeeIds || query.departmentId || query.branchId) {
-      const targetEmployees = await this.prisma.employee.findMany({
-        where: baseEmpWhere,
-        select: { id: true },
-      });
-      leaveAccountWhere.employeeId = { in: targetEmployees.map((e) => e.id) };
-    }
-
-    const leaveAccounts = await this.prisma.leaveBalanceAccount.findMany({
-      where: leaveAccountWhere,
-      select: { allocatedBalance: true, usedBalance: true },
-    });
-
     const totalAllocated = leaveAccounts.reduce(
       (sum, acc) => sum + Number(acc.allocatedBalance || 0),
       0,
@@ -300,25 +372,6 @@ export class ExecutiveDashboardService {
       totalAllocated > 0 ? Math.round((totalConsumed / totalAllocated) * 1000) / 10 : 0.0;
 
     // 8. Workflow Approval Turnaround & Backlog (M-WF-01, M-WF-02)
-    // Decided requests within period
-    const decidedLeaves = await this.prisma.leaveRequest.findMany({
-      where: {
-        organizationId: user.organizationId,
-        status: { in: ['APPROVED', 'REJECTED'] },
-        updatedAt: { gte: startUtc, lte: endUtc },
-      },
-      select: { createdAt: true, updatedAt: true },
-    });
-
-    const decidedWfh = await this.prisma.wfhRequest.findMany({
-      where: {
-        organizationId: user.organizationId,
-        status: { in: ['APPROVED', 'REJECTED'] },
-        updatedAt: { gte: startUtc, lte: endUtc },
-      },
-      select: { createdAt: true, updatedAt: true },
-    });
-
     const allDecided = [...decidedLeaves, ...decidedWfh];
     let totalTatHours = 0;
     for (const d of allDecided) {
@@ -329,14 +382,6 @@ export class ExecutiveDashboardService {
       allDecided.length > 0 ? Math.round((totalTatHours / allDecided.length) * 10) / 10 : 0.0;
 
     // Open/Pending Backlog
-    const pendingLeaves = await this.prisma.leaveRequest.findMany({
-      where: { organizationId: user.organizationId, status: 'SUBMITTED' },
-      select: { createdAt: true },
-    });
-    const pendingWfh = await this.prisma.wfhRequest.findMany({
-      where: { organizationId: user.organizationId, status: 'SUBMITTED' },
-      select: { createdAt: true },
-    });
     const allPending = [...pendingLeaves, ...pendingWfh];
     const pendingCount = allPending.length;
 
@@ -350,24 +395,6 @@ export class ExecutiveDashboardService {
       pendingCount > 0 ? Math.round((slaBreachedPending / pendingCount) * 1000) / 10 : 0.0;
 
     // 9. Performance Management Metrics (M-PM-01, M-PM-02)
-    const activeCycle = await this.prisma.reviewCycle.findFirst({
-      where: {
-        organizationId: user.organizationId,
-        status: {
-          in: ['GOAL_SETTING', 'SELF_ASSESSMENT', 'MANAGER_REVIEW', 'HR_CALIBRATION', 'FINALIZED'],
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-      include: {
-        participants: {
-          select: { id: true, employeeId: true, status: true },
-        },
-        reviews: {
-          select: { id: true, employeeId: true, status: true },
-        },
-      },
-    });
-
     let cycleCompletionRate = 0.0;
     let overdueAppraisals = 0;
 
@@ -399,18 +426,6 @@ export class ExecutiveDashboardService {
     }
 
     // 10. Department & Branch Distribution (with k-anonymity privacy check)
-    const activeEmployees = await this.prisma.employee.findMany({
-      where: activeHeadcountWhere,
-      select: {
-        employment: {
-          select: {
-            department: { select: { id: true, name: true } },
-            branch: { select: { id: true, name: true } },
-          },
-        },
-      },
-    });
-
     const deptCountMap = new Map<string, { name: string; count: number }>();
     const branchCountMap = new Map<string, { name: string; count: number }>();
 

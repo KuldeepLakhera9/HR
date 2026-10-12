@@ -461,17 +461,14 @@ export class WorkforceAnalyticsService {
     }
 
     const now = new Date();
-    const monthlySeries: Array<{
-      month: string;
-      openingHeadcount: number;
-      joiners: number;
-      exits: number;
-      netChange: number;
-      closingHeadcount: number;
-      annualizedAttritionRate: number;
+    const monthConfigs: Array<{
+      monthKey: string;
+      monthStartUtc: Date;
+      monthEndUtc: Date;
+      daysInMonth: number;
     }> = [];
 
-    // Iterate backwards from current month
+    // Pre-calculate month boundaries
     for (let i = monthsCount - 1; i >= 0; i--) {
       const year = now.getFullYear();
       const monthIdx = now.getMonth() - i;
@@ -487,61 +484,67 @@ export class WorkforceAnalyticsService {
         (monthEndUtc.getTime() - monthStartUtc.getTime()) / (1000 * 60 * 60 * 24),
       );
 
-      // Opening Headcount on 1st of month
-      const opening = await this.prisma.employee.count({
-        where: {
-          ...baseWhere,
-          status: { in: ['ACTIVE', 'PROBATION', 'ON_NOTICE'] },
-          isActive: true,
-          joiningDate: { lte: monthStartUtc },
-          OR: [{ exitDate: null }, { exitDate: { gt: monthStartUtc } }],
-        },
-      });
-
-      // Closing Headcount on last day of month
-      const closing = await this.prisma.employee.count({
-        where: {
-          ...baseWhere,
-          status: { in: ['ACTIVE', 'PROBATION', 'ON_NOTICE'] },
-          isActive: true,
-          joiningDate: { lte: monthEndUtc },
-          OR: [{ exitDate: null }, { exitDate: { gt: monthEndUtc } }],
-        },
-      });
-
-      // Joiners in month
-      const joiners = await this.prisma.employee.count({
-        where: {
-          ...baseWhere,
-          joiningDate: { gte: monthStartUtc, lte: monthEndUtc },
-        },
-      });
-
-      // Exits in month
-      const exits = await this.prisma.employee.count({
-        where: {
-          ...baseWhere,
-          exitDate: { gte: monthStartUtc, lte: monthEndUtc },
-          status: { in: ['RESIGNED', 'TERMINATED', 'EXITED'] },
-        },
-      });
-
-      const avgHeadcount = (opening + closing) / 2;
-      const attritionRate =
-        avgHeadcount > 0 && daysInMonth > 0
-          ? Math.round((exits / avgHeadcount) * (365.25 / daysInMonth) * 10000) / 100
-          : 0.0;
-
-      monthlySeries.push({
-        month: monthKey,
-        openingHeadcount: opening,
-        joiners,
-        exits,
-        netChange: joiners - exits,
-        closingHeadcount: closing,
-        annualizedAttritionRate: attritionRate,
-      });
+      monthConfigs.push({ monthKey, monthStartUtc, monthEndUtc, daysInMonth });
     }
+
+    // Execute concurrently across month buckets via connection pool
+    const monthlySeries = await Promise.all(
+      monthConfigs.map(async ({ monthKey, monthStartUtc, monthEndUtc, daysInMonth }) => {
+        const [opening, closing, joiners, exits] = await Promise.all([
+          // Opening Headcount on 1st of month
+          this.prisma.employee.count({
+            where: {
+              ...baseWhere,
+              status: { in: ['ACTIVE', 'PROBATION', 'ON_NOTICE'] },
+              isActive: true,
+              joiningDate: { lte: monthStartUtc },
+              OR: [{ exitDate: null }, { exitDate: { gt: monthStartUtc } }],
+            },
+          }),
+          // Closing Headcount on last day of month
+          this.prisma.employee.count({
+            where: {
+              ...baseWhere,
+              status: { in: ['ACTIVE', 'PROBATION', 'ON_NOTICE'] },
+              isActive: true,
+              joiningDate: { lte: monthEndUtc },
+              OR: [{ exitDate: null }, { exitDate: { gt: monthEndUtc } }],
+            },
+          }),
+          // Joiners in month
+          this.prisma.employee.count({
+            where: {
+              ...baseWhere,
+              joiningDate: { gte: monthStartUtc, lte: monthEndUtc },
+            },
+          }),
+          // Exits in month
+          this.prisma.employee.count({
+            where: {
+              ...baseWhere,
+              exitDate: { gte: monthStartUtc, lte: monthEndUtc },
+              status: { in: ['RESIGNED', 'TERMINATED', 'EXITED'] },
+            },
+          }),
+        ]);
+
+        const avgHeadcount = (opening + closing) / 2;
+        const attritionRate =
+          avgHeadcount > 0 && daysInMonth > 0
+            ? Math.round((exits / avgHeadcount) * (365.25 / daysInMonth) * 10000) / 100
+            : 0.0;
+
+        return {
+          month: monthKey,
+          openingHeadcount: opening,
+          joiners,
+          exits,
+          netChange: joiners - exits,
+          closingHeadcount: closing,
+          annualizedAttritionRate: attritionRate,
+        };
+      }),
+    );
 
     return {
       trends: monthlySeries,

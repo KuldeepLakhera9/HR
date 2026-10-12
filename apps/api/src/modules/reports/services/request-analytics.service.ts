@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, Logger } from '@nestjs/common';
+import { Injectable, ForbiddenException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { HierarchyService } from '../../employees/hierarchy.service';
 import { AuthenticatedUser } from '../../auth/interfaces/auth.interface';
@@ -91,9 +91,27 @@ export class RequestAnalyticsService {
   }
 
   /**
+   * Helper: Validate date boundaries to prevent unbounded database table scans.
+   */
+  private validateDateRange(startDate?: string, endDate?: string): void {
+    if (startDate && endDate) {
+      const s = new Date(startDate).getTime();
+      const e = new Date(endDate).getTime();
+      if (s > e) {
+        throw new BadRequestException('startDate cannot be after endDate');
+      }
+      const daysDiff = (e - s) / (1000 * 60 * 60 * 24);
+      if (daysDiff > 366) {
+        throw new BadRequestException('Reporting date range cannot exceed 366 days');
+      }
+    }
+  }
+
+  /**
    * 1. Approved Leave Utilization by Type & Authoritative Balance Summaries.
    */
   async getLeaveUtilizationReport(user: AuthenticatedUser, query: RequestAnalyticsQueryDto) {
+    this.validateDateRange(query.startDate, query.endDate);
     const { scopedEmployeeIds, scopeType } = await this.resolveScopedEmployeeIds(user);
 
     const today = new Date();
@@ -392,6 +410,7 @@ export class RequestAnalyticsService {
    * 2. Unified Request Volumes, WFH, and Official-Visit Outcomes.
    */
   async getRequestVolumesReport(user: AuthenticatedUser, query: RequestAnalyticsQueryDto) {
+    this.validateDateRange(query.startDate, query.endDate);
     const { scopedEmployeeIds, scopeType } = await this.resolveScopedEmployeeIds(user);
 
     const today = new Date();
@@ -638,6 +657,7 @@ export class RequestAnalyticsService {
    * 3. Pending Request Aging & Approval Turnaround Analysis.
    */
   async getApprovalTurnaroundReport(user: AuthenticatedUser, query: RequestAnalyticsQueryDto) {
+    this.validateDateRange(query.startDate, query.endDate);
     const { scopedEmployeeIds, scopeType } = await this.resolveScopedEmployeeIds(user);
 
     const now = new Date();

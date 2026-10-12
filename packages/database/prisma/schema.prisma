@@ -526,6 +526,8 @@ model Employee {
   @@index([status])
   @@index([isActive])
   @@index([joiningDate])
+  @@index([organizationId, status])
+  @@index([organizationId, joiningDate])
   @@map("employees")
 }
 
