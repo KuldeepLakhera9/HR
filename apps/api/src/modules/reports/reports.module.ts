@@ -10,6 +10,10 @@ import { AttendanceModule } from '../attendance/attendance.module';
 import { AttendanceReportingService } from '../attendance/attendance-reporting.service';
 import { DailyAttendanceReportQueryDto } from '../attendance/dto/daily-attendance-report-query.dto';
 import { MonthlyAttendanceReportQueryDto } from '../attendance/dto/monthly-attendance-report-query.dto';
+import { EmployeesModule } from '../employees/employees.module';
+import { PrismaModule } from '../../common/prisma/prisma.module';
+import { ExecutiveDashboardQueryDto } from './dto/executive-dashboard-query.dto';
+import { ExecutiveDashboardService } from './services/executive-dashboard.service';
 
 @Injectable()
 export class ReportsService {
@@ -31,7 +35,22 @@ export class ReportsController {
   constructor(
     private readonly reportsService: ReportsService,
     private readonly attendanceReportingService: AttendanceReportingService,
+    private readonly executiveDashboardService: ExecutiveDashboardService,
   ) {}
+
+  @Get('executive/dashboard')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get unified executive workforce dashboard metrics and distributions' })
+  async getExecutiveDashboard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: ExecutiveDashboardQueryDto,
+  ) {
+    const data = await this.executiveDashboardService.getDashboardSummary(user, query);
+    return {
+      message: 'Executive dashboard metrics retrieved successfully',
+      data,
+    };
+  }
 
   @Get('summary')
   @RequirePermissions('REPORT_VIEW')
@@ -66,9 +85,9 @@ export class ReportsController {
 }
 
 @Module({
-  imports: [AttendanceModule],
+  imports: [AttendanceModule, EmployeesModule, PrismaModule],
   controllers: [ReportsController],
-  providers: [ReportsService],
-  exports: [ReportsService],
+  providers: [ReportsService, ExecutiveDashboardService],
+  exports: [ReportsService, ExecutiveDashboardService],
 })
 export class ReportsModule {}

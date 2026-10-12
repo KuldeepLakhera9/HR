@@ -58,6 +58,7 @@ import {
   HrPerformanceReportQueryDto,
   TriggerPerformanceRemindersDto,
   TriggerRemindersResultDto,
+  ExecutiveDashboardSummaryDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -1907,6 +1908,53 @@ export const leaveApi = {
 export const reportsApi = {
   getDailyAttendance: attendanceApi.getDailyReport,
   getMonthlyAttendance: attendanceApi.getMonthlyReport,
+
+  async getExecutiveDashboard(query?: {
+    asOfDate?: string;
+    startDate?: string;
+    endDate?: string;
+    departmentId?: string;
+    branchId?: string;
+  }): Promise<{
+    summary: ExecutiveDashboardSummaryDto;
+    departmentBreakdown: Array<{
+      departmentId: string;
+      departmentName: string;
+      headcount: number;
+      percentage: number;
+      isSuppressed: boolean;
+    }>;
+    branchBreakdown: Array<{
+      branchId: string;
+      branchName: string;
+      headcount: number;
+      percentage: number;
+    }>;
+    attendanceTrend: Array<{
+      date: string;
+      presentCount: number;
+      leaveCount: number;
+      absentCount: number;
+      attendanceRate: number;
+    }>;
+    metadata: {
+      scopeType: 'ORGANIZATION' | 'TEAM';
+      appliedDepartmentId: string | null;
+      appliedBranchId: string | null;
+      filterEmployeeCount: number;
+    };
+  }> {
+    const params = new URLSearchParams();
+    if (query?.asOfDate) params.append('asOfDate', query.asOfDate);
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/executive/dashboard${qs}`);
+    return res.data;
+  },
 };
 
 export const managerApi = {
