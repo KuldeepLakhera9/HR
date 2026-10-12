@@ -56,6 +56,8 @@ import {
   ManagerPerformanceDashboardDto,
   HrAdminPerformanceDashboardDto,
   HrPerformanceReportQueryDto,
+  TriggerPerformanceRemindersDto,
+  TriggerRemindersResultDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2761,5 +2763,32 @@ export const performanceApi = {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+  },
+
+  // -----------------------------------------------------------------------------
+  // Notifications & Reminders
+  // -----------------------------------------------------------------------------
+  async triggerPerformanceReminders(
+    data?: TriggerPerformanceRemindersDto,
+  ): Promise<TriggerRemindersResultDto> {
+    const res = await fetchWithAuth<any>('/performance/reminders/trigger', {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+    return res.data;
+  },
+
+  async sendGoalNudge(goalId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetchWithAuth<any>(`/performance/reminders/goal/${goalId}/nudge`, {
+      method: 'POST',
+    });
+    return res.data;
+  },
+
+  async sendReviewNudge(reviewId: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetchWithAuth<any>(`/performance/reminders/review/${reviewId}/nudge`, {
+      method: 'POST',
+    });
+    return res.data;
   },
 };

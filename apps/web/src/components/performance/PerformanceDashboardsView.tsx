@@ -40,6 +40,7 @@ import {
   Compass,
   ArrowUpRight,
   Sparkles,
+  Bell,
 } from 'lucide-react';
 
 interface PerformanceDashboardsViewProps {
@@ -109,6 +110,34 @@ export const PerformanceDashboardsView: React.FC<PerformanceDashboardsViewProps>
       notify(err?.message || 'Failed to export MIS report', 'error');
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // Handle Trigger Batch Reminders (HR/Admin)
+  const [isReminding, setIsReminding] = useState(false);
+  const handleTriggerReminders = async () => {
+    setIsReminding(true);
+    try {
+      const res = await performanceApi.triggerPerformanceReminders({ reminderWindowDays: 7 });
+      notify(res.message);
+    } catch (err: any) {
+      notify(err?.message || 'Failed to trigger performance reminders', 'error');
+    } finally {
+      setIsReminding(false);
+    }
+  };
+
+  // Handle Targeted Review Nudge (Manager/HR)
+  const handleSendReviewNudge = async (reviewId: string) => {
+    try {
+      const res = await performanceApi.sendReviewNudge(reviewId);
+      if (res.success) {
+        notify(res.message);
+      } else {
+        notify(res.message, 'error');
+      }
+    } catch (err: any) {
+      notify(err?.message || 'Failed to send reminder nudge', 'error');
     }
   };
 
@@ -537,17 +566,29 @@ export const PerformanceDashboardsView: React.FC<PerformanceDashboardsViewProps>
                             <p className="text-[11px] text-stone-500">Cycle: {ur.cycleName}</p>
                           </div>
 
-                          {onNavigateToTab && (
+                          <div className="flex items-center gap-1.5">
                             <Button
-                              variant="outline"
+                              variant="ghost"
                               size="sm"
-                              onClick={() => onNavigateToTab('MANAGER_REVIEWS')}
-                              className="text-xs h-7"
+                              onClick={() => handleSendReviewNudge(ur.reviewId)}
+                              className="text-xs h-7 px-2 text-stone-600 hover:text-stone-900"
+                              title="Send Reminder Nudge"
                             >
-                              <span>Evaluate</span>
-                              <ChevronRight className="h-3 w-3 ml-1" />
+                              <Bell className="h-3 w-3 text-amber-600 mr-1" />
+                              <span>Nudge</span>
                             </Button>
-                          )}
+                            {onNavigateToTab && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => onNavigateToTab('MANAGER_REVIEWS')}
+                                className="text-xs h-7"
+                              >
+                                <span>Evaluate</span>
+                                <ChevronRight className="h-3 w-3 ml-1" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
                       ))
                     )}
@@ -611,16 +652,31 @@ export const PerformanceDashboardsView: React.FC<PerformanceDashboardsViewProps>
                     Aggregated organization-wide performance cycle metrics
                   </p>
                 </div>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  onClick={handleExportCsv}
-                  disabled={isExporting}
-                  className="bg-stone-900 hover:bg-stone-800 text-white text-xs flex items-center gap-1.5"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  <span>{isExporting ? 'Generating CSV...' : 'Export Performance MIS (CSV)'}</span>
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleTriggerReminders}
+                    disabled={isReminding}
+                    className="text-xs flex items-center gap-1.5"
+                  >
+                    <Bell className="h-3.5 w-3.5 text-amber-600" />
+                    <span>{isReminding ? 'Sending Reminders...' : 'Send Cycle Reminders'}</span>
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={handleExportCsv}
+                    disabled={isExporting}
+                    className="bg-stone-900 hover:bg-stone-800 text-white text-xs flex items-center gap-1.5"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span>
+                      {isExporting ? 'Generating CSV...' : 'Export Performance MIS (CSV)'}
+                    </span>
+                  </Button>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

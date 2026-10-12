@@ -2827,3 +2827,19 @@ export interface HrAdminPerformanceDashboardDto {
     }>;
   };
 }
+
+// -----------------------------------------------------------------------------
+// 28. Phase 9: Performance Reminders & Notifications DTOs
+// -----------------------------------------------------------------------------
+
+export interface TriggerPerformanceRemindersDto {
+  cycleId?: string;
+  reminderWindowDays?: number;
+}
+
+export interface TriggerRemindersResultDto {
+  goalsReminded: number;
+  selfAssessmentsReminded: number;
+  managerReviewsReminded: number;
+  message: string;
+}

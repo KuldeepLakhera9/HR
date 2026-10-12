@@ -18,6 +18,8 @@ import { RatingCalculationService } from './rating-calculation.service';
 import { RatingCalculationController } from './rating-calculation.controller';
 import { PerformanceReportsService } from './performance-reports.service';
 import { PerformanceReportsController } from './performance-reports.controller';
+import { PerformanceNotificationsService } from './performance-notifications.service';
+import { PerformanceNotificationsController } from './performance-notifications.controller';
 
 @Module({
   imports: [PrismaModule, AuthorizationModule, AuditModule, NotificationsModule, EmployeesModule],
@@ -29,6 +31,7 @@ import { PerformanceReportsController } from './performance-reports.controller';
     DevelopmentPlansController,
     RatingCalculationController,
     PerformanceReportsController,
+    PerformanceNotificationsController,
   ],
   providers: [
     GoalsService,
@@ -38,6 +41,7 @@ import { PerformanceReportsController } from './performance-reports.controller';
     DevelopmentPlansService,
     RatingCalculationService,
     PerformanceReportsService,
+    PerformanceNotificationsService,
   ],
   exports: [
     GoalsService,
@@ -47,6 +51,7 @@ import { PerformanceReportsController } from './performance-reports.controller';
     DevelopmentPlansService,
     RatingCalculationService,
     PerformanceReportsService,
+    PerformanceNotificationsService,
   ],
 })
 export class PerformanceModule {}
