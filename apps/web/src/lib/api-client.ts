@@ -1955,6 +1955,59 @@ export const reportsApi = {
     const res = await fetchWithAuth<any>(`/reports/executive/dashboard${qs}`);
     return res.data;
   },
+
+  async getWorkforceHeadcount(query?: {
+    asOfDate?: string;
+    departmentId?: string;
+    branchId?: string;
+    designationId?: string;
+    employmentType?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.asOfDate) params.append('asOfDate', query.asOfDate);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.designationId && query.designationId !== 'ALL')
+      params.append('designationId', query.designationId);
+    if (query?.employmentType && query.employmentType !== 'ALL')
+      params.append('employmentType', query.employmentType);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/workforce/headcount${qs}`);
+    return res.data;
+  },
+
+  async getWorkforceMovement(query?: {
+    startDate?: string;
+    endDate?: string;
+    departmentId?: string;
+    branchId?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/workforce/movement${qs}`);
+    return res.data;
+  },
+
+  async getWorkforceTrends(query?: { months?: number; departmentId?: string; branchId?: string }) {
+    const params = new URLSearchParams();
+    if (query?.months) params.append('months', String(query.months));
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/workforce/trends${qs}`);
+    return res.data;
+  },
 };
 
 export const managerApi = {

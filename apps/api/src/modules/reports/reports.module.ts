@@ -14,6 +14,12 @@ import { EmployeesModule } from '../employees/employees.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { ExecutiveDashboardQueryDto } from './dto/executive-dashboard-query.dto';
 import { ExecutiveDashboardService } from './services/executive-dashboard.service';
+import {
+  WorkforceHeadcountQueryDto,
+  WorkforceMovementQueryDto,
+  WorkforceTrendsQueryDto,
+} from './dto/workforce-analytics-query.dto';
+import { WorkforceAnalyticsService } from './services/workforce-analytics.service';
 
 @Injectable()
 export class ReportsService {
@@ -36,6 +42,7 @@ export class ReportsController {
     private readonly reportsService: ReportsService,
     private readonly attendanceReportingService: AttendanceReportingService,
     private readonly executiveDashboardService: ExecutiveDashboardService,
+    private readonly workforceAnalyticsService: WorkforceAnalyticsService,
   ) {}
 
   @Get('executive/dashboard')
@@ -48,6 +55,48 @@ export class ReportsController {
     const data = await this.executiveDashboardService.getDashboardSummary(user, query);
     return {
       message: 'Executive dashboard metrics retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('workforce/headcount')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get multi-dimensional headcount snapshot report' })
+  async getWorkforceHeadcount(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: WorkforceHeadcountQueryDto,
+  ) {
+    const data = await this.workforceAnalyticsService.getHeadcountReport(user, query);
+    return {
+      message: 'Workforce headcount report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('workforce/movement')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get workforce joiners, exits, and attrition movement report' })
+  async getWorkforceMovement(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: WorkforceMovementQueryDto,
+  ) {
+    const data = await this.workforceAnalyticsService.getMovementReport(user, query);
+    return {
+      message: 'Workforce movement report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('workforce/trends')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get monthly workforce growth and attrition trends' })
+  async getWorkforceTrends(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: WorkforceTrendsQueryDto,
+  ) {
+    const data = await this.workforceAnalyticsService.getTrendsReport(user, query);
+    return {
+      message: 'Workforce trends report retrieved successfully',
       data,
     };
   }
@@ -87,7 +136,7 @@ export class ReportsController {
 @Module({
   imports: [AttendanceModule, EmployeesModule, PrismaModule],
   controllers: [ReportsController],
-  providers: [ReportsService, ExecutiveDashboardService],
-  exports: [ReportsService, ExecutiveDashboardService],
+  providers: [ReportsService, ExecutiveDashboardService, WorkforceAnalyticsService],
+  exports: [ReportsService, ExecutiveDashboardService, WorkforceAnalyticsService],
 })
 export class ReportsModule {}
