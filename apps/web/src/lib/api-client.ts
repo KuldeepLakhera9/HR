@@ -3374,6 +3374,85 @@ export const payrollApi = {
     });
     return res;
   },
+
+  // -----------------------------------------------------------------------------
+  // Employee Compensation
+  // -----------------------------------------------------------------------------
+  async getEmployeeCompensation(employeeId: string) {
+    const res = await fetchWithAuth<any>(`/payroll/employees/${employeeId}/compensation`);
+    return res;
+  },
+
+  async createEmployeeCompensation(employeeId: string, data: any) {
+    const res = await fetchWithAuth<any>(`/payroll/employees/${employeeId}/compensation`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async approveCompensation(id: string, data?: { comments?: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/compensations/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+    return res;
+  },
+
+  async rejectCompensation(id: string, data: { rejectionReason: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/compensations/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async cancelCompensation(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/compensations/${id}/cancel`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async getApplicableCompensation(
+    employeeId: string,
+    params?: { date?: string; startDate?: string; endDate?: string },
+  ) {
+    const query = new URLSearchParams();
+    if (params?.date) query.set('date', params.date);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(
+      `/payroll/employees/${employeeId}/compensation/applicable${qs}`,
+    );
+    return res;
+  },
+
+  async exportEmployeeCompensation(employeeId: string) {
+    const token = getAccessToken();
+    const response = await fetch(
+      `${API_BASE_URL}/payroll/employees/${employeeId}/compensation/export`,
+      {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'include',
+      },
+    );
+
+    if (!response.ok) {
+      throw new Error('Export download failed');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `compensation_history_${employeeId}_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
 };
 
 export const apiClient = {

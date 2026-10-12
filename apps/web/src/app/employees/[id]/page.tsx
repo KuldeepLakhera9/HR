@@ -43,6 +43,7 @@ import {
 import { employeesApi, organizationApi } from '../../../lib/api-client';
 import { useAuth } from '../../../context/AuthContext';
 import { EmployeeHistoryTimeline } from '../../../components/employees/EmployeeHistoryTimeline';
+import { EmployeeCompensationTab } from '../../../components/employees/EmployeeCompensationTab';
 
 // Valid lifecycle transitions according to Phase 3 Step 7 state machine
 const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
@@ -61,7 +62,7 @@ export default function EmployeeProfilePage() {
   const employeeId = params.id as string;
 
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'employment' | 'contact' | 'documents' | 'history'
+    'overview' | 'employment' | 'contact' | 'documents' | 'history' | 'compensation'
   >('overview');
   const [employee, setEmployee] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -134,6 +135,9 @@ export default function EmployeeProfilePage() {
   const canEditOrganization = isAdminOrHr;
   const canEditPersonalContact = isAdminOrHr || isSelf;
   const canChangeStatus = isAdminOrHr && employee?.status !== 'EXITED';
+  const canViewCompensation = Boolean(
+    hasRole('ADMIN') || hasPermission('PAYROLL_VIEW') || hasPermission('PAYROLL_COMPENSATION'),
+  );
 
   // Valid status transitions for the current employee
   const availableTransitions = useMemo(() => {
@@ -498,27 +502,30 @@ export default function EmployeeProfilePage() {
 
           {/* Navigation Tabs */}
           <div className="flex border-t border-stone-200 px-6 bg-stone-50/60 overflow-x-auto scrollbar-none">
-            {(
-              [
-                { id: 'overview', label: 'Overview', count: undefined },
-                { id: 'employment', label: 'Employment', count: undefined },
-                { id: 'contact', label: 'Contact', count: undefined },
-                {
-                  id: 'documents',
-                  label: 'Documents',
-                  count: employee.documents?.length as number | undefined,
-                },
-                {
-                  id: 'history',
-                  label: 'History',
-                  count: employee.history?.length as number | undefined,
-                },
-              ] as Array<{
-                id: 'overview' | 'employment' | 'contact' | 'documents' | 'history';
-                label: string;
-                count?: number;
-              }>
-            ).map((tab) => (
+            {[
+              { id: 'overview' as const, label: 'Overview', count: undefined },
+              { id: 'employment' as const, label: 'Employment', count: undefined },
+              { id: 'contact' as const, label: 'Contact', count: undefined },
+              {
+                id: 'documents' as const,
+                label: 'Documents',
+                count: employee.documents?.length as number | undefined,
+              },
+              {
+                id: 'history' as const,
+                label: 'History',
+                count: employee.history?.length as number | undefined,
+              },
+              ...(canViewCompensation
+                ? [
+                    {
+                      id: 'compensation' as const,
+                      label: 'Compensation & Salary',
+                      count: undefined,
+                    },
+                  ]
+                : []),
+            ].map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -1074,6 +1081,13 @@ export default function EmployeeProfilePage() {
               />
             </CardContent>
           </Card>
+        )}
+
+        {/* ------------------------------------------------------------------ */}
+        {/* TAB 6: Compensation & Salary (Strict Permission-Controlled) */}
+        {/* ------------------------------------------------------------------ */}
+        {activeTab === 'compensation' && canViewCompensation && (
+          <EmployeeCompensationTab employeeId={employeeId} employee={employee} />
         )}
 
         {/* ------------------------------------------------------------------ */}

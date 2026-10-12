@@ -3280,6 +3280,19 @@ export interface EmployeeCompensationItemDto {
   annualAmount: number;
 }
 
+export type CompensationStatus =
+  'DRAFT' | 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export type CompensationChangeReason =
+  | 'JOINING'
+  | 'ANNUAL_INCREMENT'
+  | 'PROMOTION'
+  | 'MARKET_CORRECTION'
+  | 'ROLE_CHANGE'
+  | 'PROBATION_CONFIRMATION'
+  | 'SPECIAL_ADJUSTMENT'
+  | 'OTHER';
+
 export interface EmployeeCompensationDto {
   id: string;
   organizationId: string;
@@ -3290,11 +3303,39 @@ export interface EmployeeCompensationDto {
   grossMonthly: number;
   effectiveFrom: string;
   effectiveTo?: string | null;
+  status: CompensationStatus;
+  changeReason: CompensationChangeReason;
   reason?: string | null;
+  notes?: string | null;
   isLocked: boolean;
+  createdById?: string | null;
+  createdBy?: { id: string; email: string; firstName: string; lastName: string } | null;
+  approvedById?: string | null;
+  approvedBy?: { id: string; email: string; firstName: string; lastName: string } | null;
+  approvedAt?: string | null;
+  rejectionReason?: string | null;
   items?: EmployeeCompensationItemDto[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreateEmployeeCompensationDto {
+  employeeId: string;
+  structureId: string;
+  ctcAnnual: number;
+  effectiveFrom: string;
+  changeReason: CompensationChangeReason;
+  reason?: string;
+  notes?: string;
+  submitForApproval?: boolean;
+}
+
+export interface ApproveCompensationDto {
+  comments?: string;
+}
+
+export interface RejectCompensationDto {
+  rejectionReason: string;
 }
 
 export interface PayrollPeriodDto {

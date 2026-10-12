@@ -250,6 +250,8 @@ model User {
   lockedPayrollRuns            PayrollRun[]                   @relation("PayrollLocker")
   payrollApprovalHistories     PayrollApprovalHistory[]       @relation("PayrollApprovalActor")
   approvedAdjustments          PayrollAdjustment[]            @relation("AdjustmentApprover")
+  createdCompensations         EmployeeCompensation[]         @relation("CompensationCreator")
+  approvedCompensations        EmployeeCompensation[]         @relation("CompensationApprover")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -2204,6 +2206,25 @@ model SalaryStructureItem {
   @@map("salary_structure_items")
 }
 
+enum CompensationStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum CompensationChangeReason {
+  JOINING
+  ANNUAL_INCREMENT
+  PROMOTION
+  MARKET_CORRECTION
+  ROLE_CHANGE
+  PROBATION_CONFIRMATION
+  SPECIAL_ADJUSTMENT
+  OTHER
+}
+
 model EmployeeCompensation {
   id             String          @id @default(uuid())
   organizationId String
@@ -2213,21 +2234,33 @@ model EmployeeCompensation {
   structureId    String
   structure      SalaryStructure @relation(fields: [structureId], references: [id], onDelete: Restrict)
 
-  ctcAnnual     Decimal   @db.Decimal(14, 2)
-  grossMonthly  Decimal   @db.Decimal(14, 2)
-  effectiveFrom DateTime
-  effectiveTo   DateTime?
-  reason        String?
-  isLocked      Boolean   @default(false)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  deletedAt     DateTime?
+  ctcAnnual       Decimal                  @db.Decimal(14, 2)
+  grossMonthly    Decimal                  @db.Decimal(14, 2)
+  effectiveFrom   DateTime
+  effectiveTo     DateTime?
+  status          CompensationStatus       @default(APPROVED)
+  changeReason    CompensationChangeReason @default(JOINING)
+  reason          String?
+  notes           String?
+  isLocked        Boolean                  @default(false)
+  createdById     String?
+  createdBy       User?                    @relation("CompensationCreator", fields: [createdById], references: [id], onDelete: SetNull)
+  approvedById    String?
+  approvedBy      User?                    @relation("CompensationApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt      DateTime?
+  rejectionReason String?
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+  deletedAt       DateTime?
 
   items EmployeeCompensationItem[]
 
   @@index([organizationId])
   @@index([employeeId, effectiveFrom, effectiveTo])
   @@index([structureId])
+  @@index([status])
+  @@index([createdById])
+  @@index([approvedById])
   @@map("employee_compensations")
 }
 
