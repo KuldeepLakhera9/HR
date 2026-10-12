@@ -97,3 +97,18 @@ export const Select = React.forwardRef<HTMLSelectElement, SelectProps>(
 );
 
 Select.displayName = 'Select';
+
+export interface LabelProps extends React.LabelHTMLAttributes<HTMLLabelElement> {
+  children?: React.ReactNode;
+}
+
+export const Label: React.FC<LabelProps> = ({ className, children, ...props }) => {
+  return (
+    <label
+      className={cn('block text-xs font-semibold text-stone-700 tracking-wide', className)}
+      {...props}
+    >
+      {children}
+    </label>
+  );
+};

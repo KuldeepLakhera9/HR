@@ -3251,3 +3251,131 @@ export const performanceApi = {
     return res.data;
   },
 };
+
+// -----------------------------------------------------------------------------
+// Payroll: Components & Structures
+// -----------------------------------------------------------------------------
+export const payrollApi = {
+  async getSalaryComponents(params?: {
+    category?: string;
+    type?: string;
+    search?: string;
+    isActive?: boolean;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.category && params.category !== 'ALL') query.set('category', params.category);
+    if (params?.type && params.type !== 'ALL') query.set('type', params.type);
+    if (params?.search) query.set('search', params.search);
+    if (params?.isActive !== undefined) query.set('isActive', String(params.isActive));
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/components${qs}`);
+    return res;
+  },
+
+  async getSalaryComponent(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/components/${id}`);
+    return res;
+  },
+
+  async createSalaryComponent(data: any) {
+    const res = await fetchWithAuth<any>('/payroll/components', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async updateSalaryComponent(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/payroll/components/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async deleteSalaryComponent(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/components/${id}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async getSalaryStructures(params?: {
+    status?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/structures${qs}`);
+    return res;
+  },
+
+  async getSalaryStructure(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/structures/${id}`);
+    return res;
+  },
+
+  async createSalaryStructure(data: any) {
+    const res = await fetchWithAuth<any>('/payroll/structures', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async updateSalaryStructure(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/payroll/structures/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async cloneSalaryStructure(id: string, data?: any) {
+    const res = await fetchWithAuth<any>(`/payroll/structures/${id}/clone`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+    return res;
+  },
+
+  async activateSalaryStructure(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/structures/${id}/activate`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async retireSalaryStructure(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/structures/${id}/retire`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async previewSalaryStructure(data: {
+    structureId?: string;
+    annualCtc: number;
+    customItems?: any[];
+  }) {
+    const res = await fetchWithAuth<any>('/payroll/structures/preview', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+};
+
+export const apiClient = {
+  ...payrollApi,
+};

@@ -178,6 +178,14 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       requiredPermission: 'WFH_VIEW',
     },
     {
+      id: 'admin-payroll',
+      label: 'Payroll & Compensation',
+      href: '/payroll',
+      icon: 'Banknote',
+      allowedRoles: ['ADMIN'],
+      requiredPermission: 'PAYROLL_VIEW',
+    },
+    {
       id: 'admin-reports',
       label: 'Analytics & Reports',
       href: '/reports',
@@ -306,6 +314,14 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'Files',
       allowedRoles: ['HR'],
       requiredPermission: 'DOCUMENT_VIEW',
+    },
+    {
+      id: 'hr-payroll',
+      label: 'Payroll & Compensation',
+      href: '/payroll',
+      icon: 'Banknote',
+      allowedRoles: ['HR'],
+      requiredPermission: 'PAYROLL_VIEW',
     },
     {
       id: 'hr-reports',

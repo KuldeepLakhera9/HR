@@ -30,6 +30,7 @@ import {
   LucideIcon,
   X,
   GitFork,
+  Banknote,
 } from 'lucide-react';
 
 const ICON_MAP: Record<string, LucideIcon> = {
@@ -55,6 +56,7 @@ const ICON_MAP: Record<string, LucideIcon> = {
   UserCircle,
   Palette,
   GitFork,
+  Banknote,
 };
 
 export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({

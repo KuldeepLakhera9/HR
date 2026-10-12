@@ -365,6 +365,21 @@ async function main() {
     // System Settings
     { code: 'SETTING_VIEW', name: 'View System Settings', module: 'SETTING' },
     { code: 'SETTING_UPDATE', name: 'Update System Settings', module: 'SETTING' },
+
+    // Payroll & Compensation Management (Phase 11)
+    { code: 'PAYROLL_VIEW', name: 'View Payroll & Salary Structures', module: 'PAYROLL' },
+    { code: 'PAYROLL_MANAGE', name: 'Manage Salary Components & Structures', module: 'PAYROLL' },
+    {
+      code: 'PAYROLL_COMPENSATION',
+      name: 'Manage Employee Compensation Master',
+      module: 'PAYROLL',
+    },
+    { code: 'PAYROLL_PROCESS', name: 'Execute Payroll Calculation & Review', module: 'PAYROLL' },
+    { code: 'PAYROLL_APPROVE', name: 'Approve Calculated Payroll Runs', module: 'PAYROLL' },
+    { code: 'PAYROLL_LOCK', name: 'Lock or Finalize Payroll Runs', module: 'PAYROLL' },
+    { code: 'PAYROLL_PUBLISH', name: 'Publish Payslips to Staff', module: 'PAYROLL' },
+    { code: 'PAYSLIP_VIEW_SELF', name: 'View Own Payslips', module: 'PAYROLL' },
+    { code: 'PAYROLL_EXPORT', name: 'Export Payroll Registers & Bank Files', module: 'PAYROLL' },
   ];
 
   const permissionRecords: Record<string, string> = {};
@@ -428,6 +443,13 @@ async function main() {
       'REPORT_EXPORT',
       'AUDIT_VIEW',
       'SETTING_VIEW',
+      'PAYROLL_VIEW',
+      'PAYROLL_MANAGE',
+      'PAYROLL_COMPENSATION',
+      'PAYROLL_PROCESS',
+      'PAYROLL_PUBLISH',
+      'PAYSLIP_VIEW_SELF',
+      'PAYROLL_EXPORT',
     ],
 
     // MANAGER receives team visibility, approval rights, and org chart
@@ -447,6 +469,7 @@ async function main() {
       'VISIT_APPROVE',
       'DOCUMENT_VIEW',
       'REPORT_VIEW',
+      'PAYSLIP_VIEW_SELF',
     ],
 
     // EMPLOYEE receives self-service and org chart visibility
@@ -460,6 +483,7 @@ async function main() {
       'VISIT_VIEW',
       'VISIT_APPLY',
       'DOCUMENT_VIEW',
+      'PAYSLIP_VIEW_SELF',
     ],
   };
 

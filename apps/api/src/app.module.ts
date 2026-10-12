@@ -23,6 +23,7 @@ import { AuditModule } from './modules/audit/audit.module';
 import { ManagerModule } from './modules/manager/manager.module';
 import { AnnouncementsModule } from './modules/announcements/announcements.module';
 import { PerformanceModule } from './modules/performance/performance.module';
+import { PayrollModule } from './modules/payroll/payroll.module';
 
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -61,6 +62,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     ManagerModule,
     AnnouncementsModule,
     PerformanceModule,
+    PayrollModule,
   ],
   providers: [
     {
