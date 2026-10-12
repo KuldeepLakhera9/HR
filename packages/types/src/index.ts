@@ -2843,3 +2843,166 @@ export interface TriggerRemindersResultDto {
   managerReviewsReminded: number;
   message: string;
 }
+
+// -----------------------------------------------------------------------------
+// 29. Phase 10: Enterprise Analytics, MIS & Metric Dictionary Contracts
+// -----------------------------------------------------------------------------
+
+export type MetricCategory = 'WORKFORCE' | 'ATTENDANCE' | 'LEAVE' | 'WORKFLOW' | 'PERFORMANCE';
+
+export type MetricUnit = 'COUNT' | 'PERCENTAGE' | 'HOURS' | 'DAYS' | 'CURRENCY';
+
+export interface MetricDefinitionDto {
+  id: string;
+  name: string;
+  category: MetricCategory;
+  businessPurpose: string;
+  formula: string;
+  timeframeType: 'SNAPSHOT' | 'PERIOD_FLOW';
+  numeratorDescription: string;
+  denominatorDescription?: string;
+  unit: MetricUnit;
+  precision: number;
+  drillDownUrl: string;
+  requiredPermission: string;
+  isHrReviewRequired?: boolean;
+}
+
+export interface MetricValueDto {
+  metricId: string;
+  name: string;
+  value: number | null;
+  formattedValue: string;
+  unit: MetricUnit;
+  isCalculable: boolean;
+  benchmarkTarget?: number;
+  comparisonPeriodChange?: {
+    absoluteChange: number;
+    percentageChange: number;
+    trend: 'UP' | 'DOWN' | 'NEUTRAL';
+  };
+  asOfTimestamp: string;
+  drillDownUrl: string;
+}
+
+export interface ExecutiveDashboardSummaryDto {
+  asOfDate: string;
+  timezone: string;
+  activeHeadcount: MetricValueDto;
+  periodJoiners: MetricValueDto;
+  periodExits: MetricValueDto;
+  annualizedAttritionRate: MetricValueDto;
+  attendanceRate: MetricValueDto;
+  onTimeArrivalRate: MetricValueDto;
+  leaveUtilizationRate: MetricValueDto;
+  avgApprovalTurnaroundHours: MetricValueDto;
+  pendingApprovalsCount: MetricValueDto;
+  slaBreachRatio: MetricValueDto;
+  activeReviewCycleCompletionRate: MetricValueDto;
+  overdueAppraisalsCount: MetricValueDto;
+  dataFreshnessTimestamp: string;
+}
+
+export interface WorkforceHeadcountAnalyticsDto {
+  asOfDate: string;
+  totalActiveHeadcount: number;
+  byDepartment: Array<{
+    departmentId: string;
+    departmentName: string;
+    headcount: number;
+    percentage: number;
+  }>;
+  byBranch: Array<{
+    branchId: string;
+    branchName: string;
+    headcount: number;
+    percentage: number;
+  }>;
+  byEmploymentStatus: Array<{
+    status: string;
+    headcount: number;
+    percentage: number;
+  }>;
+  byWorkMode: Array<{
+    workMode: string;
+    headcount: number;
+    percentage: number;
+  }>;
+  monthlyTrends: Array<{
+    month: string;
+    startingHeadcount: number;
+    joiners: number;
+    exits: number;
+    netChange: number;
+    closingHeadcount: number;
+    annualizedAttritionRate: number;
+  }>;
+}
+
+export interface AttendanceAnalyticsSummaryDto {
+  startDate: string;
+  endDate: string;
+  totalEvaluatedDays: number;
+  overallAttendanceRate: number;
+  onTimeArrivalRate: number;
+  wfhRatio: number;
+  fieldDutyRatio: number;
+  avgDailyWorkingHours: number;
+  attendanceDayDistribution: {
+    present: number;
+    halfDay: number;
+    late: number;
+    absent: number;
+    onLeave: number;
+    holiday: number;
+    weekOff: number;
+    incomplete: number;
+  };
+  dailyTrend: Array<{
+    date: string;
+    dayOfWeek: string;
+    presentCount: number;
+    leaveCount: number;
+    absentCount: number;
+    attendanceRate: number;
+  }>;
+}
+
+export interface LeaveAnalyticsSummaryDto {
+  leaveYear: number;
+  startDate: string;
+  endDate: string;
+  totalAllocatedDays: number;
+  totalConsumedChargeableDays: number;
+  overallUtilizationRate: number;
+  unplannedAbsenceRate: number;
+  byLeaveType: Array<{
+    leaveTypeId: string;
+    code: string;
+    name: string;
+    allocatedDays: number;
+    consumedDays: number;
+    pendingDays: number;
+    utilizationRate: number;
+  }>;
+}
+
+export interface WorkflowTurnaroundAnalyticsDto {
+  startDate: string;
+  endDate: string;
+  totalRequestsDecided: number;
+  overallAvgTurnaroundHours: number;
+  overallSlaBreachRatio: number;
+  turnaroundByWorkflowType: {
+    leave: { totalDecided: number; avgHours: number; slaBreachRatio: number };
+    wfh: { totalDecided: number; avgHours: number; slaBreachRatio: number };
+    officialVisit: { totalDecided: number; avgHours: number; slaBreachRatio: number };
+  };
+  pendingBacklogAging: {
+    totalPending: number;
+    under24Hours: number;
+    between24And48Hours: number;
+    between48And72Hours: number;
+    over72HoursSlaBreached: number;
+  };
+}
