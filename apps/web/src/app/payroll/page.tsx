@@ -201,7 +201,55 @@ export default function PayrollOverviewPage() {
           </div>
 
           {/* Navigation Hub Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <Card className="border-stone-200 hover:border-emerald-300 transition-all shadow-sm bg-gradient-to-br from-emerald-50/30 to-white">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-emerald-100 text-emerald-800">
+                      <Calculator className="w-5 h-5" />
+                    </div>
+                    <CardTitle className="text-lg font-bold text-stone-900">
+                      Payroll Runs & Periods
+                    </CardTitle>
+                  </div>
+                  <Link href="/payroll/runs">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-emerald-700 hover:text-emerald-800 font-semibold"
+                    >
+                      Open <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </Link>
+                </div>
+                <CardDescription className="text-xs text-stone-500 mt-1">
+                  Orchestrate monthly calculation cycles, configure deadlines, review snapshots,
+                  approve runs, and publish payslips.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-2">
+                <div className="p-3 bg-white rounded-lg border border-emerald-100 space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-stone-600">
+                    <span>Workflow State Machine</span>
+                    <Badge variant="outline" className="bg-emerald-50 text-emerald-800 text-[10px]">
+                      7 Stages
+                    </Badge>
+                  </div>
+                  <div className="text-[11px] text-stone-400">
+                    Draft → Calculating → Review Pending → Approved → Locked → Published
+                  </div>
+                </div>
+                <div className="pt-3 mt-3 border-t border-stone-100">
+                  <Link href="/payroll/runs">
+                    <Button className="w-full text-xs font-semibold bg-emerald-700 hover:bg-emerald-800 text-white">
+                      Manage Payroll Runs
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+
             <Card className="border-stone-200 hover:border-stone-300 transition-all shadow-sm">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">

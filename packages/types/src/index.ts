@@ -3209,6 +3209,7 @@ export type PayrollRunStatus =
   | 'REVIEW_PENDING'
   | 'APPROVED'
   | 'LOCKED'
+  | 'PUBLISHED'
   | 'PAID'
   | 'CANCELLED';
 
@@ -3347,7 +3348,10 @@ export interface PayrollPeriodDto {
   endDate: string;
   totalDays: number;
   payoutDate?: string | null;
+  cutoffDate?: string | null;
+  processingDeadline?: string | null;
   status: PayrollPeriodStatus;
+  runsCount?: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -3359,6 +3363,7 @@ export interface PayrollRunDto {
   period?: PayrollPeriodDto;
   runNumber: number;
   scope: string;
+  scopeConfig?: Record<string, any> | null;
   calculationVersion: number;
   title: string;
   status: PayrollRunStatus;
@@ -3368,7 +3373,18 @@ export interface PayrollRunDto {
   totalNet: number;
   calculatedAt?: string | null;
   approvedAt?: string | null;
+  approvedById?: string | null;
+  approvedBy?: { id: string; email: string; firstName: string; lastName: string } | null;
   lockedAt?: string | null;
+  lockedById?: string | null;
+  lockedBy?: { id: string; email: string; firstName: string; lastName: string } | null;
+  publishedAt?: string | null;
+  publishedById?: string | null;
+  publishedBy?: { id: string; email: string; firstName: string; lastName: string } | null;
+  parentRunId?: string | null;
+  correctionReason?: string | null;
+  exceptionCount: number;
+  exceptions?: any[] | null;
   paidAt?: string | null;
   notes?: string | null;
   createdAt: string;
@@ -3435,7 +3451,59 @@ export interface EmployeePayrollSnapshotDto {
   paymentMethod?: string | null;
   paymentReference?: string | null;
   paidAt?: string | null;
+  isException: boolean;
+  exceptionReason?: string | null;
   items?: PayrollItemDto[];
   createdAt: string;
   updatedAt: string;
+}
+
+export interface CreatePayrollPeriodDto {
+  year: number;
+  month: number;
+  startDate: string;
+  endDate: string;
+  cutoffDate?: string;
+  payoutDate?: string;
+  processingDeadline?: string;
+}
+
+export interface CreatePayrollRunDto {
+  periodId: string;
+  title: string;
+  scope?: string;
+  scopeConfig?: {
+    branchId?: string;
+    departmentId?: string;
+    employmentType?: string;
+    employeeIds?: string[];
+  };
+  notes?: string;
+}
+
+export interface PayrollRunApprovalActionDto {
+  comments?: string;
+}
+
+export interface LockPayrollRunDto {
+  notes?: string;
+}
+
+export interface CorrectionPayrollRunDto {
+  correctionReason: string;
+  notes?: string;
+}
+
+export interface PayrollRunScopePreviewResult {
+  scope: string;
+  eligibleCount: number;
+  sampleEmployees: Array<{
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    department?: string | null;
+    designation?: string | null;
+    branch?: string | null;
+    hasActiveCompensation: boolean;
+  }>;
 }

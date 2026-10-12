@@ -252,6 +252,7 @@ model User {
   approvedAdjustments          PayrollAdjustment[]            @relation("AdjustmentApprover")
   createdCompensations         EmployeeCompensation[]         @relation("CompensationCreator")
   approvedCompensations        EmployeeCompensation[]         @relation("CompensationApprover")
+  publishedPayrollRuns         PayrollRun[]                   @relation("PayrollPublisher")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -2100,6 +2101,7 @@ enum PayrollRunStatus {
   REVIEW_PENDING
   APPROVED
   LOCKED
+  PUBLISHED
   PAID
   CANCELLED
 }
@@ -2289,11 +2291,13 @@ model PayrollPeriod {
   month          Int
   startDate      DateTime
   endDate        DateTime
-  totalDays      Int
-  payoutDate     DateTime?
-  status         PayrollPeriodStatus @default(OPEN)
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
+  totalDays          Int
+  payoutDate         DateTime?
+  cutoffDate         DateTime?
+  processingDeadline DateTime?
+  status             PayrollPeriodStatus @default(OPEN)
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
 
   runs        PayrollRun[]
   adjustments PayrollAdjustment[]
@@ -2332,6 +2336,17 @@ model PayrollRun {
   notes          String?
   calculationLog Json?
 
+  scopeConfig      Json?
+  publishedAt      DateTime?
+  publishedById    String?
+  publishedBy      User?        @relation("PayrollPublisher", fields: [publishedById], references: [id], onDelete: SetNull)
+  parentRunId      String?
+  parentRun        PayrollRun?  @relation("RunCorrections", fields: [parentRunId], references: [id], onDelete: SetNull)
+  correctionRuns   PayrollRun[] @relation("RunCorrections")
+  correctionReason String?
+  exceptionCount   Int          @default(0)
+  exceptions       Json?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2342,6 +2357,8 @@ model PayrollRun {
   @@unique([organizationId, periodId, scope, runNumber, calculationVersion])
   @@index([organizationId, status])
   @@index([periodId])
+  @@index([parentRunId])
+  @@index([publishedById])
   @@map("payroll_runs")
 }
 
@@ -2440,6 +2457,10 @@ model EmployeePayrollSnapshot {
   // Calculation inputs snapshot for audit and reproduction
   calculationInputSnapshot Json?
 
+  // Exception and validation diagnostics
+  isException     Boolean @default(false)
+  exceptionReason String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2449,6 +2470,7 @@ model EmployeePayrollSnapshot {
   @@unique([organizationId, payslipNumber])
   @@index([employeeId, payslipStatus])
   @@index([payrollRunId])
+  @@index([payrollRunId, isException])
   @@index([organizationId, paymentStatus])
   @@map("employee_payroll_snapshots")
 }

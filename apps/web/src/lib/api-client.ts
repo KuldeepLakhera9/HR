@@ -3453,6 +3453,175 @@ export const payrollApi = {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
+
+  // -----------------------------------------------------------------------------
+  // Payroll Periods
+  // -----------------------------------------------------------------------------
+  async getPayrollPeriods(params?: { year?: number; status?: string }) {
+    const query = new URLSearchParams();
+    if (params?.year) query.set('year', String(params.year));
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/periods${qs}`);
+    return res;
+  },
+
+  async createPayrollPeriod(data: any) {
+    const res = await fetchWithAuth<any>('/payroll/periods', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async getPayrollPeriod(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/periods/${id}`);
+    return res;
+  },
+
+  async updatePayrollPeriod(id: string, data: any) {
+    const res = await fetchWithAuth<any>(`/payroll/periods/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async closePayrollPeriod(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/periods/${id}/close`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  // -----------------------------------------------------------------------------
+  // Payroll Runs Orchestration
+  // -----------------------------------------------------------------------------
+  async previewPayrollRunScope(data: { periodId?: string; scope?: string; scopeConfig?: any }) {
+    const res = await fetchWithAuth<any>('/payroll/runs/scope/preview', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async getPayrollRuns(params?: {
+    periodId?: string;
+    status?: string;
+    scope?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const query = new URLSearchParams();
+    if (params?.periodId) query.set('periodId', params.periodId);
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.scope) query.set('scope', params.scope);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/runs${qs}`);
+    return res;
+  },
+
+  async createPayrollRun(data: any) {
+    const res = await fetchWithAuth<any>('/payroll/runs', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async getPayrollRun(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}`);
+    return res;
+  },
+
+  async getPayrollRunSnapshots(
+    id: string,
+    params?: {
+      page?: number;
+      limit?: number;
+      search?: string;
+      isException?: boolean;
+    },
+  ) {
+    const query = new URLSearchParams();
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    if (params?.search) query.set('search', params.search);
+    if (params?.isException !== undefined) query.set('isException', String(params.isException));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/snapshots${qs}`);
+    return res;
+  },
+
+  async calculatePayrollRun(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/calculate`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async retryPayrollRun(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/retry`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async recalculatePayrollRun(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/recalculate`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async approvePayrollRun(id: string, data?: { comments?: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/approve`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+    return res;
+  },
+
+  async rejectPayrollRun(id: string, data: { rejectionReason: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async lockPayrollRun(id: string, data?: { notes?: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/lock`, {
+      method: 'POST',
+      body: JSON.stringify(data || {}),
+    });
+    return res;
+  },
+
+  async publishPayrollRun(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/publish`, {
+      method: 'POST',
+    });
+    return res;
+  },
+
+  async cancelPayrollRun(id: string, reason?: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    return res;
+  },
+
+  async createCorrectionPayrollRun(id: string, data: { correctionReason: string; notes?: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/correction`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
 };
 
 export const apiClient = {

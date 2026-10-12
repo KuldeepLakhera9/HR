@@ -4,9 +4,13 @@ import { AuditModule } from '../audit/audit.module';
 import { SalaryComponentsController } from './controllers/salary-components.controller';
 import { SalaryStructuresController } from './controllers/salary-structures.controller';
 import { EmployeeCompensationController } from './controllers/employee-compensation.controller';
+import { PayrollPeriodsController } from './controllers/payroll-periods.controller';
+import { PayrollRunsController } from './controllers/payroll-runs.controller';
 import { SalaryComponentsService } from './services/salary-components.service';
 import { SalaryStructuresService } from './services/salary-structures.service';
 import { EmployeeCompensationService } from './services/employee-compensation.service';
+import { PayrollPeriodsService } from './services/payroll-periods.service';
+import { PayrollRunsService } from './services/payroll-runs.service';
 
 @Module({
   imports: [PrismaModule, AuditModule],
@@ -14,8 +18,22 @@ import { EmployeeCompensationService } from './services/employee-compensation.se
     SalaryComponentsController,
     SalaryStructuresController,
     EmployeeCompensationController,
+    PayrollPeriodsController,
+    PayrollRunsController,
   ],
-  providers: [SalaryComponentsService, SalaryStructuresService, EmployeeCompensationService],
-  exports: [SalaryComponentsService, SalaryStructuresService, EmployeeCompensationService],
+  providers: [
+    SalaryComponentsService,
+    SalaryStructuresService,
+    EmployeeCompensationService,
+    PayrollPeriodsService,
+    PayrollRunsService,
+  ],
+  exports: [
+    SalaryComponentsService,
+    SalaryStructuresService,
+    EmployeeCompensationService,
+    PayrollPeriodsService,
+    PayrollRunsService,
+  ],
 })
 export class PayrollModule {}
