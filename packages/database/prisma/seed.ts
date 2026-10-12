@@ -7,6 +7,16 @@ import {
   WorkMode,
   Gender,
   EmployeeHistoryEventType,
+  ReviewCycleType,
+  ReviewCycleStatus,
+  GoalCategory,
+  GoalMeasurementType,
+  GoalStatus,
+  PerformanceReviewStatus,
+  CompetencyCategory,
+  DevelopmentPlanStatus,
+  FeedbackVisibility,
+  ParticipantStatus,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
 
@@ -1142,8 +1152,270 @@ async function main() {
     }
   }
 
+  // 12. Phase 9: Development-Only Sample Performance Management Fixtures
+  // Configures a sample review cycle, competencies, participant enrollments, goals, self-assessment, and development plan
+  const sampleCycle = await prisma.reviewCycle.upsert({
+    where: {
+      organizationId_code: {
+        organizationId: org.id,
+        code: 'CYC-2026-H2',
+      },
+    },
+    update: {
+      name: 'H2 2026 Enterprise Engineering Review',
+      status: ReviewCycleStatus.SELF_ASSESSMENT,
+    },
+    create: {
+      organizationId: org.id,
+      code: 'CYC-2026-H2',
+      name: 'H2 2026 Enterprise Engineering Review',
+      description:
+        'Semi-annual performance appraisal cycle covering all active engineering personnel',
+      type: ReviewCycleType.SEMI_ANNUAL,
+      status: ReviewCycleStatus.SELF_ASSESSMENT,
+      startDate: new Date('2026-07-01T00:00:00.000Z'),
+      endDate: new Date('2026-12-31T23:59:59.000Z'),
+      goalSettingDeadline: new Date('2026-08-15T18:30:00.000Z'),
+      selfAssessmentDeadline: new Date('2026-11-15T18:30:00.000Z'),
+      managerReviewDeadline: new Date('2026-12-05T18:30:00.000Z'),
+      finalizationDeadline: new Date('2026-12-20T18:30:00.000Z'),
+      goalsWeightPercentage: 70.0,
+      competenciesWeightPercentage: 30.0,
+      allowEmployeeGoalCreation: true,
+      requireGoalApproval: true,
+      ratingScaleMax: 5,
+      templateVersion: 1,
+      instructions:
+        'Please complete all self-assessment sections including achievements and growth goals before the cutoff date.',
+    },
+  });
+
+  // Cycle Competencies
+  const comp1 = await prisma.performanceCompetency.create({
+    data: {
+      cycleId: sampleCycle.id,
+      category: CompetencyCategory.FUNCTIONAL_EXPERTISE,
+      name: 'Technical Architecture & Code Quality',
+      description:
+        'Designs maintainable, high-throughput backend services and clean frontend components.',
+      weight: 15.0,
+    },
+  });
+
+  const comp2 = await prisma.performanceCompetency.create({
+    data: {
+      cycleId: sampleCycle.id,
+      category: CompetencyCategory.COMMUNICATION,
+      name: 'Cross-functional Collaboration & Velocity',
+      description:
+        'Actively pairs with colleagues, communicates blockers early, and drives milestones.',
+      weight: 15.0,
+    },
+  });
+
+  // Participants (Priya Nair EMP004 and Amitabh Roy EMP005 under Rajesh Kumar EMP003)
+  const empPriya = employeeRecordMap['EMP004'];
+  const empAmitabh = employeeRecordMap['EMP005'];
+  const mgrRajesh = employeeRecordMap['EMP003'];
+
+  const priyaParticipant = await prisma.reviewCycleParticipant.upsert({
+    where: {
+      cycleId_employeeId: {
+        cycleId: sampleCycle.id,
+        employeeId: empPriya,
+      },
+    },
+    update: {},
+    create: {
+      cycleId: sampleCycle.id,
+      employeeId: empPriya,
+      managerId: mgrRajesh,
+      departmentId: deptMap['ENG'],
+      branchId: branchMap['BLR-HQ'],
+      designationId: desigMap['SR-SWE'],
+      status: ParticipantStatus.ENROLLED,
+    },
+  });
+
+  await prisma.reviewCycleParticipant.upsert({
+    where: {
+      cycleId_employeeId: {
+        cycleId: sampleCycle.id,
+        employeeId: empAmitabh,
+      },
+    },
+    update: {},
+    create: {
+      cycleId: sampleCycle.id,
+      employeeId: empAmitabh,
+      managerId: mgrRajesh,
+      departmentId: deptMap['ENG'],
+      branchId: branchMap['MUM-01'],
+      designationId: desigMap['SWE'],
+      status: ParticipantStatus.ENROLLED,
+    },
+  });
+
+  // Sample Goals for Priya Nair
+  const goal1 = await prisma.performanceGoal.create({
+    data: {
+      organizationId: org.id,
+      cycleId: sampleCycle.id,
+      employeeId: empPriya,
+      assignedById: mgrRajesh,
+      title: 'Deliver Enterprise Performance Management Subsystem',
+      description:
+        'Implement Goals, Cycles, Appraisals, Calculations, Dashboards and Notifications.',
+      businessRationale: 'Unlocks self-hosted performance reviews across all departments.',
+      category: GoalCategory.QUANTITATIVE,
+      measurementType: GoalMeasurementType.PERCENTAGE,
+      unit: '%',
+      baselineValue: 0.0,
+      targetValue: 100.0,
+      currentValue: 95.0,
+      weight: 40.0,
+      status: GoalStatus.APPROVED,
+      progressPercentage: 95.0,
+      startDate: new Date('2026-07-01'),
+      dueDate: new Date('2026-11-01'),
+      approvedById: mgrRajesh,
+      approvedAt: new Date('2026-07-15'),
+    },
+  });
+
+  const goal2 = await prisma.performanceGoal.create({
+    data: {
+      organizationId: org.id,
+      cycleId: sampleCycle.id,
+      employeeId: empPriya,
+      assignedById: mgrRajesh,
+      title: 'Optimize API P99 Latency under 120ms',
+      description: 'Tune database queries, compound indexing, and nest interceptor overhead.',
+      businessRationale: 'Ensures sub-150ms responsiveness at peak shift punch-in times.',
+      category: GoalCategory.QUANTITATIVE,
+      measurementType: GoalMeasurementType.NUMERIC,
+      unit: 'ms',
+      baselineValue: 250.0,
+      targetValue: 120.0,
+      currentValue: 140.0,
+      weight: 30.0,
+      status: GoalStatus.APPROVED,
+      progressPercentage: 85.0,
+      startDate: new Date('2026-07-01'),
+      dueDate: new Date('2026-12-01'),
+      approvedById: mgrRajesh,
+      approvedAt: new Date('2026-07-15'),
+    },
+  });
+
+  // Sample Review Record for Priya Nair
+  const priyaReview = await prisma.performanceReview.upsert({
+    where: {
+      cycleId_employeeId: {
+        cycleId: sampleCycle.id,
+        employeeId: empPriya,
+      },
+    },
+    update: {},
+    create: {
+      organizationId: org.id,
+      cycleId: sampleCycle.id,
+      employeeId: empPriya,
+      managerId: mgrRajesh,
+      participantId: priyaParticipant.id,
+      templateVersion: 1,
+      status: PerformanceReviewStatus.SELF_ASSESSMENT_SUBMITTED,
+      selfSummary:
+        'Successfully delivered the enterprise performance architecture on time with comprehensive regression testing.',
+      selfAchievements:
+        'Designed deterministic score calculations, RBAC security guards, and in-app reminder scanning.',
+      selfChallenges:
+        'Navigating complex audit requirements while maintaining strict sub-150ms API SLAs.',
+      skillsDeveloped:
+        'Deep PostgreSQL indexing strategies, NestJS guard composition, and monorepo type pipelines.',
+      developmentInterests: 'Staff-level system architecture and reliability engineering.',
+      selfSubmittedAt: new Date('2026-10-10T14:30:00.000Z'),
+    },
+  });
+
+  // Review Items for Goals & Competencies
+  await prisma.performanceReviewItem.create({
+    data: {
+      reviewId: priyaReview.id,
+      goalId: goal1.id,
+      selfRating: 4.8,
+      selfComments: 'Delivered all 9 sub-phases with zero test regressions and full type safety.',
+    },
+  });
+
+  await prisma.performanceReviewItem.create({
+    data: {
+      reviewId: priyaReview.id,
+      goalId: goal2.id,
+      selfRating: 4.5,
+      selfComments: 'Reduced P99 latency significantly, further profiling planned for next sprint.',
+    },
+  });
+
+  await prisma.performanceReviewItem.create({
+    data: {
+      reviewId: priyaReview.id,
+      competencyId: comp1.id,
+      selfRating: 5.0,
+      selfComments:
+        'Consistently maintained highest standard of clean code and architectural rigor.',
+    },
+  });
+
+  await prisma.performanceReviewItem.create({
+    data: {
+      reviewId: priyaReview.id,
+      competencyId: comp2.id,
+      selfRating: 4.5,
+      selfComments: 'Collaborated closely with Product and HR teams to finalize policies.',
+    },
+  });
+
+  // Sample Feedback Notes
+  await prisma.performanceFeedback.create({
+    data: {
+      reviewId: priyaReview.id,
+      authorId: mgrRajesh,
+      visibility: FeedbackVisibility.EMPLOYEE_VISIBLE,
+      title: 'Outstanding Technical Rigor',
+      content:
+        'Priya demonstrated exceptional ownership and engineering craftsmanship across Phase 9 delivery.',
+    },
+  });
+
+  await prisma.performanceFeedback.create({
+    data: {
+      reviewId: priyaReview.id,
+      authorId: mgrRajesh,
+      visibility: FeedbackVisibility.MANAGER_ONLY,
+      title: 'Promotional Readiness Candidate',
+      content:
+        'Ready to take on tech lead responsibilities for upcoming distributed systems initiatives.',
+    },
+  });
+
+  // Sample Development Plan
+  await prisma.developmentPlan.create({
+    data: {
+      reviewId: priyaReview.id,
+      employeeId: empPriya,
+      objective: 'Staff Engineer Technical Leadership',
+      actionSteps: 'Lead cross-team architectural reviews and establish engineering standards.',
+      successCriteria:
+        'Successful rollout of micro-benchmarks and mentorship of two junior engineers.',
+      targetDate: new Date('2026-12-31T00:00:00.000Z'),
+      status: DevelopmentPlanStatus.IN_PROGRESS,
+      responsiblePerson: 'Priya Nair & Rajesh Kumar',
+    },
+  });
+
   console.log(
-    'Phase 3 foundational seeding and Phase 6 leave sample fixtures completed successfully!',
+    'Phase 3 foundational seeding, Phase 6 leave sample fixtures, and Phase 9 performance fixtures completed successfully!',
   );
 }
 
