@@ -9,6 +9,7 @@ import { ExecutiveDashboardSummaryDto } from '@hrms/types';
 import { WorkforceAnalyticsTab } from './components/WorkforceAnalyticsTab';
 import { AttendanceAnalyticsTab } from './components/AttendanceAnalyticsTab';
 import { RequestAnalyticsTab } from './components/RequestAnalyticsTab';
+import { PerformanceAnalyticsTab } from './components/PerformanceAnalyticsTab';
 import {
   Users,
   UserCheck,
@@ -16,6 +17,7 @@ import {
   Calendar,
   Clock,
   TrendingUp,
+  Award,
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
@@ -46,9 +48,9 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
-  const [mainTab, setMainTab] = useState<'EXECUTIVE' | 'WORKFORCE' | 'ATTENDANCE' | 'REQUESTS'>(
-    'EXECUTIVE',
-  );
+  const [mainTab, setMainTab] = useState<
+    'EXECUTIVE' | 'WORKFORCE' | 'ATTENDANCE' | 'REQUESTS' | 'PERFORMANCE'
+  >('EXECUTIVE');
 
   // Filter States
   const [datePreset, setDatePreset] = useState<'7D' | '30D' | 'MTD' | 'CUSTOM'>('30D');
@@ -266,6 +268,17 @@ export default function ReportsPage() {
             <Calendar className="h-4 w-4 text-amber-600" />
             Leave, WFH & Requests
           </button>
+          <button
+            onClick={() => setMainTab('PERFORMANCE')}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-all ${
+              mainTab === 'PERFORMANCE'
+                ? 'border-amber-600 text-amber-900 bg-amber-50/40'
+                : 'border-transparent text-stone-600 hover:text-stone-900 hover:border-stone-300'
+            }`}
+          >
+            <Award className="h-4 w-4 text-amber-600" />
+            Performance & Goals
+          </button>
         </div>
 
         {mainTab === 'WORKFORCE' ? (
@@ -274,6 +287,8 @@ export default function ReportsPage() {
           <AttendanceAnalyticsTab />
         ) : mainTab === 'REQUESTS' ? (
           <RequestAnalyticsTab />
+        ) : mainTab === 'PERFORMANCE' ? (
+          <PerformanceAnalyticsTab />
         ) : (
           <>
             {/* Filter Bar */}

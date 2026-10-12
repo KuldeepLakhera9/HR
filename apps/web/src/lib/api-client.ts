@@ -59,6 +59,9 @@ import {
   TriggerPerformanceRemindersDto,
   TriggerRemindersResultDto,
   ExecutiveDashboardSummaryDto,
+  PerformanceAnalyticsOverviewDto,
+  GoalProgressAnalyticsDto,
+  DevelopmentPlanAnalyticsDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2185,6 +2188,60 @@ export const reportsApi = {
       params.append('employeeId', query.employeeId);
     const qs = params.toString() ? `?${params.toString()}` : '';
     const res = await fetchWithAuth<any>(`/reports/requests/turnaround${qs}`);
+    return res.data;
+  },
+
+  async getPerformanceOverview(query?: {
+    cycleId?: string;
+    departmentId?: string;
+    branchId?: string;
+    employeeId?: string;
+  }): Promise<PerformanceAnalyticsOverviewDto> {
+    const params = new URLSearchParams();
+    if (query?.cycleId && query.cycleId !== 'ALL') params.append('cycleId', query.cycleId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/performance/overview${qs}`);
+    return res.data;
+  },
+
+  async getPerformanceGoals(query?: {
+    cycleId?: string;
+    departmentId?: string;
+    branchId?: string;
+    employeeId?: string;
+  }): Promise<GoalProgressAnalyticsDto> {
+    const params = new URLSearchParams();
+    if (query?.cycleId && query.cycleId !== 'ALL') params.append('cycleId', query.cycleId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/performance/goals${qs}`);
+    return res.data;
+  },
+
+  async getPerformanceDevelopmentPlans(query?: {
+    cycleId?: string;
+    departmentId?: string;
+    branchId?: string;
+    employeeId?: string;
+  }): Promise<DevelopmentPlanAnalyticsDto> {
+    const params = new URLSearchParams();
+    if (query?.cycleId && query.cycleId !== 'ALL') params.append('cycleId', query.cycleId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/performance/development-plans${qs}`);
     return res.data;
   },
 };

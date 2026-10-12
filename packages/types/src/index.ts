@@ -3006,3 +3006,135 @@ export interface WorkflowTurnaroundAnalyticsDto {
     over72HoursSlaBreached: number;
   };
 }
+
+// -----------------------------------------------------------------------------
+// 30. Phase 10: Performance Management Analytics DTOs
+// -----------------------------------------------------------------------------
+
+export interface PerformanceAnalyticsOverviewDto {
+  cycle: {
+    id: string;
+    name: string;
+    status: string;
+    startDate: string;
+    endDate: string;
+    selfAssessmentDeadline: string | null;
+    managerReviewDeadline: string | null;
+    ratingScaleMax: number;
+    isNumericalApproved: boolean;
+  } | null;
+  participation: {
+    totalEnrolled: number;
+    eligibleCount: number;
+    exemptedCount: number;
+    withdrawnCount: number;
+    finalizedCount: number;
+    completionRate: number;
+  };
+  assessments: {
+    selfAssessmentNotStarted: number;
+    selfAssessmentDraft: number;
+    selfAssessmentSubmitted: number;
+    selfAssessmentRate: number;
+    managerReviewDraft: number;
+    managerReviewSubmitted: number;
+    managerReviewRate: number;
+    reopenedCount: number;
+  };
+  deadlines: {
+    overdueSelfAssessments: number;
+    overdueManagerReviews: number;
+    totalOverdueReviews: number;
+  };
+  departmentBreakdown: Array<{
+    departmentId: string;
+    departmentName: string;
+    totalParticipants: number;
+    completedCount: number;
+    completionRate: number;
+    isSuppressed: boolean;
+  }>;
+  branchBreakdown: Array<{
+    branchId: string;
+    branchName: string;
+    totalParticipants: number;
+    completedCount: number;
+    completionRate: number;
+    isSuppressed: boolean;
+  }>;
+  ratingDistribution: {
+    isNumericalApproved: boolean;
+    isSuppressed: boolean;
+    suppressionReason?: string;
+    averageScore: number | null;
+    totalFinalizedScored: number;
+    missingOrExcludedCount: number;
+    buckets: Array<{
+      label: string;
+      min: number;
+      max: number;
+      count: number;
+    }>;
+  };
+  cycleExceptions: {
+    exemptedCount: number;
+    managerReassignedCount: number;
+    reopenedCount: number;
+  };
+  metadata: {
+    scopeType: 'ORGANIZATION' | 'TEAM';
+    filterDepartmentId: string | null;
+    filterBranchId: string | null;
+  };
+}
+
+export interface GoalProgressAnalyticsDto {
+  overview: {
+    totalGoals: number;
+    completedGoals: number;
+    inProgressGoals: number;
+    pendingApprovalGoals: number;
+    draftGoals: number;
+    cancelledGoals: number;
+    averageProgressPercentage: number;
+    overdueGoalsCount: number;
+  };
+  byCategory: Array<{
+    category: string;
+    total: number;
+    completed: number;
+    averageProgress: number;
+  }>;
+  laggingGoals: Array<{
+    id: string;
+    title: string;
+    employeeName: string;
+    employeeCode: string;
+    category: string;
+    progressPercentage: number;
+    dueDate: string | null;
+    isOverdue: boolean;
+  }>;
+}
+
+export interface DevelopmentPlanAnalyticsDto {
+  overview: {
+    totalPlans: number;
+    plannedCount: number;
+    inProgressCount: number;
+    completedCount: number;
+    onHoldCount: number;
+    cancelledCount: number;
+    completionRate: number;
+    overduePlansCount: number;
+  };
+  activePlans: Array<{
+    id: string;
+    objective: string;
+    employeeName: string;
+    employeeCode: string;
+    status: string;
+    targetDate: string | null;
+    isOverdue: boolean;
+  }>;
+}

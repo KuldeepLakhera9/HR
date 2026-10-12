@@ -27,6 +27,8 @@ import {
 import { AttendanceAnalyticsService } from './services/attendance-analytics.service';
 import { RequestAnalyticsQueryDto } from './dto/request-analytics-query.dto';
 import { RequestAnalyticsService } from './services/request-analytics.service';
+import { PerformanceAnalyticsQueryDto } from './dto/performance-analytics-query.dto';
+import { PerformanceAnalyticsService } from './services/performance-analytics.service';
 
 @Injectable()
 export class ReportsService {
@@ -52,6 +54,7 @@ export class ReportsController {
     private readonly workforceAnalyticsService: WorkforceAnalyticsService,
     private readonly attendanceAnalyticsService: AttendanceAnalyticsService,
     private readonly requestAnalyticsService: RequestAnalyticsService,
+    private readonly performanceAnalyticsService: PerformanceAnalyticsService,
   ) {}
 
   @Get('executive/dashboard')
@@ -225,6 +228,56 @@ export class ReportsController {
       data,
     };
   }
+
+  @Get('performance/overview')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary:
+      'Get performance review cycle participation, completion, assessment stages and rating distributions',
+  })
+  async getPerformanceOverview(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PerformanceAnalyticsQueryDto,
+  ) {
+    const data = await this.performanceAnalyticsService.getPerformanceOverviewReport(user, query);
+    return {
+      message: 'Performance review analytics overview retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('performance/goals')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Get goal progress, completion rates, category rollups, and lagging goals',
+  })
+  async getGoalProgressReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PerformanceAnalyticsQueryDto,
+  ) {
+    const data = await this.performanceAnalyticsService.getGoalProgressReport(user, query);
+    return {
+      message: 'Goal progress analytics retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('performance/development-plans')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary:
+      'Get employee development plan execution progress, completion rate, and overdue actions',
+  })
+  async getDevelopmentPlanReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PerformanceAnalyticsQueryDto,
+  ) {
+    const data = await this.performanceAnalyticsService.getDevelopmentPlanReport(user, query);
+    return {
+      message: 'Development plan analytics retrieved successfully',
+      data,
+    };
+  }
 }
 
 @Module({
@@ -236,6 +289,7 @@ export class ReportsController {
     WorkforceAnalyticsService,
     AttendanceAnalyticsService,
     RequestAnalyticsService,
+    PerformanceAnalyticsService,
   ],
   exports: [
     ReportsService,
@@ -243,6 +297,7 @@ export class ReportsController {
     WorkforceAnalyticsService,
     AttendanceAnalyticsService,
     RequestAnalyticsService,
+    PerformanceAnalyticsService,
   ],
 })
 export class ReportsModule {}
