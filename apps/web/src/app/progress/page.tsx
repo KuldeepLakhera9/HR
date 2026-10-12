@@ -27,10 +27,12 @@ import {
 import { ReviewCyclesView } from '../../components/performance/ReviewCyclesView';
 import { SelfAssessmentView } from '../../components/performance/SelfAssessmentView';
 import { ManagerReviewsView } from '../../components/performance/ManagerReviewsView';
+import { DevelopmentPlansView } from '../../components/performance/DevelopmentPlansView';
 import {
   TrendingUp,
   Target,
   Award,
+  Compass,
   CheckCircle2,
   Clock,
   AlertCircle,
@@ -62,12 +64,12 @@ export default function ProgressGoalsPage() {
   const isHrOrAdmin = role === 'ADMIN' || role === 'HR';
   const isManagerOrAdmin = role === 'MANAGER' || role === 'ADMIN' || role === 'HR';
 
-  // Section Switcher: Goals, Review Cycles, Employee Self-Assessment, or Team Reviews
+  // Section Switcher: Goals, Review Cycles, Employee Self-Assessment, Team Reviews, or Development Plans
   const [activeSection, setActiveSection] = useState<
-    'GOALS' | 'CYCLES' | 'SELF_ASSESSMENT' | 'MANAGER_REVIEWS'
+    'GOALS' | 'CYCLES' | 'SELF_ASSESSMENT' | 'MANAGER_REVIEWS' | 'DEVELOPMENT_PLANS'
   >('GOALS');
 
-  // URL query param support for deep linking to self-assessment or manager-reviews
+  // URL query param support for deep linking to self-assessment, manager-reviews, or development
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
@@ -82,6 +84,13 @@ export default function ProgressGoalsPage() {
         tabParam === 'MANAGER_REVIEWS'
       ) {
         if (isManagerOrAdmin) setActiveSection('MANAGER_REVIEWS');
+      } else if (
+        tabParam === 'development' ||
+        tabParam === 'development-plans' ||
+        tabParam === 'feedback' ||
+        tabParam === 'DEVELOPMENT_PLANS'
+      ) {
+        setActiveSection('DEVELOPMENT_PLANS');
       }
     }
   }, [isHrOrAdmin, isManagerOrAdmin]);
@@ -490,6 +499,18 @@ export default function ProgressGoalsPage() {
             My Self-Assessment
           </button>
 
+          <button
+            onClick={() => setActiveSection('DEVELOPMENT_PLANS')}
+            className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
+              activeSection === 'DEVELOPMENT_PLANS'
+                ? 'border-amber-600 text-amber-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <Compass className="h-4 w-4" />
+            Development & Feedback
+          </button>
+
           {isManagerOrAdmin && (
             <button
               onClick={() => setActiveSection('MANAGER_REVIEWS')}
@@ -529,6 +550,12 @@ export default function ProgressGoalsPage() {
           <SelfAssessmentView onRefreshParent={fetchGoalsData} />
         ) : activeSection === 'MANAGER_REVIEWS' && isManagerOrAdmin ? (
           <ManagerReviewsView
+            onNotify={(msg, type) =>
+              type === 'success' ? setFeedbackSuccess(msg) : setFeedbackError(msg)
+            }
+          />
+        ) : activeSection === 'DEVELOPMENT_PLANS' ? (
+          <DevelopmentPlansView
             onNotify={(msg, type) =>
               type === 'success' ? setFeedbackSuccess(msg) : setFeedbackError(msg)
             }

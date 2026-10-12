@@ -1936,13 +1936,15 @@ model DevelopmentPlan {
   employeeId String
   employee   Employee          @relation("EmployeeDevelopmentPlans", fields: [employeeId], references: [id], onDelete: Cascade)
 
-  objective         String
-  actionSteps       String
-  targetDate        DateTime?
-  status            DevelopmentPlanStatus @default(PLANNED)
-  responsiblePerson String?
-  trainingNeeds     String?
-  followUpNotes     String?
+  objective          String
+  actionSteps        String
+  successCriteria    String?
+  targetDate         DateTime?
+  status             DevelopmentPlanStatus @default(PLANNED)
+  responsiblePerson  String?
+  trainingNeeds      String?
+  followUpNotes      String?
+  completionEvidence String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

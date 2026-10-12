@@ -12,6 +12,8 @@ import { SelfAssessmentService } from './self-assessment.service';
 import { SelfAssessmentController } from './self-assessment.controller';
 import { ManagerReviewsService } from './manager-reviews.service';
 import { ManagerReviewsController } from './manager-reviews.controller';
+import { DevelopmentPlansService } from './development-plans.service';
+import { DevelopmentPlansController } from './development-plans.controller';
 
 @Module({
   imports: [PrismaModule, AuthorizationModule, AuditModule, NotificationsModule, EmployeesModule],
@@ -20,8 +22,21 @@ import { ManagerReviewsController } from './manager-reviews.controller';
     ReviewCyclesController,
     SelfAssessmentController,
     ManagerReviewsController,
+    DevelopmentPlansController,
   ],
-  providers: [GoalsService, ReviewCyclesService, SelfAssessmentService, ManagerReviewsService],
-  exports: [GoalsService, ReviewCyclesService, SelfAssessmentService, ManagerReviewsService],
+  providers: [
+    GoalsService,
+    ReviewCyclesService,
+    SelfAssessmentService,
+    ManagerReviewsService,
+    DevelopmentPlansService,
+  ],
+  exports: [
+    GoalsService,
+    ReviewCyclesService,
+    SelfAssessmentService,
+    ManagerReviewsService,
+    DevelopmentPlansService,
+  ],
 })
 export class PerformanceModule {}

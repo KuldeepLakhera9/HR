@@ -43,6 +43,12 @@ import {
   SubmitManagerReviewDto,
   ReturnReviewForCorrectionDto,
   FinalizeReviewDto,
+  DevelopmentPlanDto,
+  CreateDevelopmentPlanDto,
+  UpdateDevelopmentPlanDto,
+  PerformanceFeedbackDto,
+  CreatePerformanceFeedbackDto,
+  DevelopmentPlansOverviewDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2599,6 +2605,65 @@ export const performanceApi = {
     const res = await fetchWithAuth<any>(`/performance/manager-reviews/${id}/finalize`, {
       method: 'POST',
       body: JSON.stringify({ finalComments }),
+    });
+    return res.data;
+  },
+
+  // -----------------------------------------------------------------------------
+  // Development Plans & Feedback
+  // -----------------------------------------------------------------------------
+  async getDevelopmentOverview(employeeId?: string): Promise<DevelopmentPlansOverviewDto> {
+    const q = employeeId ? `?employeeId=${encodeURIComponent(employeeId)}` : '';
+    const res = await fetchWithAuth<any>(`/performance/development-plans/overview${q}`);
+    return res.data;
+  },
+
+  async createDevelopmentPlan(data: CreateDevelopmentPlanDto): Promise<DevelopmentPlanDto> {
+    const res = await fetchWithAuth<any>('/performance/development-plans', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateDevelopmentPlan(
+    id: string,
+    data: UpdateDevelopmentPlanDto,
+  ): Promise<DevelopmentPlanDto> {
+    const res = await fetchWithAuth<any>(`/performance/development-plans/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deleteDevelopmentPlan(id: string): Promise<{ success: boolean }> {
+    const res = await fetchWithAuth<any>(`/performance/development-plans/${id}`, {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+
+  async addPerformanceFeedback(
+    data: CreatePerformanceFeedbackDto,
+  ): Promise<PerformanceFeedbackDto> {
+    const res = await fetchWithAuth<any>('/performance/development-plans/feedback', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deletePerformanceFeedback(id: string): Promise<{ success: boolean }> {
+    const res = await fetchWithAuth<any>(`/performance/development-plans/feedback/${id}`, {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+
+  async sendDevelopmentReminder(id: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetchWithAuth<any>(`/performance/development-plans/${id}/remind`, {
+      method: 'POST',
     });
     return res.data;
   },

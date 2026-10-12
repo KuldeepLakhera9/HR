@@ -2422,13 +2422,21 @@ export interface DevelopmentPlanDto {
   id: string;
   reviewId: string;
   employeeId: string;
+  employee?: {
+    id: string;
+    displayName: string;
+    employeeCode: string;
+  };
   objective: string;
   actionSteps: string;
+  successCriteria?: string | null;
   targetDate?: string | null;
   status: DevelopmentPlanStatus;
   responsiblePerson?: string | null;
   trainingNeeds?: string | null;
   followUpNotes?: string | null;
+  completionEvidence?: string | null;
+  cycleName?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -2448,6 +2456,52 @@ export interface PerformanceFeedbackDto {
   createdAt: string;
 }
 
+export interface CreateDevelopmentPlanDto {
+  reviewId: string;
+  employeeId?: string;
+  objective: string;
+  actionSteps: string;
+  successCriteria?: string;
+  targetDate?: string;
+  responsiblePerson?: string;
+  trainingNeeds?: string;
+  status?: DevelopmentPlanStatus;
+}
+
+export interface UpdateDevelopmentPlanDto {
+  objective?: string;
+  actionSteps?: string;
+  successCriteria?: string;
+  targetDate?: string;
+  responsiblePerson?: string;
+  trainingNeeds?: string;
+  status?: DevelopmentPlanStatus;
+  followUpNotes?: string;
+  completionEvidence?: string;
+}
+
+export interface CreatePerformanceFeedbackDto {
+  reviewId: string;
+  title: string;
+  content: string;
+  visibility?: FeedbackVisibility;
+}
+
+export interface UpdatePerformanceFeedbackDto {
+  title?: string;
+  content?: string;
+  visibility?: FeedbackVisibility;
+}
+
+export interface DevelopmentPlansOverviewDto {
+  activePlans: DevelopmentPlanDto[];
+  completedPlans: DevelopmentPlanDto[];
+  feedbacks: PerformanceFeedbackDto[];
+  strengthsSummary?: string | null;
+  improvementsSummary?: string | null;
+  canManage: boolean;
+}
+
 export interface ManagerReviewItemInput {
   goalId?: string;
   competencyId?: string;
@@ -2459,9 +2513,13 @@ export interface ManagerReviewItemInput {
 export interface DevelopmentPlanInput {
   objective: string;
   actionSteps: string;
+  successCriteria?: string;
   targetDate?: string;
   trainingNeeds?: string;
   responsiblePerson?: string;
+  status?: DevelopmentPlanStatus;
+  followUpNotes?: string;
+  completionEvidence?: string;
 }
 
 export interface PerformanceFeedbackInput {
