@@ -10,6 +10,7 @@ import { WorkforceAnalyticsTab } from './components/WorkforceAnalyticsTab';
 import { AttendanceAnalyticsTab } from './components/AttendanceAnalyticsTab';
 import { RequestAnalyticsTab } from './components/RequestAnalyticsTab';
 import { PerformanceAnalyticsTab } from './components/PerformanceAnalyticsTab';
+import { MisReportLibraryTab } from './components/MisReportLibraryTab';
 import {
   Users,
   UserCheck,
@@ -18,6 +19,7 @@ import {
   Clock,
   TrendingUp,
   Award,
+  Library,
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
@@ -49,7 +51,7 @@ export default function ReportsPage() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [mainTab, setMainTab] = useState<
-    'EXECUTIVE' | 'WORKFORCE' | 'ATTENDANCE' | 'REQUESTS' | 'PERFORMANCE'
+    'EXECUTIVE' | 'WORKFORCE' | 'ATTENDANCE' | 'REQUESTS' | 'PERFORMANCE' | 'LIBRARY'
   >('EXECUTIVE');
 
   // Filter States
@@ -279,6 +281,17 @@ export default function ReportsPage() {
             <Award className="h-4 w-4 text-amber-600" />
             Performance & Goals
           </button>
+          <button
+            onClick={() => setMainTab('LIBRARY')}
+            className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-all ${
+              mainTab === 'LIBRARY'
+                ? 'border-amber-600 text-amber-900 bg-amber-50/40'
+                : 'border-transparent text-stone-600 hover:text-stone-900 hover:border-stone-300'
+            }`}
+          >
+            <Library className="h-4 w-4 text-amber-600" />
+            MIS Report Library
+          </button>
         </div>
 
         {mainTab === 'WORKFORCE' ? (
@@ -289,6 +302,8 @@ export default function ReportsPage() {
           <RequestAnalyticsTab />
         ) : mainTab === 'PERFORMANCE' ? (
           <PerformanceAnalyticsTab />
+        ) : mainTab === 'LIBRARY' ? (
+          <MisReportLibraryTab />
         ) : (
           <>
             {/* Filter Bar */}

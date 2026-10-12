@@ -1,4 +1,15 @@
-import { Controller, Get, Injectable, Module, Query, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  Body,
+  Param,
+  Injectable,
+  Module,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -29,6 +40,12 @@ import { RequestAnalyticsQueryDto } from './dto/request-analytics-query.dto';
 import { RequestAnalyticsService } from './services/request-analytics.service';
 import { PerformanceAnalyticsQueryDto } from './dto/performance-analytics-query.dto';
 import { PerformanceAnalyticsService } from './services/performance-analytics.service';
+import {
+  CreateSavedReportDefinitionDto,
+  QuerySavedReportsDto,
+  QueryReportCatalogDto,
+} from './dto/mis-library.dto';
+import { MisReportLibraryService } from './services/mis-report-library.service';
 
 @Injectable()
 export class ReportsService {
@@ -55,6 +72,7 @@ export class ReportsController {
     private readonly attendanceAnalyticsService: AttendanceAnalyticsService,
     private readonly requestAnalyticsService: RequestAnalyticsService,
     private readonly performanceAnalyticsService: PerformanceAnalyticsService,
+    private readonly misReportLibraryService: MisReportLibraryService,
   ) {}
 
   @Get('executive/dashboard')
@@ -278,6 +296,79 @@ export class ReportsController {
       data,
     };
   }
+
+  // ---------------------------------------------------------------------------
+  // Centralized MIS Report Library Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Get('library/catalog')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary:
+      'Discover authorized report catalog across Workforce, Attendance, Requests, and Performance',
+  })
+  async getReportCatalog(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryReportCatalogDto,
+  ) {
+    const data = await this.misReportLibraryService.getCatalog(user, query);
+    return {
+      message: 'Report catalog retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('library/saved')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'List user saved report definitions for current organization' })
+  async getSavedReports(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QuerySavedReportsDto,
+  ) {
+    const data = await this.misReportLibraryService.getSavedReports(user, query);
+    return {
+      message: 'Saved report definitions retrieved successfully',
+      data,
+    };
+  }
+
+  @Post('library/saved')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Save a customized safe parameterized report definition' })
+  async createSavedReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateSavedReportDefinitionDto,
+  ) {
+    const data = await this.misReportLibraryService.createSavedReport(user, dto);
+    return {
+      message: 'Report definition saved successfully',
+      data,
+    };
+  }
+
+  @Delete('library/saved/:id')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Delete a saved report definition' })
+  async deleteSavedReport(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const data = await this.misReportLibraryService.deleteSavedReport(user, id);
+    return {
+      message: 'Saved report definition deleted successfully',
+      data,
+    };
+  }
+
+  @Post('library/saved/:id/execute')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Execute a saved report definition with real-time permission and scope re-evaluation',
+  })
+  async executeSavedReport(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const data = await this.misReportLibraryService.executeSavedReport(user, id);
+    return {
+      message: 'Saved report executed successfully',
+      data,
+    };
+  }
 }
 
 @Module({
@@ -290,6 +381,7 @@ export class ReportsController {
     AttendanceAnalyticsService,
     RequestAnalyticsService,
     PerformanceAnalyticsService,
+    MisReportLibraryService,
   ],
   exports: [
     ReportsService,
@@ -298,6 +390,7 @@ export class ReportsController {
     AttendanceAnalyticsService,
     RequestAnalyticsService,
     PerformanceAnalyticsService,
+    MisReportLibraryService,
   ],
 })
 export class ReportsModule {}

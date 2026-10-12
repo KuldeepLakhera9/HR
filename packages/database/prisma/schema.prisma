@@ -68,6 +68,7 @@ model Organization {
   reviewCycles                   ReviewCycle[]
   performanceGoals               PerformanceGoal[]
   performanceReviews             PerformanceReview[]
+  savedReports                   SavedReportDefinition[]
 
   @@index([code])
   @@index([isActive])
@@ -237,6 +238,7 @@ model User {
   cancelledLeaves              LeaveRequest[]                 @relation("LeaveCanceller")
   performedLeaveTransactions   LeaveBalanceTransaction[]      @relation("LeaveTransactionActor")
   reviewedProfileChanges       ProfileChangeRequest[]         @relation("ProfileChangeReviewer")
+  savedReports                 SavedReportDefinition[]
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -2024,4 +2026,29 @@ model PerformanceReviewHistory {
   @@index([createdAt])
   @@map("performance_review_histories")
 }
+
+// -----------------------------------------------------------------------------
+// 16. Phase 10: MIS Report Library & Saved Report Definitions
+// -----------------------------------------------------------------------------
+
+model SavedReportDefinition {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  reportKey      String
+  name           String
+  description    String?
+  filterConfig   Json
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@index([organizationId, userId])
+  @@index([reportKey])
+  @@map("saved_report_definitions")
+}
+
 

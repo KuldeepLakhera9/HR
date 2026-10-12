@@ -3138,3 +3138,55 @@ export interface DevelopmentPlanAnalyticsDto {
     isOverdue: boolean;
   }>;
 }
+
+// -----------------------------------------------------------------------------
+// 31. Phase 10: MIS Report Library & Saved Report Definitions
+// -----------------------------------------------------------------------------
+
+export type ReportCategory = 'WORKFORCE' | 'ATTENDANCE' | 'LEAVE_REQUESTS' | 'PERFORMANCE';
+
+export interface MisReportCatalogItemDto {
+  key: string;
+  title: string;
+  category: ReportCategory;
+  description: string;
+  endpoint: string;
+  supportedFilters: string[];
+  supportedDatePresets: string[];
+  metricDefinitions: Array<{
+    code: string;
+    name: string;
+    formula: string;
+    denominator?: string;
+  }>;
+  dataFreshness: string;
+  allowedRoles: string[];
+  supportedViews: Array<'CHART' | 'TABLE'>;
+}
+
+export interface SavedReportDefinitionDto {
+  id: string;
+  organizationId: string;
+  userId: string;
+  reportKey: string;
+  name: string;
+  description: string | null;
+  filterConfig: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSavedReportDto {
+  reportKey: string;
+  name: string;
+  description?: string;
+  filterConfig: Record<string, any>;
+}
+
+export interface ExecuteSavedReportResultDto {
+  savedReport: SavedReportDefinitionDto;
+  catalogItem: MisReportCatalogItemDto;
+  executedAt: string;
+  scopeType: 'ORGANIZATION' | 'TEAM';
+  data: any;
+}

@@ -62,6 +62,10 @@ import {
   PerformanceAnalyticsOverviewDto,
   GoalProgressAnalyticsDto,
   DevelopmentPlanAnalyticsDto,
+  MisReportCatalogItemDto,
+  SavedReportDefinitionDto,
+  CreateSavedReportDto,
+  ExecuteSavedReportResultDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2242,6 +2246,59 @@ export const reportsApi = {
       params.append('employeeId', query.employeeId);
     const qs = params.toString() ? `?${params.toString()}` : '';
     const res = await fetchWithAuth<any>(`/reports/performance/development-plans${qs}`);
+    return res.data;
+  },
+
+  // ---------------------------------------------------------------------------
+  // MIS Report Library API
+  // ---------------------------------------------------------------------------
+  async getReportCatalog(query?: {
+    category?: string;
+    search?: string;
+  }): Promise<MisReportCatalogItemDto[]> {
+    const params = new URLSearchParams();
+    if (query?.category && query.category !== 'ALL') params.append('category', query.category);
+    if (query?.search) params.append('search', query.search);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/library/catalog${qs}`);
+    return res.data;
+  },
+
+  async getSavedReports(query?: {
+    reportKey?: string;
+    search?: string;
+    page?: number;
+    limit?: number;
+  }): Promise<{ items: SavedReportDefinitionDto[]; total: number }> {
+    const params = new URLSearchParams();
+    if (query?.reportKey) params.append('reportKey', query.reportKey);
+    if (query?.search) params.append('search', query.search);
+    if (query?.page) params.append('page', String(query.page));
+    if (query?.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/library/saved${qs}`);
+    return res.data;
+  },
+
+  async createSavedReport(data: CreateSavedReportDto): Promise<SavedReportDefinitionDto> {
+    const res = await fetchWithAuth<any>('/reports/library/saved', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async deleteSavedReport(id: string): Promise<{ success: boolean }> {
+    const res = await fetchWithAuth<any>(`/reports/library/saved/${id}`, {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+
+  async executeSavedReport(id: string): Promise<ExecuteSavedReportResultDto> {
+    const res = await fetchWithAuth<any>(`/reports/library/saved/${id}/execute`, {
+      method: 'POST',
+    });
     return res.data;
   },
 };
