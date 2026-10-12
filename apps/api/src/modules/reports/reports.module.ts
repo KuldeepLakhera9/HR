@@ -25,6 +25,8 @@ import {
   AttendanceExceptionsReportQueryDto,
 } from './dto/attendance-analytics-query.dto';
 import { AttendanceAnalyticsService } from './services/attendance-analytics.service';
+import { RequestAnalyticsQueryDto } from './dto/request-analytics-query.dto';
+import { RequestAnalyticsService } from './services/request-analytics.service';
 
 @Injectable()
 export class ReportsService {
@@ -49,6 +51,7 @@ export class ReportsController {
     private readonly executiveDashboardService: ExecutiveDashboardService,
     private readonly workforceAnalyticsService: WorkforceAnalyticsService,
     private readonly attendanceAnalyticsService: AttendanceAnalyticsService,
+    private readonly requestAnalyticsService: RequestAnalyticsService,
   ) {}
 
   @Get('executive/dashboard')
@@ -174,6 +177,54 @@ export class ReportsController {
       data,
     };
   }
+
+  @Get('requests/utilization')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Get leave utilization by type, chargeable vs calendar days, and balance summaries',
+  })
+  async getLeaveUtilizationReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RequestAnalyticsQueryDto,
+  ) {
+    const data = await this.requestAnalyticsService.getLeaveUtilizationReport(user, query);
+    return {
+      message: 'Leave utilization report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('requests/volumes')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Get unified request volumes, outcomes, WFH, and official-visit metrics',
+  })
+  async getRequestVolumesReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RequestAnalyticsQueryDto,
+  ) {
+    const data = await this.requestAnalyticsService.getRequestVolumesReport(user, query);
+    return {
+      message: 'Request volumes and outcomes report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('requests/turnaround')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Get pending request aging and approval turnaround time performance metrics',
+  })
+  async getApprovalTurnaroundReport(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: RequestAnalyticsQueryDto,
+  ) {
+    const data = await this.requestAnalyticsService.getApprovalTurnaroundReport(user, query);
+    return {
+      message: 'Approval turnaround report retrieved successfully',
+      data,
+    };
+  }
 }
 
 @Module({
@@ -184,12 +235,14 @@ export class ReportsController {
     ExecutiveDashboardService,
     WorkforceAnalyticsService,
     AttendanceAnalyticsService,
+    RequestAnalyticsService,
   ],
   exports: [
     ReportsService,
     ExecutiveDashboardService,
     WorkforceAnalyticsService,
     AttendanceAnalyticsService,
+    RequestAnalyticsService,
   ],
 })
 export class ReportsModule {}

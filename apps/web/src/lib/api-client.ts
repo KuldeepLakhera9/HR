@@ -2116,6 +2116,77 @@ export const reportsApi = {
     const res = await fetchWithAuth<any>(`/reports/workforce/trends${qs}`);
     return res.data;
   },
+
+  async getLeaveUtilization(query?: {
+    startDate?: string;
+    endDate?: string;
+    leaveTypeId?: string;
+    departmentId?: string;
+    branchId?: string;
+    employeeId?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.leaveTypeId && query.leaveTypeId !== 'ALL')
+      params.append('leaveTypeId', query.leaveTypeId);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/requests/utilization${qs}`);
+    return res.data;
+  },
+
+  async getRequestVolumes(query?: {
+    startDate?: string;
+    endDate?: string;
+    requestType?: string;
+    status?: string;
+    departmentId?: string;
+    branchId?: string;
+    employeeId?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.requestType && query.requestType !== 'ALL')
+      params.append('requestType', query.requestType);
+    if (query?.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/requests/volumes${qs}`);
+    return res.data;
+  },
+
+  async getApprovalTurnaround(query?: {
+    startDate?: string;
+    endDate?: string;
+    requestType?: string;
+    departmentId?: string;
+    branchId?: string;
+    employeeId?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (query?.startDate) params.append('startDate', query.startDate);
+    if (query?.endDate) params.append('endDate', query.endDate);
+    if (query?.requestType && query.requestType !== 'ALL')
+      params.append('requestType', query.requestType);
+    if (query?.departmentId && query.departmentId !== 'ALL')
+      params.append('departmentId', query.departmentId);
+    if (query?.branchId && query.branchId !== 'ALL') params.append('branchId', query.branchId);
+    if (query?.employeeId && query.employeeId !== 'ALL')
+      params.append('employeeId', query.employeeId);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/requests/turnaround${qs}`);
+    return res.data;
+  },
 };
 
 export const managerApi = {
