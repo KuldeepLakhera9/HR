@@ -28,6 +28,7 @@ import { ReviewCyclesView } from '../../components/performance/ReviewCyclesView'
 import { SelfAssessmentView } from '../../components/performance/SelfAssessmentView';
 import { ManagerReviewsView } from '../../components/performance/ManagerReviewsView';
 import { DevelopmentPlansView } from '../../components/performance/DevelopmentPlansView';
+import { PerformanceDashboardsView } from '../../components/performance/PerformanceDashboardsView';
 import {
   TrendingUp,
   Target,
@@ -56,6 +57,7 @@ import {
   Sparkles,
   Calendar,
   Layers,
+  BarChart2,
 } from 'lucide-react';
 
 export default function ProgressGoalsPage() {
@@ -64,17 +66,21 @@ export default function ProgressGoalsPage() {
   const isHrOrAdmin = role === 'ADMIN' || role === 'HR';
   const isManagerOrAdmin = role === 'MANAGER' || role === 'ADMIN' || role === 'HR';
 
-  // Section Switcher: Goals, Review Cycles, Employee Self-Assessment, Team Reviews, or Development Plans
+  // Section Switcher: Dashboards & Reports, Goals, Review Cycles, Employee Self-Assessment, Team Reviews, or Development Plans
   const [activeSection, setActiveSection] = useState<
-    'GOALS' | 'CYCLES' | 'SELF_ASSESSMENT' | 'MANAGER_REVIEWS' | 'DEVELOPMENT_PLANS'
-  >('GOALS');
+    'DASHBOARDS' | 'GOALS' | 'CYCLES' | 'SELF_ASSESSMENT' | 'MANAGER_REVIEWS' | 'DEVELOPMENT_PLANS'
+  >('DASHBOARDS');
 
   // URL query param support for deep linking to self-assessment, manager-reviews, or development
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const params = new URLSearchParams(window.location.search);
       const tabParam = params.get('tab') || params.get('section');
-      if (tabParam === 'self-assessment' || tabParam === 'SELF_ASSESSMENT') {
+      if (tabParam === 'dashboards' || tabParam === 'reports' || tabParam === 'DASHBOARDS') {
+        setActiveSection('DASHBOARDS');
+      } else if (tabParam === 'goals' || tabParam === 'GOALS') {
+        setActiveSection('GOALS');
+      } else if (tabParam === 'self-assessment' || tabParam === 'SELF_ASSESSMENT') {
         setActiveSection('SELF_ASSESSMENT');
       } else if (tabParam === 'cycles' || tabParam === 'CYCLES') {
         if (isHrOrAdmin) setActiveSection('CYCLES');
@@ -476,6 +482,18 @@ export default function ProgressGoalsPage() {
         {/* Section Navigation Tabs */}
         <div className="flex border-b border-stone-200 gap-6 pt-1">
           <button
+            onClick={() => setActiveSection('DASHBOARDS')}
+            className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
+              activeSection === 'DASHBOARDS'
+                ? 'border-amber-600 text-amber-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <BarChart2 className="h-4 w-4" />
+            Dashboards & Reports
+          </button>
+
+          <button
             onClick={() => setActiveSection('GOALS')}
             className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
               activeSection === 'GOALS'
@@ -540,7 +558,14 @@ export default function ProgressGoalsPage() {
           )}
         </div>
 
-        {activeSection === 'CYCLES' && isHrOrAdmin ? (
+        {activeSection === 'DASHBOARDS' ? (
+          <PerformanceDashboardsView
+            onNotify={(msg, type) =>
+              type === 'success' ? setFeedbackSuccess(msg) : setFeedbackError(msg)
+            }
+            onNavigateToTab={(t) => setActiveSection(t as any)}
+          />
+        ) : activeSection === 'CYCLES' && isHrOrAdmin ? (
           <ReviewCyclesView
             onNotify={(msg, type) =>
               type === 'success' ? setFeedbackSuccess(msg) : setFeedbackError(msg)

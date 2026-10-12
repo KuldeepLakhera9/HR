@@ -52,6 +52,10 @@ import {
   RecalculateReviewScoreDto,
   CalculationBreakdownDto,
   RecalculateReviewResultDto,
+  EmployeePerformanceDashboardDto,
+  ManagerPerformanceDashboardDto,
+  HrAdminPerformanceDashboardDto,
+  HrPerformanceReportQueryDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2699,5 +2703,63 @@ export const performanceApi = {
       body: JSON.stringify({ cycleId, items }),
     });
     return res.data;
+  },
+
+  // -----------------------------------------------------------------------------
+  // Dashboards & Reports
+  // -----------------------------------------------------------------------------
+  async getEmployeePerformanceDashboard(): Promise<EmployeePerformanceDashboardDto> {
+    const res = await fetchWithAuth<any>('/performance/dashboards/employee');
+    return res.data;
+  },
+
+  async getManagerPerformanceDashboard(): Promise<ManagerPerformanceDashboardDto> {
+    const res = await fetchWithAuth<any>('/performance/dashboards/manager');
+    return res.data;
+  },
+
+  async getHrAdminPerformanceDashboard(
+    query?: HrPerformanceReportQueryDto,
+  ): Promise<HrAdminPerformanceDashboardDto> {
+    const params = new URLSearchParams();
+    if (query?.cycleId) params.append('cycleId', query.cycleId);
+    if (query?.departmentId) params.append('departmentId', query.departmentId);
+    if (query?.branchId) params.append('branchId', query.branchId);
+    if (query?.status) params.append('status', query.status);
+    if (query?.search) params.append('search', query.search);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+
+    const res = await fetchWithAuth<any>(`/performance/dashboards/hr-admin${queryString}`);
+    return res.data;
+  },
+
+  async exportPerformanceReport(query?: HrPerformanceReportQueryDto): Promise<void> {
+    const params = new URLSearchParams();
+    if (query?.cycleId) params.append('cycleId', query.cycleId);
+    if (query?.departmentId) params.append('departmentId', query.departmentId);
+    if (query?.branchId) params.append('branchId', query.branchId);
+    if (query?.status) params.append('status', query.status);
+    if (query?.search) params.append('search', query.search);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+
+    const token = getAccessToken();
+    const response = await fetch(`${API_BASE_URL}/performance/dashboards/export${queryString}`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Export download failed');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `performance_reviews_mis_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   },
 };

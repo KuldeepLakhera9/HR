@@ -2649,3 +2649,181 @@ export interface RecalculateReviewResultDto {
   policyVersion: number;
   isFinalized: boolean;
 }
+
+// -----------------------------------------------------------------------------
+// 27. Phase 9: Performance Dashboards & Reports DTOs
+// -----------------------------------------------------------------------------
+
+export interface EmployeePerformanceDashboardDto {
+  goalsSummary: {
+    totalGoals: number;
+    completedGoals: number;
+    inProgressGoals: number;
+    draftGoals: number;
+    pendingApprovalGoals: number;
+    averageProgressPercentage: number;
+    activeGoalsList: Array<{
+      id: string;
+      title: string;
+      category: string;
+      progressPercentage: number;
+      dueDate: string | null;
+      status: string;
+    }>;
+  };
+  upcomingDeadlines: Array<{
+    id: string;
+    type: 'GOAL' | 'SELF_ASSESSMENT';
+    title: string;
+    dueDate: string;
+    daysRemaining: number;
+    isOverdue: boolean;
+  }>;
+  currentCycleReview: {
+    cycleId: string | null;
+    cycleName: string | null;
+    cycleStatus: string | null;
+    selfAssessmentDeadline: string | null;
+    reviewStatus: string | null;
+    selfSubmittedAt: string | null;
+  } | null;
+  recentFinalizedFeedback: Array<{
+    reviewId: string;
+    cycleName: string;
+    finalizedAt: string;
+    overallScore: number | null;
+    ratingScaleMax: number;
+    scoreExplanation: string | null;
+    managerSummary: string | null;
+    managerStrengths: string | null;
+    managerImprovements: string | null;
+    employeeVisibleFeedbacks: Array<{
+      title: string;
+      content: string;
+      createdAt: string;
+    }>;
+  }>;
+  activeDevelopmentPlans: Array<{
+    id: string;
+    objective: string;
+    actionSteps: string;
+    targetDate: string | null;
+    status: string;
+    responsiblePerson: string | null;
+  }>;
+}
+
+export interface ManagerPerformanceDashboardDto {
+  teamGoalsSummary: {
+    totalTeamMembers: number;
+    totalGoals: number;
+    completedGoals: number;
+    inProgressGoals: number;
+    pendingApprovalGoals: number;
+    averageProgressPercentage: number;
+    laggingGoals: Array<{
+      id: string;
+      employeeId: string;
+      employeeName: string;
+      employeeCode: string;
+      title: string;
+      progressPercentage: number;
+      dueDate: string | null;
+    }>;
+  };
+  teamReviewStatus: {
+    totalAssignedReviews: number;
+    notStarted: number;
+    selfAssessmentSubmitted: number;
+    managerReviewInProgress: number;
+    managerReviewSubmitted: number;
+    finalized: number;
+    completionPercentage: number;
+  };
+  pendingActions: {
+    pendingSelfAssessmentsCount: number;
+    pendingManagerReviewsCount: number;
+    overdueReviewsCount: number;
+    urgentReviews: Array<{
+      reviewId: string;
+      employeeId: string;
+      employeeName: string;
+      employeeCode: string;
+      cycleName: string;
+      status: string;
+      deadline: string | null;
+      isOverdue: boolean;
+    }>;
+  };
+}
+
+export interface HrPerformanceReportQueryDto {
+  cycleId?: string;
+  departmentId?: string;
+  branchId?: string;
+  status?: string;
+  search?: string;
+}
+
+export interface HrAdminPerformanceDashboardDto {
+  overview: {
+    totalActiveCycles: number;
+    totalParticipants: number;
+    totalCompletedReviews: number;
+    overallCompletionRate: number;
+    totalPendingSelfAssessments: number;
+    totalPendingManagerReviews: number;
+    totalOverdueReviews: number;
+  };
+  cycleParticipation: Array<{
+    cycleId: string;
+    cycleName: string;
+    cycleStatus: string;
+    startDate: string;
+    endDate: string;
+    totalParticipants: number;
+    completedCount: number;
+    completionRate: number;
+  }>;
+  departmentBreakdown: Array<{
+    departmentId: string;
+    departmentName: string;
+    totalParticipants: number;
+    completedCount: number;
+    completionRate: number;
+  }>;
+  branchBreakdown: Array<{
+    branchId: string;
+    branchName: string;
+    totalParticipants: number;
+    completedCount: number;
+    completionRate: number;
+  }>;
+  ratingDistribution: {
+    cycleId: string | null;
+    cycleName: string | null;
+    isNumericalApproved: boolean;
+    isSuppressed: boolean;
+    suppressionReason?: string;
+    averageScore: number | null;
+    totalEvaluated: number;
+    buckets: Array<{
+      label: string;
+      min: number;
+      max: number;
+      count: number;
+    }>;
+  };
+  cycleExceptions: {
+    exemptedCount: number;
+    managerReassignedCount: number;
+    reopenedCount: number;
+    recentAuditTimeline: Array<{
+      id: string;
+      cycleName: string;
+      action: string;
+      changeReason: string | null;
+      timestamp: string;
+    }>;
+  };
+}
