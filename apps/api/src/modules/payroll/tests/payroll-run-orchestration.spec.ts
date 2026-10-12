@@ -99,12 +99,43 @@ describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () =
       getPayrollAttendanceReconciliation: jest.fn().mockResolvedValue({ items: [] }),
     };
 
+    const mockValidation = {
+      validateRun: jest.fn().mockResolvedValue({
+        total: 0,
+        blockingErrors: 0,
+        warnings: 0,
+        information: 0,
+        open: 0,
+        resolved: 0,
+        overridden: 0,
+        hasBlockingErrors: false,
+        canApprove: true,
+      }),
+      getExceptionsSummary: jest.fn().mockResolvedValue({
+        total: 0,
+        blockingErrors: 0,
+        warnings: 0,
+        information: 0,
+        open: 0,
+        resolved: 0,
+        overridden: 0,
+        hasBlockingErrors: false,
+        canApprove: true,
+        unresolvedWarnings: [],
+      }),
+      getExceptions: jest
+        .fn()
+        .mockResolvedValue({ data: [], meta: { page: 1, limit: 20, total: 0, totalPages: 0 } }),
+      resolveException: jest.fn(),
+    };
+
     periodsService = new PayrollPeriodsService(mockPrisma, mockAudit);
     runsService = new PayrollRunsService(
       mockPrisma,
       mockAudit,
       new PayrollCalculationEngineService(),
       mockInputs as any,
+      mockValidation as any,
     );
   });
 

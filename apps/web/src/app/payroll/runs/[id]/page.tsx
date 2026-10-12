@@ -27,6 +27,7 @@ import {
   Play,
   RefreshCw,
   ShieldCheck,
+  ShieldAlert,
   AlertTriangle,
   Lock,
   Send,
@@ -39,6 +40,8 @@ import {
   Check,
   X,
   Search,
+  Info,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function PayrollRunDetailPage() {
@@ -81,11 +84,25 @@ export default function PayrollRunDetailPage() {
   const [calculationDetail, setCalculationDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // Phase 11.6: Attendance & Leave Reconciliation and Late Change Detection
-  const [activeTab, setActiveTab] = useState<'snapshots' | 'attendance'>('snapshots');
+  // Phase 11.6 & 11.7: Tabs, Attendance & Exceptions Management
+  const [activeTab, setActiveTab] = useState<'snapshots' | 'attendance' | 'exceptions'>(
+    'snapshots',
+  );
   const [reconciliationData, setReconciliationData] = useState<any>(null);
   const [lateReport, setLateReport] = useState<any>(null);
   const [filterLateOnly, setFilterLateOnly] = useState(false);
+
+  // Phase 11.7: Exceptions and Validation
+  const [exceptionsSummary, setExceptionsSummary] = useState<any>(null);
+  const [runExceptions, setRunExceptions] = useState<any[]>([]);
+  const [activeException, setActiveException] = useState<any | null>(null);
+  const [isResolveModalOpen, setIsResolveModalOpen] = useState(false);
+  const [resolveAction, setResolveAction] = useState<
+    'OVERRIDE_APPROVED' | 'SOURCE_FIXED' | 'RECALCULATED' | 'DISMISSED'
+  >('OVERRIDE_APPROVED');
+  const [resolveNotes, setResolveNotes] = useState('');
+  const [resolveSubmitting, setResolveSubmitting] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
 
   const handleOpenSnapshotDetail = async (snapshot: any) => {
     setSelectedSnapshot(snapshot);
@@ -101,10 +118,58 @@ export default function PayrollRunDetailPage() {
     }
   };
 
+  const handleOpenResolveModal = (ex: any) => {
+    setActiveException(ex);
+    setResolveAction(ex.severity === 'BLOCKING_ERROR' ? 'OVERRIDE_APPROVED' : 'SOURCE_FIXED');
+    setResolveNotes('');
+    setResolveError(null);
+    setIsResolveModalOpen(true);
+  };
+
+  const handleResolveExceptionSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!activeException) return;
+
+    if (!resolveNotes || resolveNotes.trim().length < 5) {
+      setResolveError(
+        'Resolution notes must be at least 5 characters for statutory audit compliance.',
+      );
+      return;
+    }
+
+    try {
+      setResolveSubmitting(true);
+      setResolveError(null);
+      await apiClient.resolvePayrollException(activeException.id, {
+        action: resolveAction,
+        resolutionNotes: resolveNotes.trim(),
+      });
+      setIsResolveModalOpen(false);
+      setActiveException(null);
+      await fetchRunData();
+    } catch (err: any) {
+      setResolveError(err.message || 'Failed to resolve exception');
+    } finally {
+      setResolveSubmitting(false);
+    }
+  };
+
+  const handleRevalidate = async () => {
+    try {
+      setActionLoading(true);
+      await apiClient.revalidatePayrollRun(runId);
+      await fetchRunData();
+    } catch (err: any) {
+      alert(err.message || 'Re-validation failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const fetchRunData = useCallback(async () => {
     try {
       setLoading(true);
-      const [runRes, snapsRes, reconRes, lateRes] = await Promise.all([
+      const [runRes, snapsRes, reconRes, lateRes, exSumRes, exListRes] = await Promise.all([
         apiClient.getPayrollRun(runId),
         apiClient.getPayrollRunSnapshots(runId, {
           search: search || undefined,
@@ -114,6 +179,8 @@ export default function PayrollRunDetailPage() {
         }),
         apiClient.getPayrollAttendanceReconciliation(runId).catch(() => null),
         apiClient.getPayrollLateChanges(runId).catch(() => null),
+        apiClient.getRunExceptionsSummary(runId).catch(() => null),
+        apiClient.getRunExceptions(runId, { limit: 50 }).catch(() => null),
       ]);
 
       setRun(runRes?.data || null);
@@ -121,6 +188,8 @@ export default function PayrollRunDetailPage() {
       setSnapshotsMeta(snapsRes?.meta || { total: 0 });
       setReconciliationData(reconRes?.data || null);
       setLateReport(lateRes?.data || null);
+      setExceptionsSummary(exSumRes?.data?.data || null);
+      setRunExceptions(exListRes?.data?.data || []);
     } catch (err) {
       console.error('Failed to load run detail', err);
     } finally {
@@ -177,6 +246,12 @@ export default function PayrollRunDetailPage() {
   };
 
   const handleApprove = async () => {
+    if (exceptionsSummary?.hasBlockingErrors) {
+      alert(
+        `Cannot approve payroll run: ${exceptionsSummary.blockingErrors} unresolved blocking error(s) must be resolved first.`,
+      );
+      return;
+    }
     try {
       setActionLoading(true);
       await apiClient.approvePayrollRun(runId, { comments: approveComments });
@@ -457,18 +532,51 @@ export default function PayrollRunDetailPage() {
                 </Button>
               )}
 
-              {/* REVIEW_PENDING: Approve, Reject, Recalculate */}
+              {/* REVIEW_PENDING: Approve, Reject, Recalculate, Re-validate */}
               {run.status === 'REVIEW_PENDING' && (
                 <>
                   {canApprove && (
                     <Button
                       size="sm"
-                      disabled={actionLoading}
+                      disabled={actionLoading || exceptionsSummary?.hasBlockingErrors}
                       onClick={() => setIsApproveOpen(true)}
-                      className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                      className={
+                        exceptionsSummary?.hasBlockingErrors
+                          ? 'bg-stone-300 text-stone-500 cursor-not-allowed'
+                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                      }
+                      title={
+                        exceptionsSummary?.hasBlockingErrors
+                          ? `Approval blocked by ${exceptionsSummary.blockingErrors} unresolved blocking error(s)`
+                          : undefined
+                      }
                     >
-                      <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
-                      Approve Run
+                      {exceptionsSummary?.hasBlockingErrors ? (
+                        <>
+                          <ShieldAlert className="w-3.5 h-3.5 mr-1.5 text-red-500" />
+                          Approval Blocked ({exceptionsSummary.blockingErrors})
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 mr-1.5" />
+                          Approve Run
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  {canManage && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={actionLoading}
+                      onClick={handleRevalidate}
+                      className="border-emerald-300 text-emerald-800 hover:bg-emerald-50"
+                      title="Re-run validation rules on this payroll run"
+                    >
+                      <RefreshCw
+                        className={`w-3.5 h-3.5 mr-1.5 ${actionLoading ? 'animate-spin' : ''}`}
+                      />
+                      Re-validate
                     </Button>
                   )}
                   {canApprove && (
@@ -596,33 +704,78 @@ export default function PayrollRunDetailPage() {
               <div className="text-[10px] text-stone-400">Total net payable</div>
             </Card>
 
-            <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-1">
-              <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
-                Exceptions
-              </span>
+            <Card
+              onClick={() => setActiveTab('exceptions')}
+              className={`border border-stone-200/80 shadow-xs p-4 space-y-1 cursor-pointer transition-all hover:border-amber-400 ${
+                exceptionsSummary?.hasBlockingErrors ? 'bg-red-50/40 border-red-300' : 'bg-white'
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
+                  Exceptions
+                </span>
+                {exceptionsSummary?.hasBlockingErrors ? (
+                  <ShieldAlert className="w-4 h-4 text-red-600" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-amber-600" />
+                )}
+              </div>
               <div
                 className={`text-xl font-bold font-mono ${
-                  run.exceptionCount > 0 ? 'text-amber-700' : 'text-stone-400'
+                  exceptionsSummary?.hasBlockingErrors
+                    ? 'text-red-700'
+                    : (exceptionsSummary?.total || run.exceptionCount) > 0
+                      ? 'text-amber-700'
+                      : 'text-stone-400'
                 }`}
               >
-                {run.exceptionCount || 0}
+                {exceptionsSummary?.total ?? (run.exceptionCount || 0)}
               </div>
-              <div className="text-[10px] text-stone-400">Unassigned or missing compensation</div>
+              <div className="text-[10px] text-stone-500">
+                {exceptionsSummary
+                  ? `${exceptionsSummary.blockingErrors} blocking • ${exceptionsSummary.warnings} warnings`
+                  : 'Unassigned or flagged anomalies'}
+              </div>
             </Card>
           </div>
 
-          {/* Exceptions Alert Panel (if any) */}
-          {run.exceptionCount > 0 && (
-            <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs space-y-2">
-              <div className="flex items-center gap-2 font-bold text-amber-900">
-                <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
-                <span>{run.exceptionCount} Employee Calculation Exception(s) Detected</span>
+          {/* Phase 11.7: Blocking Error Alert Banner */}
+          {exceptionsSummary?.hasBlockingErrors && run.status === 'REVIEW_PENDING' && (
+            <div className="p-4 rounded-xl border border-red-300 bg-red-50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-start gap-2.5">
+                <ShieldAlert className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <h4 className="font-bold text-sm text-red-950">
+                    Approval Gated: {exceptionsSummary.blockingErrors} Unresolved Blocking Error(s)
+                  </h4>
+                  <p className="text-red-800 leading-relaxed text-[11px]">
+                    Organizational policy prevents approving this payroll run while unresolved
+                    blocking errors remain. Please resolve or override them in the Exceptions tab or
+                    re-validate after correcting source data.
+                  </p>
+                </div>
               </div>
-              <p className="text-amber-800 leading-relaxed text-[11px]">
-                Some scoped employees lack an approved compensation assignment active for this
-                period, resulting in ₹0.00 earned pay. Please assign salary structures to these
-                employees and trigger recalculation prior to approval.
-              </p>
+              <div className="flex items-center gap-2 shrink-0">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleRevalidate}
+                  disabled={actionLoading}
+                  className="bg-white border-red-200 text-red-800 hover:bg-red-50 text-xs"
+                >
+                  <RefreshCw
+                    className={`w-3.5 h-3.5 mr-1 ${actionLoading ? 'animate-spin' : ''}`}
+                  />
+                  Re-validate Run
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setActiveTab('exceptions')}
+                  className="bg-red-700 hover:bg-red-800 text-white text-xs font-semibold"
+                >
+                  View Exceptions
+                </Button>
+              </div>
             </div>
           )}
 
@@ -723,6 +876,35 @@ export default function PayrollRunDetailPage() {
                   className="text-[10px] ml-1 bg-amber-500 text-white border-none"
                 >
                   {lateReport.totalLateChanges} Late
+                </Badge>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setActiveTab('exceptions')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+                activeTab === 'exceptions'
+                  ? 'bg-amber-800 text-white shadow-xs'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <ShieldAlert className="w-3.5 h-3.5" />
+              Exceptions & Validation
+              {exceptionsSummary && exceptionsSummary.total > 0 && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] ml-1 ${
+                    exceptionsSummary.hasBlockingErrors
+                      ? 'bg-red-500 text-white border-none'
+                      : activeTab === 'exceptions'
+                        ? 'bg-amber-900 text-amber-100 border-amber-700'
+                        : 'bg-amber-100 text-amber-800 border-amber-300'
+                  }`}
+                >
+                  {exceptionsSummary.blockingErrors > 0
+                    ? `${exceptionsSummary.blockingErrors} Blocking`
+                    : `${exceptionsSummary.open} Open`}
                 </Badge>
               )}
             </button>
@@ -1058,6 +1240,157 @@ export default function PayrollRunDetailPage() {
                 </div>
               </CardContent>
             </Card>
+          )}
+
+          {/* TAB 3: Phase 11.7 Exceptions & Validation */}
+          {activeTab === 'exceptions' && (
+            <div className="space-y-4">
+              <Card className="border border-stone-200/80 shadow-xs bg-white">
+                <CardHeader className="border-b border-stone-100 pb-3 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-base font-bold text-stone-900 flex items-center gap-2">
+                      <ShieldAlert className="w-5 h-5 text-amber-700" />
+                      Payroll Run Validation Exceptions ({exceptionsSummary?.total || 0})
+                    </CardTitle>
+                    <CardDescription className="text-xs text-stone-500 mt-0.5">
+                      Deterministic rule flags, anomaly detectors, and resolution history for this
+                      run.
+                    </CardDescription>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRevalidate}
+                      disabled={actionLoading}
+                      className="text-xs gap-1"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${actionLoading ? 'animate-spin' : ''}`} />
+                      Re-validate Run
+                    </Button>
+                    <Link href={`/payroll/exceptions?runId=${runId}`}>
+                      <Button variant="outline" size="sm" className="text-xs gap-1">
+                        Open in Full Page <ExternalLink className="w-3.5 h-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-0">
+                  {runExceptions.length === 0 ? (
+                    <div className="py-16 text-center space-y-2">
+                      <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center mx-auto text-emerald-700">
+                        <CheckCircle2 className="w-5 h-5" />
+                      </div>
+                      <p className="text-sm font-semibold text-stone-800">No Exceptions Found</p>
+                      <p className="text-xs text-stone-400">
+                        All calculated employee snapshots and records satisfy validation rules.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs text-left">
+                        <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 uppercase tracking-wider text-[11px]">
+                          <tr>
+                            <th className="py-3 px-4 font-semibold">Severity / Category</th>
+                            <th className="py-3 px-4 font-semibold">Employee</th>
+                            <th className="py-3 px-4 font-semibold">Title & Rule</th>
+                            <th className="py-3 px-4 font-semibold">Explanation</th>
+                            <th className="py-3 px-4 font-semibold">Status / Resolution</th>
+                            <th className="py-3 px-4 font-semibold text-right">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-stone-100">
+                          {runExceptions.map((ex: any) => (
+                            <tr
+                              key={ex.id}
+                              className={
+                                ex.severity === 'BLOCKING_ERROR' && ex.status === 'OPEN'
+                                  ? 'bg-red-50/20'
+                                  : undefined
+                              }
+                            >
+                              <td className="py-3 px-4 space-y-1">
+                                {ex.severity === 'BLOCKING_ERROR' ? (
+                                  <Badge variant="danger" className="text-[10px] bg-red-600">
+                                    BLOCKING ERROR
+                                  </Badge>
+                                ) : ex.severity === 'WARNING' ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] bg-amber-50 text-amber-800 border-amber-300"
+                                  >
+                                    REVIEW WARNING
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="text-[10px] bg-blue-50 text-blue-800 border-blue-300"
+                                  >
+                                    INFORMATION
+                                  </Badge>
+                                )}
+                                <div className="text-[10px] font-mono text-stone-500">
+                                  {ex.category}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="font-semibold text-stone-900">
+                                  {ex.employeeName || 'N/A'}
+                                </div>
+                                <div className="text-[10px] text-stone-400 font-mono">
+                                  {ex.employeeCode} • {ex.departmentName || 'N/A'}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4">
+                                <div className="font-semibold text-stone-800">{ex.title}</div>
+                                <div className="text-[10px] text-stone-400 font-mono">
+                                  Rule: {ex.ruleName}
+                                </div>
+                              </td>
+                              <td className="py-3 px-4 max-w-xs text-stone-600 text-[11px] leading-relaxed">
+                                {ex.explanation}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                    ex.status === 'OPEN'
+                                      ? 'bg-red-50 text-red-700 border border-red-200'
+                                      : ex.status === 'OVERRIDDEN'
+                                        ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                        : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                  }`}
+                                >
+                                  {ex.status}
+                                </span>
+                                {ex.resolutionNotes && (
+                                  <div
+                                    className="text-[10px] text-stone-500 mt-1 italic truncate max-w-[150px]"
+                                    title={ex.resolutionNotes}
+                                  >
+                                    "{ex.resolutionNotes}"
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                {ex.status === 'OPEN' && canManage && (
+                                  <Button
+                                    size="sm"
+                                    onClick={() => handleOpenResolveModal(ex)}
+                                    className="text-xs bg-stone-900 hover:bg-stone-800 text-white font-medium"
+                                  >
+                                    Resolve
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           )}
 
           {/* Approval & State Machine Audit Trail */}
@@ -1412,6 +1745,36 @@ export default function PayrollRunDetailPage() {
                 across <strong>{run.totalEmployees}</strong> employees.
               </p>
 
+              {exceptionsSummary?.hasBlockingErrors && (
+                <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-red-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <ShieldAlert className="w-4 h-4 text-red-600" />
+                    <span>Approval Blocked by Policy</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    This payroll run currently has {exceptionsSummary.blockingErrors} unresolved
+                    blocking error(s). All blocking errors must be resolved or overridden before
+                    approval.
+                  </p>
+                </div>
+              )}
+
+              {exceptionsSummary &&
+                exceptionsSummary.warnings > 0 &&
+                !exceptionsSummary.hasBlockingErrors && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 space-y-1">
+                    <div className="flex items-center gap-1.5 font-bold">
+                      <AlertTriangle className="w-4 h-4 text-amber-600" />
+                      <span>Audit Preservation Notice (Phase 11.7)</span>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      This run contains {exceptionsSummary.warnings} unresolved review warning(s).
+                      By approving, these warnings will be preserved in the final audit trail and
+                      approval history.
+                    </p>
+                  </div>
+                )}
+
               <div>
                 <label className="block text-xs font-semibold text-stone-700 mb-1">
                   Approval Comments / Sign-off Remarks
@@ -1431,11 +1794,15 @@ export default function PayrollRunDetailPage() {
                 </Button>
                 <Button
                   size="sm"
-                  disabled={actionLoading}
+                  disabled={actionLoading || exceptionsSummary?.hasBlockingErrors}
                   onClick={handleApprove}
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  className={
+                    exceptionsSummary?.hasBlockingErrors
+                      ? 'bg-stone-300 text-stone-500 cursor-not-allowed'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }
                 >
-                  Confirm Approval
+                  {exceptionsSummary?.hasBlockingErrors ? 'Approval Blocked' : 'Confirm Approval'}
                 </Button>
               </div>
             </div>
@@ -1611,6 +1978,108 @@ export default function PayrollRunDetailPage() {
                 </Button>
               </div>
             </div>
+          </Dialog>
+
+          {/* ------------------------------------------------------------------ */}
+          {/* Modal: Resolve Exception */}
+          {/* ------------------------------------------------------------------ */}
+          <Dialog
+            isOpen={isResolveModalOpen}
+            onClose={() => setIsResolveModalOpen(false)}
+            title={`Resolve Exception: ${activeException?.title || ''}`}
+          >
+            <form onSubmit={handleResolveExceptionSubmit} className="space-y-4 text-xs">
+              <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-stone-700">Category:</span>
+                  <span className="font-mono text-stone-900">{activeException?.category}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-stone-700">Employee:</span>
+                  <span className="font-medium text-stone-900">
+                    {activeException?.employeeName || 'N/A'} (
+                    {activeException?.employeeCode || 'N/A'})
+                  </span>
+                </div>
+                <p className="text-stone-600 pt-1 border-t border-stone-200 leading-relaxed text-[11px]">
+                  {activeException?.explanation}
+                </p>
+              </div>
+
+              {resolveError && (
+                <div className="p-2.5 bg-red-50 text-red-800 border border-red-200 rounded-lg text-xs flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0 text-red-600" />
+                  <span>{resolveError}</span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-xs font-semibold text-stone-700 block">
+                  Resolution Action <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={resolveAction}
+                  onChange={(e) => setResolveAction(e.target.value as any)}
+                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white"
+                >
+                  <option value="OVERRIDE_APPROVED">
+                    OVERRIDE_APPROVED - Authorize manual override & sign-off
+                  </option>
+                  <option value="SOURCE_FIXED">
+                    SOURCE_FIXED - Source record fixed in HR/Attendance
+                  </option>
+                  <option value="RECALCULATED">
+                    RECALCULATED - Recalculated with updated parameters
+                  </option>
+                  <option value="DISMISSED">DISMISSED - Dismiss as non-impacting notice</option>
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-semibold text-stone-700">
+                    Resolution Reason & Notes <span className="text-red-500">*</span>
+                  </label>
+                  <span className="text-[10px] text-stone-400">Min. 5 characters required</span>
+                </div>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Mandatory justification for audit trail (e.g. Compensation verified with HR Ops)..."
+                  value={resolveNotes}
+                  onChange={(e) => setResolveNotes(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="p-2.5 bg-amber-50 rounded-lg border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                <ShieldCheck className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <span>
+                  <strong>Audit Requirement:</strong> This override is permanently recorded in the
+                  immutable audit trail with your user identity and timestamp.
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-stone-200">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsResolveModalOpen(false)}
+                  disabled={resolveSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={resolveSubmitting || resolveNotes.trim().length < 5}
+                  className="bg-emerald-700 hover:bg-emerald-800 text-white font-semibold"
+                >
+                  {resolveSubmitting ? 'Recording...' : 'Record Resolution'}
+                </Button>
+              </div>
+            </form>
           </Dialog>
         </div>
       </AppShell>

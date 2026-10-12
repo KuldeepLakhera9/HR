@@ -3639,6 +3639,60 @@ export const payrollApi = {
     const res = await fetchWithAuth<any>(`/payroll/runs/${runId}/late-changes`);
     return res;
   },
+
+  async getPayrollExceptions(params?: Record<string, any>) {
+    const query = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          query.set(k, String(v));
+        }
+      });
+    }
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/exceptions${qs}`);
+    return res;
+  },
+
+  async getPayrollExceptionsSummary(runId?: string) {
+    const qs = runId ? `?runId=${runId}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/exceptions/summary${qs}`);
+    return res;
+  },
+
+  async getRunExceptions(runId: string, params?: Record<string, any>) {
+    const query = new URLSearchParams();
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          query.set(k, String(v));
+        }
+      });
+    }
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/payroll/runs/${runId}/exceptions${qs}`);
+    return res;
+  },
+
+  async getRunExceptionsSummary(runId: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${runId}/exceptions/summary`);
+    return res;
+  },
+
+  async resolvePayrollException(id: string, data: { action: string; resolutionNotes: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/exceptions/${id}/resolve`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
+  async revalidatePayrollRun(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/revalidate`, {
+      method: 'POST',
+    });
+    return res;
+  },
 };
 
 export const apiClient = {

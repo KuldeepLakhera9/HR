@@ -277,4 +277,16 @@ export class PayrollRunsController {
       data,
     };
   }
+
+  @Post(':id/revalidate')
+  @RequirePermissions('PAYROLL_MANAGE')
+  @ApiOperation({ summary: 'Re-run validation rules on an active payroll run' })
+  async revalidate(@CurrentUser() user: AuthenticatedUser, @Param('id') runId: string) {
+    const data = await this.runsService.revalidate(user.organizationId, runId);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Payroll run validation re-executed successfully',
+      data,
+    };
+  }
 }

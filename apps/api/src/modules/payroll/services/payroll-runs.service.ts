@@ -20,6 +20,7 @@ import {
 
 import { PayrollCalculationEngineService } from './payroll-calculation-engine.service';
 import { PayrollInputsService } from './payroll-inputs.service';
+import { PayrollValidationService } from './payroll-validation.service';
 
 @Injectable()
 export class PayrollRunsService {
@@ -30,6 +31,7 @@ export class PayrollRunsService {
     private readonly auditService: AuditService,
     private readonly calculationEngine: PayrollCalculationEngineService,
     private readonly payrollInputs: PayrollInputsService,
+    private readonly validationService: PayrollValidationService,
   ) {}
 
   /**
@@ -593,6 +595,9 @@ export class PayrollRunsService {
         }
       }
 
+      // Run deterministic Phase 11.7 payroll validation and exception detection
+      const validationSummary = await this.validationService.validateRun(organizationId, runId);
+
       // Transition to REVIEW_PENDING and update totals
       const updatedRun = await this.prisma.$transaction(async (tx) => {
         const r = await tx.payrollRun.update({
@@ -604,7 +609,7 @@ export class PayrollRunsService {
             totalDeductions: runDeductions,
             totalNet: runNet,
             calculatedAt: new Date(),
-            exceptionCount,
+            exceptionCount: Math.max(validationSummary?.total ?? 0, exceptionCount),
             exceptions: exceptionsList.length > 0 ? (exceptionsList as any) : undefined,
           },
         });
@@ -614,7 +619,7 @@ export class PayrollRunsService {
             payrollRunId: runId,
             actorId,
             action: isRecalculation ? 'RECALCULATED' : 'CALCULATED',
-            comments: `Calculated ${eligibleEmployees.length} employees with ${exceptionCount} exception(s)`,
+            comments: `Calculated ${eligibleEmployees.length} employees with ${validationSummary.total} exception(s) (${validationSummary.blockingErrors} blocking, ${validationSummary.warnings} warnings)`,
             previousStatus: 'CALCULATING',
             newStatus: 'REVIEW_PENDING',
           },
@@ -673,6 +678,17 @@ export class PayrollRunsService {
   }
 
   /**
+   * Re-run validation rules on a payroll run
+   */
+  async revalidate(organizationId: string, runId: string) {
+    const run = await this.findById(organizationId, runId);
+    if (run.status === 'LOCKED' || run.status === 'PUBLISHED' || run.status === 'PAID') {
+      throw new BadRequestException(`Cannot revalidate run in finalized status '${run.status}'.`);
+    }
+    return this.validationService.validateRun(organizationId, runId);
+  }
+
+  /**
    * Approve run
    */
   async approve(organizationId: string, runId: string, dto: ApprovePayrollRunDto, actorId: string) {
@@ -683,6 +699,28 @@ export class PayrollRunsService {
         `Cannot approve run in status '${run.status}'. Must be in 'REVIEW_PENDING'.`,
       );
     }
+
+    // Required Behavior 2: Prevent approval when blocking errors remain
+    const exceptionsSummary = await this.validationService.getExceptionsSummary(
+      organizationId,
+      runId,
+    );
+    if (exceptionsSummary.hasBlockingErrors) {
+      throw new BadRequestException(
+        `Cannot approve payroll run: ${exceptionsSummary.blockingErrors} unresolved blocking error(s) must be resolved first.`,
+      );
+    }
+
+    // Required Behavior 10: Preserve unresolved warnings in the final audit trail when policy permits approval with warnings
+    const unresolvedWarningsNote =
+      exceptionsSummary.warnings > 0
+        ? `Preserved ${exceptionsSummary.warnings} unresolved review warning(s).`
+        : '';
+    const comments = dto.comments
+      ? unresolvedWarningsNote
+        ? `${dto.comments} | ${unresolvedWarningsNote}`
+        : dto.comments
+      : unresolvedWarningsNote || 'Payroll run approved';
 
     const updated = await this.prisma.$transaction(async (tx) => {
       const r = await tx.payrollRun.update({
@@ -699,7 +737,7 @@ export class PayrollRunsService {
           payrollRunId: runId,
           actorId,
           action: 'APPROVED',
-          comments: dto.comments || 'Payroll run approved',
+          comments,
           previousStatus: 'REVIEW_PENDING',
           newStatus: 'APPROVED',
         },
@@ -714,7 +752,13 @@ export class PayrollRunsService {
       action: 'PAYROLL_RUN_APPROVED',
       entity: 'PayrollRun',
       entityId: runId,
-      metadata: { status: 'APPROVED', comments: dto.comments },
+      metadata: {
+        status: 'APPROVED',
+        comments: dto.comments,
+        unresolvedWarningsCount: exceptionsSummary.warnings,
+        unresolvedInfoCount: exceptionsSummary.information,
+        unresolvedExceptionsPreserved: exceptionsSummary.unresolvedWarnings || [],
+      },
     });
 
     return updated;

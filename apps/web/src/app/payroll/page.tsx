@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Calculator,
   ShieldCheck,
+  ShieldAlert,
   CheckCircle2,
   Clock,
   Sparkles,
@@ -201,7 +202,7 @@ export default function PayrollOverviewPage() {
           </div>
 
           {/* Navigation Hub Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <Card className="border-stone-200 hover:border-emerald-300 transition-all shadow-sm bg-gradient-to-br from-emerald-50/30 to-white">
               <CardHeader className="pb-3">
                 <div className="flex items-center justify-between">
@@ -396,6 +397,57 @@ export default function PayrollOverviewPage() {
                   <Link href="/payroll/components">
                     <Button variant="outline" className="w-full text-xs font-medium">
                       Manage All Salary Components
+                    </Button>
+                  </Link>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-stone-200 hover:border-amber-300 transition-all shadow-sm bg-gradient-to-br from-amber-50/20 to-white">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-2 rounded-lg bg-amber-100 text-amber-800">
+                      <ShieldAlert className="w-5 h-5" />
+                    </div>
+                    <CardTitle className="text-lg font-bold text-stone-900">
+                      Exceptions & Validation
+                    </CardTitle>
+                  </div>
+                  <Link href="/payroll/exceptions">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="gap-1 text-amber-700 hover:text-amber-800 font-semibold"
+                    >
+                      Open <ArrowRight className="w-4 h-4" />
+                    </Button>
+                  </Link>
+                </div>
+                <CardDescription className="text-xs text-stone-500 mt-1">
+                  Investigate anomalies, negative pay, proration mismatches, and manage authorized
+                  audit overrides.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="pt-2">
+                <div className="p-3 bg-white rounded-lg border border-amber-100 space-y-2 text-xs">
+                  <div className="flex items-center justify-between text-stone-600">
+                    <span>Approval Safeguards</span>
+                    <Badge
+                      variant="outline"
+                      className="bg-red-50 text-red-700 border-red-200 text-[10px]"
+                    >
+                      Blocking Gated
+                    </Badge>
+                  </div>
+                  <div className="text-[11px] text-stone-400">
+                    Spike/Drop Detection • 5-Char Reason Overrides • Immutable Trail
+                  </div>
+                </div>
+                <div className="pt-3 mt-3 border-t border-stone-100">
+                  <Link href="/payroll/exceptions">
+                    <Button className="w-full text-xs font-semibold bg-amber-800 hover:bg-amber-900 text-white">
+                      Manage Exceptions
                     </Button>
                   </Link>
                 </div>

@@ -3664,3 +3664,84 @@ export interface PayrollAttendanceReconciliationResponseDto {
   lateChangesDetected: number;
   items: PayrollAttendanceReconciliationItemDto[];
 }
+
+export type PayrollExceptionSeverity = 'BLOCKING_ERROR' | 'WARNING' | 'INFORMATION';
+
+export type PayrollExceptionCategory =
+  | 'MISSING_COMPENSATION'
+  | 'UNRESOLVED_ATTENDANCE'
+  | 'ANOMALY_SALARY_SPIKE'
+  | 'ANOMALY_SALARY_DROP'
+  | 'NEGATIVE_NET_PAY'
+  | 'MISSING_BANK_DETAILS'
+  | 'MISSING_TAX_IDENTIFIER'
+  | 'CALCULATION_DISCREPANCY'
+  | 'LATE_SOURCE_CHANGE'
+  | 'POLICY_VIOLATION';
+
+export type PayrollExceptionStatus = 'OPEN' | 'RESOLVED' | 'OVERRIDDEN' | 'DISMISSED';
+
+export interface PayrollExceptionDto {
+  id: string;
+  organizationId: string;
+  payrollRunId: string;
+  runTitle?: string;
+  employeeId?: string | null;
+  employeeCode?: string | null;
+  employeeName?: string | null;
+  departmentName?: string | null;
+  snapshotId?: string | null;
+  severity: PayrollExceptionSeverity;
+  category: PayrollExceptionCategory;
+  title: string;
+  explanation: string;
+  sourceRecordType?: string | null;
+  sourceRecordId?: string | null;
+  ruleName?: string | null;
+  detectedAt: string;
+  calculationVersion: number;
+  status: PayrollExceptionStatus;
+  resolutionAction?: string | null;
+  resolutionNotes?: string | null;
+  resolvedById?: string | null;
+  resolvedByName?: string | null;
+  resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResolvePayrollExceptionDto {
+  action: 'OVERRIDE_APPROVED' | 'RECALCULATED' | 'SOURCE_FIXED' | 'DISMISSED';
+  resolutionNotes: string;
+}
+
+export interface QueryPayrollExceptionsDto {
+  runId?: string;
+  periodId?: string;
+  employeeId?: string;
+  departmentId?: string;
+  severity?: PayrollExceptionSeverity;
+  category?: PayrollExceptionCategory;
+  status?: PayrollExceptionStatus;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface PayrollExceptionsSummaryDto {
+  total: number;
+  blockingErrors: number;
+  warnings: number;
+  information: number;
+  open: number;
+  resolved: number;
+  overridden: number;
+  hasBlockingErrors: boolean;
+  canApprove: boolean;
+  unresolvedWarnings?: Array<{
+    id: string;
+    category: string;
+    title: string;
+    employeeName?: string | null;
+  }>;
+}

@@ -6,6 +6,7 @@ import { SalaryStructuresController } from './controllers/salary-structures.cont
 import { EmployeeCompensationController } from './controllers/employee-compensation.controller';
 import { PayrollPeriodsController } from './controllers/payroll-periods.controller';
 import { PayrollRunsController } from './controllers/payroll-runs.controller';
+import { PayrollExceptionsController } from './controllers/payroll-exceptions.controller';
 import { SalaryComponentsService } from './services/salary-components.service';
 import { SalaryStructuresService } from './services/salary-structures.service';
 import { EmployeeCompensationService } from './services/employee-compensation.service';
@@ -13,6 +14,7 @@ import { PayrollPeriodsService } from './services/payroll-periods.service';
 import { PayrollRunsService } from './services/payroll-runs.service';
 import { PayrollCalculationEngineService } from './services/payroll-calculation-engine.service';
 import { PayrollInputsService } from './services/payroll-inputs.service';
+import { PayrollValidationService } from './services/payroll-validation.service';
 
 @Module({
   imports: [PrismaModule, AuditModule],
@@ -22,6 +24,7 @@ import { PayrollInputsService } from './services/payroll-inputs.service';
     EmployeeCompensationController,
     PayrollPeriodsController,
     PayrollRunsController,
+    PayrollExceptionsController,
   ],
   providers: [
     SalaryComponentsService,
@@ -31,6 +34,7 @@ import { PayrollInputsService } from './services/payroll-inputs.service';
     PayrollRunsService,
     PayrollCalculationEngineService,
     PayrollInputsService,
+    PayrollValidationService,
   ],
   exports: [
     SalaryComponentsService,
@@ -40,6 +44,7 @@ import { PayrollInputsService } from './services/payroll-inputs.service';
     PayrollRunsService,
     PayrollCalculationEngineService,
     PayrollInputsService,
+    PayrollValidationService,
   ],
 })
 export class PayrollModule {}
