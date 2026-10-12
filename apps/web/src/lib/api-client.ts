@@ -49,6 +49,9 @@ import {
   PerformanceFeedbackDto,
   CreatePerformanceFeedbackDto,
   DevelopmentPlansOverviewDto,
+  RecalculateReviewScoreDto,
+  CalculationBreakdownDto,
+  RecalculateReviewResultDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2664,6 +2667,36 @@ export const performanceApi = {
   async sendDevelopmentReminder(id: string): Promise<{ success: boolean; message: string }> {
     const res = await fetchWithAuth<any>(`/performance/development-plans/${id}/remind`, {
       method: 'POST',
+    });
+    return res.data;
+  },
+
+  // -----------------------------------------------------------------------------
+  // Rating Calculation Engine
+  // -----------------------------------------------------------------------------
+  async recalculateReviewScore(
+    reviewId: string,
+    data: RecalculateReviewScoreDto,
+  ): Promise<RecalculateReviewResultDto> {
+    const res = await fetchWithAuth<any>(`/performance/rating-engine/recalculate/${reviewId}`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async previewRatingCalculation(
+    cycleId: string,
+    items: Array<{
+      goalId?: string;
+      competencyId?: string;
+      managerRating?: number;
+      isNotApplicable?: boolean;
+    }>,
+  ): Promise<CalculationBreakdownDto> {
+    const res = await fetchWithAuth<any>('/performance/rating-engine/preview', {
+      method: 'POST',
+      body: JSON.stringify({ cycleId, items }),
     });
     return res.data;
   },

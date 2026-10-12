@@ -2588,3 +2588,64 @@ export interface ManagerReviewDetailDto {
   ratingScaleMax: number;
   scoreBreakdown?: any;
 }
+
+// -----------------------------------------------------------------------------
+// Rating & Calculation Engine DTOs
+// -----------------------------------------------------------------------------
+
+export interface RecalculateReviewScoreDto {
+  reason: string;
+  forceRecalculate?: boolean;
+}
+
+export interface CalculationBreakdownDto {
+  policyVersion: number;
+  ratingScaleMax: number;
+  goalsWeightPercentage: number;
+  competenciesWeightPercentage: number;
+  calculatedGoalsScore: number | null;
+  calculatedCompetenciesScore: number | null;
+  overallScore: number | null;
+  scoreExplanation: string;
+  isNarrativeOnly: boolean;
+  totalApplicableGoalWeight: number;
+  totalApplicableCompetencyWeight: number;
+  goalRatings: Array<{
+    goalId: string;
+    title: string;
+    weight: number;
+    rating: number;
+    status: string;
+    isNotApplicable: boolean;
+    normalizedWeightPercentage?: number;
+  }>;
+  competencyRatings: Array<{
+    competencyId: string;
+    name: string;
+    weight: number;
+    rating: number;
+    isNotApplicable: boolean;
+    normalizedWeightPercentage?: number;
+  }>;
+  excludedItems: Array<{
+    type: 'GOAL' | 'COMPETENCY';
+    id: string;
+    title: string;
+    reason: string;
+  }>;
+  calculatedAt: string;
+}
+
+export interface RecalculateReviewResultDto {
+  reviewId: string;
+  previousOverallScore: number | null;
+  newOverallScore: number | null;
+  previousGoalsScore: number | null;
+  newGoalsScore: number | null;
+  previousCompetenciesScore: number | null;
+  newCompetenciesScore: number | null;
+  scoreExplanation: string;
+  breakdown: CalculationBreakdownDto;
+  policyVersion: number;
+  isFinalized: boolean;
+}

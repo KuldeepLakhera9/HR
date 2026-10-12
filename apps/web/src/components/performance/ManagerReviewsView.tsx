@@ -46,6 +46,7 @@ import {
   History,
   TrendingUp,
   UserCheck,
+  Calculator,
 } from 'lucide-react';
 
 interface ManagerReviewsViewProps {
@@ -113,6 +114,10 @@ export const ManagerReviewsView: React.FC<ManagerReviewsViewProps> = ({ onNotify
   const [isFinalizeModalOpen, setIsFinalizeModalOpen] = useState(false);
   const [finalizeComments, setFinalizeComments] = useState('');
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [isRecalculateModalOpen, setIsRecalculateModalOpen] = useState(false);
+  const [recalculateReason, setRecalculateReason] = useState('');
+  const [forceRecalculate, setForceRecalculate] = useState(false);
+  const [isRecalculating, setIsRecalculating] = useState(false);
 
   // Notification helper
   const notify = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -363,6 +368,38 @@ export const ManagerReviewsView: React.FC<ManagerReviewsViewProps> = ({ onNotify
       notify(err?.message || 'Failed to finalize review', 'error');
     } finally {
       setIsFinalizing(false);
+    }
+  };
+
+  // Recalculate Review Score (Authorized HR/Admin process)
+  const handleRecalculateReview = async () => {
+    if (!selectedReviewId || !reviewDetail?.review.id) return;
+    if (!recalculateReason.trim() || recalculateReason.trim().length < 5) {
+      notify(
+        'Please provide an auditable reason (minimum 5 characters) for recalculation.',
+        'error',
+      );
+      return;
+    }
+    setIsRecalculating(true);
+    try {
+      const result = await performanceApi.recalculateReviewScore(reviewDetail.review.id, {
+        reason: recalculateReason.trim(),
+        forceRecalculate: reviewDetail.review.status === 'FINALIZED' ? forceRecalculate : undefined,
+      });
+      notify(
+        `Review scores recalculated successfully. New overall score: ${result.newOverallScore !== null ? result.newOverallScore : 'Deferred'}.`,
+        'success',
+      );
+      setIsRecalculateModalOpen(false);
+      setRecalculateReason('');
+      setForceRecalculate(false);
+      await openReviewDetail(reviewDetail.review.id);
+      fetchInbox();
+    } catch (err: any) {
+      notify(err?.message || 'Failed to recalculate score', 'error');
+    } finally {
+      setIsRecalculating(false);
     }
   };
 
@@ -696,6 +733,74 @@ export const ManagerReviewsView: React.FC<ManagerReviewsViewProps> = ({ onNotify
                   </div>
                 </CardContent>
               </Card>
+
+              {/* Official Rating Engine & Score Breakdown Card */}
+              {reviewDetail.review.scoreExplanation && (
+                <Card className="border border-stone-200 bg-linear-to-r from-amber-50/50 via-stone-50 to-white">
+                  <CardContent className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="space-y-1.5 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] bg-white font-semibold text-stone-800 border-amber-300"
+                        >
+                          Deterministic Policy Engine (v{reviewDetail.review.templateVersion})
+                        </Badge>
+                        <span className="text-xs font-bold text-stone-900">
+                          {reviewDetail.review.overallScore !== null &&
+                          reviewDetail.review.overallScore !== undefined
+                            ? `Authoritative Score: ${reviewDetail.review.overallScore} / ${reviewDetail.ratingScaleMax}`
+                            : 'Official Score Deferred (Narrative Mode)'}
+                        </span>
+                        {reviewDetail.review.calculatedGoalsScore !== null && (
+                          <span className="text-xs text-stone-600">
+                            &bull; Goals:{' '}
+                            <span className="font-semibold text-stone-800">
+                              {reviewDetail.review.calculatedGoalsScore}
+                            </span>{' '}
+                            ({reviewDetail.review.cycle?.goalsWeightPercentage || 70}%)
+                          </span>
+                        )}
+                        {reviewDetail.review.calculatedCompetenciesScore !== null && (
+                          <span className="text-xs text-stone-600">
+                            &bull; Comps:{' '}
+                            <span className="font-semibold text-stone-800">
+                              {reviewDetail.review.calculatedCompetenciesScore}
+                            </span>{' '}
+                            ({reviewDetail.review.cycle?.competenciesWeightPercentage || 30}%)
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="p-2 rounded-md bg-white/80 border border-stone-200 font-mono text-[11px] text-stone-700">
+                        {reviewDetail.review.scoreExplanation}
+                      </div>
+
+                      <p className="text-[10px] text-stone-500 italic">
+                        Enterprise Policy: Numerical calculations are performed strictly on the
+                        server using deterministic weights. Ratings do not automate compensation,
+                        promotion, termination, or disciplinary outcomes.
+                      </p>
+                    </div>
+
+                    {isHrOrAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setRecalculateReason('');
+                          setForceRecalculate(false);
+                          setIsRecalculateModalOpen(true);
+                        }}
+                        className="text-xs shrink-0 flex items-center gap-1.5 border-stone-300 bg-white hover:bg-stone-100 text-stone-800"
+                      >
+                        <Calculator className="h-3.5 w-3.5 text-amber-700" />
+                        <span>Recalculate Score</span>
+                      </Button>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Workspace Navigation Tabs */}
               <div className="flex border-b border-stone-200 bg-white rounded-t-xl px-4">
@@ -1335,6 +1440,80 @@ export const ManagerReviewsView: React.FC<ManagerReviewsViewProps> = ({ onNotify
               className="bg-emerald-600 hover:bg-emerald-700 text-white"
             >
               {isFinalizing ? 'Finalizing...' : 'Confirm Finalization'}
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Recalculate Score Dialog (HR/Admin) */}
+      <Dialog
+        isOpen={isRecalculateModalOpen}
+        onClose={() => setIsRecalculateModalOpen(false)}
+        title="Authorized Score Recalculation"
+      >
+        <div className="space-y-4 p-2">
+          <p className="text-xs text-stone-600">
+            Recompute official ratings using the server deterministic calculation engine. All
+            adjustments are immutably captured in the audit trail.
+          </p>
+
+          {reviewDetail?.review.status === 'FINALIZED' && (
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 space-y-2">
+              <div className="flex items-center gap-2 text-amber-800 text-xs font-semibold">
+                <AlertCircle className="h-4 w-4 shrink-0 text-amber-700" />
+                <span>Notice: Finalized Score Lock</span>
+              </div>
+              <p className="text-[11px] text-amber-700 leading-relaxed">
+                This review is already <strong>FINALIZED</strong>. Standard organization policy
+                locks finalized scores to prevent retrospective tampering. Recalculation requires
+                explicit audited override.
+              </p>
+              <label className="flex items-center gap-2 text-xs text-amber-900 font-medium cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={forceRecalculate}
+                  onChange={(e) => setForceRecalculate(e.target.checked)}
+                  className="rounded border-amber-300 text-amber-600 focus:ring-amber-500"
+                />
+                <span>Confirm override of finalized score (audited action)</span>
+              </label>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <label className="text-xs font-semibold text-stone-800">
+              Auditable Recalculation Reason <span className="text-rose-500">*</span>
+            </label>
+            <textarea
+              rows={3}
+              value={recalculateReason}
+              onChange={(e) => setRecalculateReason(e.target.value)}
+              placeholder="e.g. Formal grievance adjustment or cycle policy formula calibration..."
+              className="w-full text-xs p-2.5 rounded-lg border border-stone-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500/20"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsRecalculateModalOpen(false)}
+              disabled={isRecalculating}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={handleRecalculateReview}
+              disabled={
+                isRecalculating ||
+                recalculateReason.trim().length < 5 ||
+                (reviewDetail?.review.status === 'FINALIZED' && !forceRecalculate)
+              }
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {isRecalculating ? 'Recalculating...' : 'Recalculate Now'}
             </Button>
           </div>
         </div>

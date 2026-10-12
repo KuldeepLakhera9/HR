@@ -1,5 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ManagerReviewsService } from './manager-reviews.service';
+import { RatingCalculationService } from './rating-calculation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { HierarchyService } from '../employees/hierarchy.service';
@@ -245,6 +246,7 @@ describe('ManagerReviewsService (Manager Performance Assessment)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ManagerReviewsService,
+        RatingCalculationService,
         { provide: PrismaService, useValue: prisma },
         { provide: AuditService, useValue: audit },
         { provide: HierarchyService, useValue: hierarchy },

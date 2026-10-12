@@ -24,6 +24,8 @@ import {
   PerformanceReviewStatus,
 } from '@hrms/types';
 
+import { RatingCalculationService } from './rating-calculation.service';
+
 @Injectable()
 export class ManagerReviewsService {
   private readonly logger = new Logger(ManagerReviewsService.name);
@@ -33,6 +35,7 @@ export class ManagerReviewsService {
     private readonly audit: AuditService,
     private readonly hierarchy: HierarchyService,
     private readonly notifications: NotificationsService,
+    private readonly ratingEngine: RatingCalculationService,
   ) {}
 
   /**
@@ -132,8 +135,9 @@ export class ManagerReviewsService {
       goalsWeightPercentage: number;
       competenciesWeightPercentage: number;
       ratingScaleMax: number;
+      templateVersion?: number;
     },
-    goals: Array<{ id: string; weight: number; title: string }>,
+    goals: Array<{ id: string; weight: number; title: string; status?: string }>,
     competencies: Array<{ id: string; weight: number; name: string }>,
     items: Array<{
       goalId?: string | null;
@@ -142,105 +146,19 @@ export class ManagerReviewsService {
       isNotApplicable?: boolean;
     }>,
   ) {
-    // 1. Goal ratings weighted average
-    let totalGoalWeight = 0;
-    let weightedGoalScore = 0;
-    const goalBreakdown: any[] = [];
-
-    for (const g of goals) {
-      const item = items.find((it) => it.goalId === g.id);
-      if (
-        item &&
-        item.managerRating !== null &&
-        item.managerRating !== undefined &&
-        !item.isNotApplicable
-      ) {
-        const w = g.weight > 0 ? g.weight : 1;
-        weightedGoalScore += item.managerRating * w;
-        totalGoalWeight += w;
-        goalBreakdown.push({
-          goalId: g.id,
-          title: g.title,
-          weight: w,
-          rating: item.managerRating,
-        });
-      }
-    }
-
-    const calculatedGoalsScore =
-      totalGoalWeight > 0 ? Number((weightedGoalScore / totalGoalWeight).toFixed(2)) : null;
-
-    // 2. Competencies weighted average
-    let totalCompWeight = 0;
-    let weightedCompScore = 0;
-    const compBreakdown: any[] = [];
-
-    for (const c of competencies) {
-      const item = items.find((it) => it.competencyId === c.id);
-      if (
-        item &&
-        item.managerRating !== null &&
-        item.managerRating !== undefined &&
-        !item.isNotApplicable
-      ) {
-        const w = c.weight > 0 ? c.weight : 1;
-        weightedCompScore += item.managerRating * w;
-        totalCompWeight += w;
-        compBreakdown.push({
-          competencyId: c.id,
-          name: c.name,
-          weight: w,
-          rating: item.managerRating,
-        });
-      }
-    }
-
-    const calculatedCompetenciesScore =
-      totalCompWeight > 0 ? Number((weightedCompScore / totalCompWeight).toFixed(2)) : null;
-
-    // 3. Overall composite score
-    let overallScore: number | null = null;
-    const goalsWeightPct = cycle.goalsWeightPercentage;
-    const compsWeightPct = cycle.competenciesWeightPercentage;
-
-    if (calculatedGoalsScore !== null && calculatedCompetenciesScore !== null) {
-      const totalWeights = goalsWeightPct + compsWeightPct;
-      if (totalWeights > 0) {
-        overallScore = Number(
-          (
-            (calculatedGoalsScore * goalsWeightPct + calculatedCompetenciesScore * compsWeightPct) /
-            totalWeights
-          ).toFixed(2),
-        );
-      }
-    } else if (calculatedGoalsScore !== null) {
-      overallScore = calculatedGoalsScore;
-    } else if (calculatedCompetenciesScore !== null) {
-      overallScore = calculatedCompetenciesScore;
-    }
-
-    const scoreExplanation =
-      overallScore !== null
-        ? `Goals: ${calculatedGoalsScore ?? 'N/A'} (${goalsWeightPct}%) + Competencies: ${calculatedCompetenciesScore ?? 'N/A'} (${compsWeightPct}%) = Overall: ${overallScore} / ${cycle.ratingScaleMax}`
-        : 'Incomplete ratings; overall score pending completion.';
-
-    const calculationBreakdown = {
-      goalsWeightPercentage: goalsWeightPct,
-      competenciesWeightPercentage: compsWeightPct,
-      goalsScore: calculatedGoalsScore,
-      competenciesScore: calculatedCompetenciesScore,
-      overallScore,
-      goalRatings: goalBreakdown,
-      competencyRatings: compBreakdown,
-      calculatedAt: new Date().toISOString(),
-    };
+    const breakdown = this.ratingEngine.calculateScores({
+      cycle,
+      goals,
+      competencies,
+      items,
+    });
 
     return {
-      calculatedGoalsScore,
-      calculatedCompetenciesScore,
-      overallScore,
-      scoreExplanation,
-      calculationBreakdown,
+      calculatedGoalsScore: breakdown.calculatedGoalsScore,
+      calculatedCompetenciesScore: breakdown.calculatedCompetenciesScore,
+      overallScore: breakdown.overallScore,
+      scoreExplanation: breakdown.scoreExplanation,
+      calculationBreakdown: breakdown,
     };
   }
 
@@ -628,7 +546,7 @@ export class ManagerReviewsService {
           calculatedGoalsScore: scores.calculatedGoalsScore,
           calculatedCompetenciesScore: scores.calculatedCompetenciesScore,
           overallScore: scores.overallScore,
-          calculationBreakdown: scores.calculationBreakdown,
+          calculationBreakdown: scores.calculationBreakdown as any,
           scoreExplanation: scores.scoreExplanation,
         },
       });
@@ -839,7 +757,7 @@ export class ManagerReviewsService {
           calculatedGoalsScore: scores.calculatedGoalsScore,
           calculatedCompetenciesScore: scores.calculatedCompetenciesScore,
           overallScore: scores.overallScore,
-          calculationBreakdown: scores.calculationBreakdown,
+          calculationBreakdown: scores.calculationBreakdown as any,
           scoreExplanation: scores.scoreExplanation,
         },
       });
