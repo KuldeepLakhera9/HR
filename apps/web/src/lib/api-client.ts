@@ -2357,6 +2357,15 @@ export const reportsApi = {
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
   },
+
+  async getReconciliationAudit(query?: { domain?: string; severity?: string }): Promise<any> {
+    const params = new URLSearchParams();
+    if (query?.domain && query.domain !== 'ALL') params.append('domain', query.domain);
+    if (query?.severity && query.severity !== 'ALL') params.append('severity', query.severity);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/reconciliation/audit${qs}`);
+    return res.data || res;
+  },
 };
 
 export const managerApi = {

@@ -35,11 +35,17 @@ import {
 } from 'lucide-react';
 
 export function MisReportLibraryTab() {
-  const [subTab, setSubTab] = useState<'CATALOG' | 'SAVED'>('CATALOG');
+  const [subTab, setSubTab] = useState<'CATALOG' | 'SAVED' | 'DATA_QUALITY'>('CATALOG');
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [exportingKey, setExportingKey] = useState<string | null>(null);
+
+  // Reconciliation Audit States
+  const [reconciliationResult, setReconciliationResult] = useState<any | null>(null);
+  const [reconciling, setReconciling] = useState<boolean>(false);
+  const [reconcileDomain, setReconcileDomain] = useState<string>('ALL');
+  const [reconcileSeverity, setReconcileSeverity] = useState<string>('ALL');
 
   // Filter States
   const [category, setCategory] = useState<string>('ALL');
@@ -101,6 +107,22 @@ export function MisReportLibraryTab() {
     }
   }, [searchTerm]);
 
+  // Load Data Quality Reconciliation Audit
+  const loadReconciliation = useCallback(async () => {
+    try {
+      setReconciling(true);
+      const res = await reportsApi.getReconciliationAudit({
+        domain: reconcileDomain !== 'ALL' ? reconcileDomain : undefined,
+        severity: reconcileSeverity !== 'ALL' ? reconcileSeverity : undefined,
+      });
+      setReconciliationResult(res);
+    } catch (err: any) {
+      setError(err.message || 'Failed to execute data quality reconciliation audit');
+    } finally {
+      setReconciling(false);
+    }
+  }, [reconcileDomain, reconcileSeverity]);
+
   const loadData = useCallback(
     async (isBackground = false) => {
       if (!isBackground) setLoading(true);
@@ -110,15 +132,17 @@ export function MisReportLibraryTab() {
       try {
         if (subTab === 'CATALOG') {
           await loadCatalog();
-        } else {
+        } else if (subTab === 'SAVED') {
           await loadSavedReports();
+        } else {
+          await loadReconciliation();
         }
       } finally {
         setLoading(false);
         setRefreshing(false);
       }
     },
-    [subTab, loadCatalog, loadSavedReports],
+    [subTab, loadCatalog, loadSavedReports, loadReconciliation],
   );
 
   useEffect(() => {
@@ -242,6 +266,17 @@ export function MisReportLibraryTab() {
           >
             <Bookmark className="h-3.5 w-3.5" />
             My Saved Reports ({savedTotal})
+          </button>
+          <button
+            onClick={() => setSubTab('DATA_QUALITY')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
+              subTab === 'DATA_QUALITY'
+                ? 'bg-amber-600 text-white shadow-sm'
+                : 'text-stone-600 hover:text-stone-900 hover:bg-stone-100'
+            }`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Data Quality & Reconciliation
           </button>
         </div>
 
@@ -549,6 +584,188 @@ export function MisReportLibraryTab() {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* SUB-VIEW 3: DATA QUALITY & RECONCILIATION */}
+      {!loading && subTab === 'DATA_QUALITY' && (
+        <div className="space-y-6">
+          {/* Health Status Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="rounded-xl border border-stone-200 bg-white p-4 space-y-1">
+              <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                System Health Status
+              </span>
+              <div className="flex items-center gap-2 mt-1">
+                {reconciliationResult?.status === 'HEALTHY' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-bold text-emerald-800">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Healthy
+                  </span>
+                ) : reconciliationResult?.status === 'DEGRADED' ? (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-bold text-amber-800">
+                    <AlertTriangle className="h-3.5 w-3.5" /> Degraded Warnings
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2.5 py-0.5 text-xs font-bold text-rose-800">
+                    <ShieldAlert className="h-3.5 w-3.5" /> Critical Discrepancies
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-xl border border-stone-200 bg-white p-4 space-y-1">
+              <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                Checks Evaluated
+              </span>
+              <p className="text-xl font-bold text-stone-900">
+                {reconciliationResult?.totalChecksEvaluated ?? 0}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-stone-200 bg-white p-4 space-y-1">
+              <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                Discrepancies Found
+              </span>
+              <p className="text-xl font-bold text-rose-600">
+                {reconciliationResult?.totalDiscrepanciesFound ?? 0}
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-stone-200 bg-white p-4 space-y-1">
+              <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wide">
+                Last Audit Executed
+              </span>
+              <p className="text-xs text-stone-600 font-mono mt-1">
+                {reconciliationResult?.executedAt
+                  ? new Date(reconciliationResult.executedAt).toLocaleTimeString()
+                  : 'N/A'}
+              </p>
+            </div>
+          </div>
+
+          {/* Audit Controls & Filters */}
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-stone-50 border border-stone-200 rounded-xl p-3">
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Domain Selector */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-semibold text-stone-600">Domain:</span>
+                <select
+                  value={reconcileDomain}
+                  onChange={(e) => setReconcileDomain(e.target.value)}
+                  className="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-800 focus:outline-none"
+                >
+                  <option value="ALL">All Domains</option>
+                  <option value="WORKFORCE">Workforce</option>
+                  <option value="ATTENDANCE">Attendance</option>
+                  <option value="LEAVE">Leave Balances</option>
+                  <option value="REQUESTS">Request States</option>
+                  <option value="PERFORMANCE">Performance Reviews</option>
+                </select>
+              </div>
+
+              {/* Severity Selector */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="font-semibold text-stone-600">Severity:</span>
+                <select
+                  value={reconcileSeverity}
+                  onChange={(e) => setReconcileSeverity(e.target.value)}
+                  className="rounded-lg border border-stone-200 bg-white px-2.5 py-1 text-xs text-stone-800 focus:outline-none"
+                >
+                  <option value="ALL">All Severities</option>
+                  <option value="CRITICAL">Critical</option>
+                  <option value="WARNING">Warning</option>
+                  <option value="INFO">Info</option>
+                </select>
+              </div>
+            </div>
+
+            <Button
+              size="sm"
+              onClick={() => loadReconciliation()}
+              disabled={reconciling}
+              leftIcon={
+                <RefreshCw className={`h-3.5 w-3.5 ${reconciling ? 'animate-spin' : ''}`} />
+              }
+            >
+              {reconciling ? 'Auditing...' : 'Run Reconciliation Audit'}
+            </Button>
+          </div>
+
+          {/* Discrepancies Table */}
+          {!reconciliationResult?.discrepancies ||
+          reconciliationResult.discrepancies.length === 0 ? (
+            <div className="rounded-xl border border-stone-200 bg-white p-8 text-center text-xs text-stone-500 space-y-2">
+              <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto" />
+              <p className="font-semibold text-stone-800">Zero Discrepancies Detected</p>
+              <p className="text-stone-400 max-w-md mx-auto">
+                All report aggregations across workforce, attendance, leave balances, request
+                states, and performance cycles reconcile consistently against source transactional
+                records.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-stone-200 bg-stone-50 text-stone-500">
+                    <th className="py-3 px-4">Severity</th>
+                    <th className="py-3 px-4">Check Code</th>
+                    <th className="py-3 px-4">Record Ref</th>
+                    <th className="py-3 px-4">Issue Description</th>
+                    <th className="py-3 px-4">Expected vs Actual</th>
+                    <th className="py-3 px-4">Suggested Operational Remediation</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {reconciliationResult.discrepancies.map((d: any) => (
+                    <tr key={d.id} className="hover:bg-stone-50 transition-colors">
+                      <td className="py-3 px-4">
+                        {d.severity === 'CRITICAL' ? (
+                          <span className="rounded bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-800">
+                            CRITICAL
+                          </span>
+                        ) : d.severity === 'WARNING' ? (
+                          <span className="rounded bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
+                            WARNING
+                          </span>
+                        ) : (
+                          <span className="rounded bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-800">
+                            INFO
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 font-mono font-bold text-stone-800">
+                        {d.checkCode}
+                      </td>
+                      <td className="py-3 px-4 font-mono text-stone-600">{d.recordReference}</td>
+                      <td className="py-3 px-4 text-stone-700 max-w-xs leading-relaxed">
+                        {d.description}
+                      </td>
+                      <td className="py-3 px-4 text-[11px] font-mono text-stone-500 whitespace-nowrap">
+                        <span className="text-emerald-700">Exp: {String(d.expectedValue)}</span>
+                        <br />
+                        <span className="text-rose-700">Act: {String(d.actualValue)}</span>
+                      </td>
+                      <td className="py-3 px-4 text-stone-600 max-w-sm leading-relaxed text-[11px]">
+                        {d.suggestedRemediation}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* Governance Notice */}
+          <div className="rounded-xl border border-stone-200 bg-stone-50 p-3.5 text-[11px] text-stone-500 flex items-start gap-2">
+            <Info className="h-4 w-4 text-stone-400 mt-0.5 shrink-0" />
+            <div className="leading-relaxed">
+              <strong>Non-Destructive Guarantee:</strong> This reconciliation engine identifies and
+              reports data quality variances without silently altering, repairing, or deleting
+              source records. All remediations require explicit, authorized operational action by HR
+              or System Administrators.
+            </div>
+          </div>
         </div>
       )}
 

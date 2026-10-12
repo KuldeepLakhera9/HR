@@ -50,6 +50,8 @@ import {
 import { MisReportLibraryService } from './services/mis-report-library.service';
 import { ExportReportQueryDto } from './dto/report-export-query.dto';
 import { ReportExportService } from './services/report-export.service';
+import { QueryReconciliationDto } from './dto/report-reconciliation.dto';
+import { ReportReconciliationService } from './services/report-reconciliation.service';
 
 @Injectable()
 export class ReportsService {
@@ -78,6 +80,7 @@ export class ReportsController {
     private readonly performanceAnalyticsService: PerformanceAnalyticsService,
     private readonly misReportLibraryService: MisReportLibraryService,
     private readonly reportExportService: ReportExportService,
+    private readonly reportReconciliationService: ReportReconciliationService,
   ) {}
 
   @Get('executive/dashboard')
@@ -404,6 +407,27 @@ export class ReportsController {
 
     return res.status(200).send(csv);
   }
+
+  // ---------------------------------------------------------------------------
+  // Data Quality & Report Reconciliation Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Get('reconciliation/audit')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary:
+      'Run comprehensive reporting data-quality checks and reconcile derived reports against source records',
+  })
+  async getReconciliationAudit(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: QueryReconciliationDto,
+  ) {
+    const data = await this.reportReconciliationService.runDataQualityChecks(user, query);
+    return {
+      message: 'Reporting data reconciliation audit completed successfully',
+      data,
+    };
+  }
 }
 
 @Module({
@@ -418,6 +442,7 @@ export class ReportsController {
     PerformanceAnalyticsService,
     MisReportLibraryService,
     ReportExportService,
+    ReportReconciliationService,
   ],
   exports: [
     ReportsService,
@@ -428,6 +453,7 @@ export class ReportsController {
     PerformanceAnalyticsService,
     MisReportLibraryService,
     ReportExportService,
+    ReportReconciliationService,
   ],
 })
 export class ReportsModule {}
