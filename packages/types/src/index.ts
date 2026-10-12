@@ -1508,3 +1508,359 @@ export interface CalculateLeaveDaysResponseDto {
   availableBalance: number;
   pendingBalance: number;
 }
+
+// -----------------------------------------------------------------------------
+// Phase 8: Employee Self-Service (ESS) Types & Contracts
+// -----------------------------------------------------------------------------
+
+export interface EmployeeDashboardItem {
+  id: string;
+  type: 'LEAVE' | 'WFH' | 'OFFICIAL_VISIT' | 'ATTENDANCE_CORRECTION';
+  title: string;
+  dateRange: string;
+  status: string;
+  createdAt: string;
+  href: string;
+}
+
+export interface UpcomingAbsenceItem {
+  id: string;
+  type: 'LEAVE' | 'WFH' | 'OFFICIAL_VISIT';
+  title: string;
+  startDate: string;
+  endDate: string;
+  daysCount: number;
+  status: string;
+  href: string;
+}
+
+export interface EmployeeDashboardHoliday {
+  id: string;
+  name: string;
+  date: string;
+  dayOfWeek: string;
+  isOptional: boolean;
+}
+
+export interface EmployeeDashboardNotification {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  createdAt: string;
+  isRead: boolean;
+  link?: string | null;
+}
+
+export interface EmployeeDashboardResponse {
+  employee: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    firstName: string;
+    lastName: string;
+    profilePhoto: string | null;
+    designation: string;
+    department: string;
+    branch: string;
+    manager: {
+      id: string;
+      displayName: string;
+      employeeCode: string;
+    } | null;
+    workMode: string;
+    joiningDate: string;
+    status: string;
+  };
+  attendanceToday: {
+    isCheckedIn: boolean;
+    activeSessionId: string | null;
+    checkInTime: string | null;
+    checkOutTime: string | null;
+    mode: 'OFFICE' | 'WFH' | 'OFFICIAL_VISIT';
+    status: string;
+    loggedMinutes: number;
+    isOnBreak: boolean;
+    shift: {
+      name: string;
+      startTime: string;
+      endTime: string;
+    } | null;
+  };
+  leaveBalances: Array<{
+    id: string;
+    leaveTypeId: string;
+    code: string;
+    name: string;
+    available: number;
+    entitled: number;
+    used: number;
+    pending: number;
+  }>;
+  pendingRequests: {
+    totalCount: number;
+    leaveCount: number;
+    wfhCount: number;
+    visitCount: number;
+    correctionCount: number;
+    items: EmployeeDashboardItem[];
+  };
+  upcomingAbsences: UpcomingAbsenceItem[];
+  upcomingHolidays: EmployeeDashboardHoliday[];
+  notifications: EmployeeDashboardNotification[];
+}
+
+export type ProfileChangeStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface EmergencyContactInput {
+  name: string;
+  relationship: string;
+  phone: string;
+  alternatePhone?: string;
+  address?: string;
+  isPrimary?: boolean;
+}
+
+export interface ProfileChangeData {
+  personalEmail?: string;
+  phone?: string;
+  alternatePhone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  emergencyContacts?: EmergencyContactInput[];
+}
+
+export interface ProfileChangeRequestItem {
+  id: string;
+  employeeId: string;
+  employeeCode?: string;
+  employeeName?: string;
+  data: ProfileChangeData;
+  currentData?: ProfileChangeData | null;
+  reason?: string | null;
+  status: ProfileChangeStatus;
+  submittedAt: string;
+  reviewedAt?: string | null;
+  reviewerId?: string | null;
+  reviewerName?: string | null;
+  reviewNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateProfileChangeRequestDto {
+  personalEmail?: string;
+  phone?: string;
+  alternatePhone?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  postalCode?: string;
+  country?: string;
+  emergencyContacts?: EmergencyContactInput[];
+  reason?: string;
+}
+
+export interface ReviewProfileChangeRequestDto {
+  decision: 'APPROVED' | 'REJECTED';
+  reviewNotes?: string;
+}
+
+// -----------------------------------------------------------------------------
+// Unified Employee Self-Service Requests Types (Phase 8 - Step 3)
+// -----------------------------------------------------------------------------
+
+export type UnifiedRequestType =
+  | 'ALL'
+  | 'LEAVE'
+  | 'WFH'
+  | 'OFFICIAL_VISIT'
+  | 'ATTENDANCE_CORRECTION'
+  | 'PROFILE_CHANGE'
+  | 'DOCUMENT';
+
+export type UnifiedRequestStatus = 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface UnifiedEmployeeRequest {
+  id: string;
+  type:
+    'LEAVE' | 'WFH' | 'OFFICIAL_VISIT' | 'ATTENDANCE_CORRECTION' | 'PROFILE_CHANGE' | 'DOCUMENT';
+  title: string;
+  category?: string;
+  startDate: string;
+  endDate: string;
+  daysCount?: number;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+  reason: string;
+  submittedAt: string;
+  reviewedAt?: string | null;
+  reviewerName?: string | null;
+  reviewNotes?: string | null;
+  canCancel: boolean;
+  href: string;
+  details?: Record<string, any>;
+}
+
+export interface UnifiedRequestsQuery {
+  type?: string;
+  status?: string;
+  startDate?: string;
+  endDate?: string;
+  search?: string;
+  page?: number;
+  limit?: number;
+}
+
+export interface UnifiedRequestsResponse {
+  items: UnifiedEmployeeRequest[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+  counts: {
+    all: number;
+    leave: number;
+    wfh: number;
+    visit: number;
+    correction: number;
+    profile: number;
+    document?: number;
+    pending: number;
+  };
+}
+
+/**
+ * Employee Document Management Contracts (Phase 8 - Step 4)
+ */
+export type DocumentCategory =
+  | 'GOVT_ID'
+  | 'ACADEMIC'
+  | 'EXPERIENCE'
+  | 'ADDRESS_PROOF'
+  | 'CERTIFICATION'
+  | 'TAX'
+  | 'POLICY'
+  | 'OTHER';
+
+export type DocumentVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
+
+export interface EmployeeDocumentItem {
+  id: string;
+  employeeId: string;
+  documentType: DocumentCategory | string;
+  documentName: string;
+  documentNumber?: string | null;
+  mimeType: string;
+  fileSize: number;
+  fileSizeFormatted: string;
+  issueDate?: string | null;
+  expiryDate?: string | null;
+  isExpired?: boolean;
+  isExpiringSoon?: boolean;
+  status: DocumentVerificationStatus;
+  isVerified: boolean;
+  verifiedAt?: string | null;
+  verifiedByName?: string | null;
+  reviewerNotes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  canDelete: boolean;
+}
+
+export interface EmployeeDocumentStats {
+  total: number;
+  verified: number;
+  pending: number;
+  rejected: number;
+  expiringSoon: number;
+  expired: number;
+}
+
+export interface VerifyDocumentDto {
+  decision: 'VERIFIED' | 'REJECTED';
+  notes?: string;
+}
+
+// -----------------------------------------------------------------------------
+// Announcements Infrastructure Types (Phase 8 - Step 5)
+// -----------------------------------------------------------------------------
+
+export type AnnouncementPriority = 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+export type AnnouncementCategory = 'GENERAL' | 'POLICY' | 'EVENT' | 'MAINTENANCE' | 'BENEFITS';
+export type AnnouncementAudience = 'ALL' | 'DEPARTMENT' | 'ROLE';
+export type AnnouncementStatus = 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
+
+export interface AnnouncementItem {
+  id: string;
+  organizationId: string;
+  title: string;
+  content: string;
+  priority: AnnouncementPriority;
+  category: AnnouncementCategory;
+  targetAudience: AnnouncementAudience;
+  targetValue?: string | null;
+  publishedAt: string;
+  expiresAt?: string | null;
+  status: AnnouncementStatus;
+  authorId: string;
+  authorName: string;
+  createdAt: string;
+  updatedAt: string;
+  isRead?: boolean;
+}
+
+export interface CreateAnnouncementDto {
+  title: string;
+  content: string;
+  priority?: AnnouncementPriority;
+  category?: AnnouncementCategory;
+  targetAudience: AnnouncementAudience;
+  targetValue?: string | null;
+  publishedAt?: string;
+  expiresAt?: string | null;
+  status?: AnnouncementStatus;
+}
+
+export interface UpdateAnnouncementDto {
+  title?: string;
+  content?: string;
+  priority?: AnnouncementPriority;
+  category?: AnnouncementCategory;
+  targetAudience?: AnnouncementAudience;
+  targetValue?: string | null;
+  publishedAt?: string;
+  expiresAt?: string | null;
+  status?: AnnouncementStatus;
+}
+
+// -----------------------------------------------------------------------------
+// Account Security & Settings Types (Phase 8 - Step 6)
+// -----------------------------------------------------------------------------
+
+export interface UserSessionItem {
+  id: string;
+  ipAddress: string | null;
+  userAgent: string | null;
+  deviceName: string | null;
+  createdAt: string;
+  lastUsedAt: string;
+  isCurrent: boolean;
+}
+
+export interface ChangePasswordInput {
+  currentPassword: string;
+  newPassword: string;
+}
+
+export interface UserNotificationPreferences {
+  leaveUpdates: boolean;
+  attendanceAlerts: boolean;
+  announcements: boolean;
+  wfhUpdates: boolean;
+  officialVisitUpdates: boolean;
+}

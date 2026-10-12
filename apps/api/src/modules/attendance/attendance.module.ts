@@ -149,8 +149,20 @@ export class AttendanceController {
   @ApiOperation({
     summary: 'Get current employee attendance daily history and recent sessions',
   })
-  async getMyHistory(@CurrentUser() user: AuthenticatedUser) {
-    return this.attendanceService.getMyHistory(user);
+  async getMyHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('limit') limit?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('page') page?: string,
+  ) {
+    return this.attendanceService.getMyHistory(
+      user,
+      limit ? parseInt(limit, 10) : 30,
+      startDate,
+      endDate,
+      page ? parseInt(page, 10) : 1,
+    );
   }
 
   @Post('correction-request')

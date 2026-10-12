@@ -29,6 +29,12 @@ import {
   TransitionStatusDto,
   EmployeeFilterDto,
 } from './dto/employee.dto';
+import {
+  CreateProfileChangeRequestDto,
+  ReviewProfileChangeRequestDto,
+  QueryProfileChangeRequestsDto,
+} from './dto/profile-change-request.dto';
+import { QueryUnifiedRequestsDto } from './dto/unified-requests.dto';
 import { AuthenticatedRequest } from '../auth/interfaces/auth.interface';
 
 // -----------------------------------------------------------------------------
@@ -120,6 +126,105 @@ export class EmployeesController {
     return {
       success: true,
       message: 'Current employee profile retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('me/dashboard')
+  @ApiOperation({ summary: 'Get current logged-in employee home dashboard overview' })
+  async getMyDashboard(@Req() req: AuthenticatedRequest) {
+    const data = await this.employeesService.getMyDashboard(req.user);
+    return {
+      success: true,
+      message: 'Employee home dashboard retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('me/requests')
+  @ApiOperation({
+    summary:
+      'Get unified personal requests (Leave, WFH, Official Visits, Attendance Regularization, Profile Updates)',
+  })
+  async getMyRequests(@Req() req: AuthenticatedRequest, @Query() query: QueryUnifiedRequestsDto) {
+    const data = await this.employeesService.getMyRequests(req.user, query);
+    return {
+      success: true,
+      message: 'Unified employee requests retrieved successfully',
+      data: data.items,
+      meta: data.meta,
+      counts: data.counts,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Profile Change Request Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Post('me/profile-change-request')
+  @ApiOperation({ summary: 'Submit personal / emergency contact profile change request' })
+  async createProfileChangeRequest(
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: CreateProfileChangeRequestDto,
+  ) {
+    const data = await this.employeesService.createProfileChangeRequest(req.user, dto);
+    return {
+      success: true,
+      message: 'Profile change request submitted for HR approval',
+      data,
+    };
+  }
+
+  @Get('me/profile-change-requests')
+  @ApiOperation({ summary: 'Get current employee profile change request history' })
+  async getMyProfileChangeRequests(@Req() req: AuthenticatedRequest) {
+    const data = await this.employeesService.getMyProfileChangeRequests(req.user);
+    return {
+      success: true,
+      message: 'Profile change requests retrieved successfully',
+      data,
+    };
+  }
+
+  @Post('me/profile-change-requests/:id/cancel')
+  @ApiOperation({ summary: 'Cancel pending profile change request' })
+  async cancelProfileChangeRequest(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const data = await this.employeesService.cancelProfileChangeRequest(req.user, id);
+    return {
+      success: true,
+      message: 'Profile change request cancelled successfully',
+      data,
+    };
+  }
+
+  @Get('profile-change-requests')
+  @RequirePermissions('EMPLOYEE_UPDATE')
+  @ApiOperation({ summary: 'List organization profile change requests for review (HR/Admin)' })
+  async getProfileChangeRequests(
+    @Req() req: AuthenticatedRequest,
+    @Query() query: QueryProfileChangeRequestsDto,
+  ) {
+    const data = await this.employeesService.getProfileChangeRequests(req.user, query);
+    return {
+      success: true,
+      message: 'Profile change requests retrieved successfully',
+      data: data.items,
+      meta: data.meta,
+    };
+  }
+
+  @Post('profile-change-requests/:id/review')
+  @RequirePermissions('EMPLOYEE_UPDATE')
+  @ApiOperation({ summary: 'Review (Approve/Reject) profile change request (HR/Admin)' })
+  async reviewProfileChangeRequest(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: ReviewProfileChangeRequestDto,
+  ) {
+    const data = await this.employeesService.reviewProfileChangeRequest(req.user, id, dto);
+    return {
+      success: true,
+      message: `Profile change request ${dto.decision.toLowerCase()} successfully`,
       data,
     };
   }

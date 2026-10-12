@@ -20,6 +20,8 @@ describe('AuthService', () => {
     session: {
       create: jest.Mock;
       findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      findMany: jest.Mock;
       update: jest.Mock;
       updateMany: jest.Mock;
     };
@@ -83,6 +85,8 @@ describe('AuthService', () => {
       session: {
         create: jest.fn(),
         findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        findMany: jest.fn(),
         update: jest.fn(),
         updateMany: jest.fn(),
       },
@@ -814,6 +818,136 @@ describe('AuthService', () => {
         expect(stringified).not.toContain('SecretPassword123!');
         expect(stringified).not.toContain(mockUser.passwordHash);
       }
+    });
+  });
+
+  describe('Phase 8 Step 6: Employee Settings and Session Management', () => {
+    describe('getUserSessions', () => {
+      it('should retrieve active sessions for user, flag current session, and omit sensitive token hashes', async () => {
+        const now = new Date();
+        prisma.session.findMany.mockResolvedValue([
+          {
+            id: 'ses_current',
+            ipAddress: '127.0.0.1',
+            userAgent: 'Chrome / macOS',
+            deviceName: 'MacBook Pro',
+            createdAt: now,
+            lastUsedAt: now,
+          },
+          {
+            id: 'ses_other',
+            ipAddress: '192.168.1.50',
+            userAgent: 'Mobile Safari',
+            deviceName: 'iPhone 15',
+            createdAt: now,
+            lastUsedAt: now,
+          },
+        ]);
+
+        const result = await service.getUserSessions('usr_123', 'ses_current');
+
+        expect(prisma.session.findMany).toHaveBeenCalledWith({
+          where: {
+            userId: 'usr_123',
+            revokedAt: null,
+            expiresAt: { gt: expect.any(Date) },
+          },
+          orderBy: { lastUsedAt: 'desc' },
+          select: {
+            id: true,
+            ipAddress: true,
+            userAgent: true,
+            deviceName: true,
+            createdAt: true,
+            lastUsedAt: true,
+          },
+        });
+
+        expect(result).toHaveLength(2);
+        expect(result[0].id).toBe('ses_current');
+        expect(result[0].isCurrent).toBe(true);
+        expect(result[1].id).toBe('ses_other');
+        expect(result[1].isCurrent).toBe(false);
+
+        // Security requirement: Ensure zero password/token hash exposure
+        const serialized = JSON.stringify(result);
+        expect(serialized).not.toContain('refreshTokenHash');
+        expect(serialized).not.toContain('passwordHash');
+      });
+    });
+
+    describe('revokeSession', () => {
+      it('should successfully revoke session belonging to user and emit audit event', async () => {
+        prisma.session.findFirst.mockResolvedValue({
+          id: 'ses_target',
+          userId: 'usr_123',
+          user: { organizationId: 'org_123' },
+        });
+        prisma.session.update.mockResolvedValue({});
+
+        const res = await service.revokeSession(
+          'usr_123',
+          'ses_target',
+          'ses_current',
+          '127.0.0.1',
+          'Mozilla/5.0',
+        );
+
+        expect(res.success).toBe(true);
+        expect(res.isCurrentSession).toBe(false);
+        expect(prisma.session.update).toHaveBeenCalledWith({
+          where: { id: 'ses_target' },
+          data: { revokedAt: expect.any(Date) },
+        });
+
+        expect(auditService.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: AuthAuditEvent.SESSION_REVOKED,
+            entity: 'Session',
+            entityId: 'ses_target',
+            userId: 'usr_123',
+          }),
+        );
+      });
+
+      it('should throw NotFoundException if session does not exist or belongs to another user (IDOR prevention)', async () => {
+        prisma.session.findFirst.mockResolvedValue(null);
+
+        await expect(
+          service.revokeSession('usr_123', 'ses_belonging_to_other', 'ses_current'),
+        ).rejects.toThrow('Active session not found or already revoked');
+      });
+    });
+
+    describe('revokeOtherSessions', () => {
+      it('should terminate all other active sessions for user and emit audit log', async () => {
+        prisma.user.findUnique.mockResolvedValue({ organizationId: 'org_123' });
+        prisma.session.updateMany.mockResolvedValue({ count: 2 });
+
+        const res = await service.revokeOtherSessions('usr_123', 'ses_current', '127.0.0.1');
+
+        expect(res.revokedCount).toBe(2);
+        expect(prisma.session.updateMany).toHaveBeenCalledWith({
+          where: {
+            userId: 'usr_123',
+            id: { not: 'ses_current' },
+            revokedAt: null,
+          },
+          data: {
+            revokedAt: expect.any(Date),
+          },
+        });
+
+        expect(auditService.record).toHaveBeenCalledWith(
+          expect.objectContaining({
+            action: AuthAuditEvent.SESSION_REVOKED,
+            metadata: expect.objectContaining({
+              revokedCount: 2,
+              retainedSessionId: 'ses_current',
+            }),
+          }),
+        );
+      });
     });
   });
 });

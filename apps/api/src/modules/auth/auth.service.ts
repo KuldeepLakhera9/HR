@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  BadRequestException,
+  NotFoundException,
+  Logger,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
@@ -722,6 +728,150 @@ export class AuthService {
         retainedSessionId: currentSessionId,
       },
     });
+  }
+
+  /**
+   * Retrieve active sessions for authenticated user (Phase 8 Step 6)
+   * Excludes sensitive hashes and tokens
+   */
+  async getUserSessions(
+    userId: string,
+    currentSessionId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      ipAddress: string | null;
+      userAgent: string | null;
+      deviceName: string | null;
+      createdAt: string;
+      lastUsedAt: string;
+      isCurrent: boolean;
+    }>
+  > {
+    const sessions = await this.prisma.session.findMany({
+      where: {
+        userId,
+        revokedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      orderBy: { lastUsedAt: 'desc' },
+      select: {
+        id: true,
+        ipAddress: true,
+        userAgent: true,
+        deviceName: true,
+        createdAt: true,
+        lastUsedAt: true,
+      },
+    });
+
+    return sessions.map((s) => ({
+      id: s.id,
+      ipAddress: s.ipAddress,
+      userAgent: s.userAgent,
+      deviceName: s.deviceName,
+      createdAt: s.createdAt.toISOString(),
+      lastUsedAt: s.lastUsedAt.toISOString(),
+      isCurrent: s.id === currentSessionId,
+    }));
+  }
+
+  /**
+   * Revoke a specific active session belonging to the user
+   */
+  async revokeSession(
+    userId: string,
+    sessionId: string,
+    currentSessionId: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ success: boolean; isCurrentSession: boolean }> {
+    const session = await this.prisma.session.findFirst({
+      where: {
+        id: sessionId,
+        userId,
+        revokedAt: null,
+      },
+      select: {
+        id: true,
+        userId: true,
+        user: { select: { organizationId: true } },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Active session not found or already revoked');
+    }
+
+    await this.prisma.session.update({
+      where: { id: sessionId },
+      data: { revokedAt: new Date() },
+    });
+
+    // Audit Event: SESSION_REVOKED
+    await this.auditService.record({
+      action: AuthAuditEvent.SESSION_REVOKED,
+      entity: 'Session',
+      entityId: sessionId,
+      userId,
+      organizationId: session.user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        revokedSessionId: sessionId,
+        isCurrentSession: sessionId === currentSessionId,
+      },
+    });
+
+    return {
+      success: true,
+      isCurrentSession: sessionId === currentSessionId,
+    };
+  }
+
+  /**
+   * Terminate all other active sessions for this user except current session
+   */
+  async revokeOtherSessions(
+    userId: string,
+    currentSessionId: string,
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<{ revokedCount: number }> {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { organizationId: true },
+    });
+
+    const result = await this.prisma.session.updateMany({
+      where: {
+        userId,
+        id: { not: currentSessionId },
+        revokedAt: null,
+      },
+      data: {
+        revokedAt: new Date(),
+      },
+    });
+
+    if (result.count > 0 && user) {
+      await this.auditService.record({
+        action: AuthAuditEvent.SESSION_REVOKED,
+        entity: 'Session',
+        entityId: null,
+        userId,
+        organizationId: user.organizationId,
+        ipAddress,
+        userAgent,
+        metadata: {
+          reason: 'User terminated other active sessions from settings',
+          revokedCount: result.count,
+          retainedSessionId: currentSessionId,
+        },
+      });
+    }
+
+    return { revokedCount: result.count };
   }
 
   /**

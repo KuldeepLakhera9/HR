@@ -16,6 +16,9 @@ describe('AuthController', () => {
     changePassword: jest.Mock;
     forgotPassword: jest.Mock;
     resetPassword: jest.Mock;
+    getUserSessions: jest.Mock;
+    revokeSession: jest.Mock;
+    revokeOtherSessions: jest.Mock;
   };
 
   const mockSafeUser = {
@@ -44,6 +47,9 @@ describe('AuthController', () => {
       changePassword: jest.fn(),
       forgotPassword: jest.fn(),
       resetPassword: jest.fn(),
+      getUserSessions: jest.fn(),
+      revokeSession: jest.fn(),
+      revokeOtherSessions: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -272,6 +278,88 @@ describe('AuthController', () => {
       );
       expect(result.message).toContain('Password has been successfully reset');
       expect(result.data).toBeNull();
+    });
+  });
+
+  describe('GET /sessions', () => {
+    it('should return active sessions for authenticated user', async () => {
+      const mockSessions = [
+        {
+          id: 'ses_123',
+          ipAddress: '127.0.0.1',
+          userAgent: 'Mozilla/5.0 Chrome',
+          deviceName: 'Chrome on macOS',
+          createdAt: new Date().toISOString(),
+          lastUsedAt: new Date().toISOString(),
+          isCurrent: true,
+        },
+        {
+          id: 'ses_456',
+          ipAddress: '192.168.1.10',
+          userAgent: 'Mobile Safari',
+          deviceName: 'iPhone Safari',
+          createdAt: new Date().toISOString(),
+          lastUsedAt: new Date().toISOString(),
+          isCurrent: false,
+        },
+      ];
+
+      authService.getUserSessions.mockResolvedValue(mockSessions);
+
+      const result = await controller.getSessions(mockAuthenticatedUser);
+
+      expect(authService.getUserSessions).toHaveBeenCalledWith('usr_123', 'ses_123');
+      expect(result.data).toHaveLength(2);
+      expect(result.data[0].isCurrent).toBe(true);
+    });
+  });
+
+  describe('DELETE /sessions/:id', () => {
+    it('should revoke target session for authenticated user', async () => {
+      authService.revokeSession.mockResolvedValue({
+        success: true,
+        isCurrentSession: false,
+      });
+
+      const result = await controller.revokeSession(
+        mockAuthenticatedUser,
+        'ses_456',
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+
+      expect(authService.revokeSession).toHaveBeenCalledWith(
+        'usr_123',
+        'ses_456',
+        'ses_123',
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+      expect(result.message).toBe('Session revoked successfully');
+      expect(result.data.success).toBe(true);
+    });
+  });
+
+  describe('DELETE /sessions', () => {
+    it('should terminate all other active sessions', async () => {
+      authService.revokeOtherSessions.mockResolvedValue({
+        revokedCount: 3,
+      });
+
+      const result = await controller.revokeOtherSessions(
+        mockAuthenticatedUser,
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+
+      expect(authService.revokeOtherSessions).toHaveBeenCalledWith(
+        'usr_123',
+        'ses_123',
+        '127.0.0.1',
+        'Mozilla/5.0',
+      );
+      expect(result.message).toContain('Successfully revoked 3 other active session(s)');
+      expect(result.data.revokedCount).toBe(3);
     });
   });
 });

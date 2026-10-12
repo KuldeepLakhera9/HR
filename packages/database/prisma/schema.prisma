@@ -64,6 +64,7 @@ model Organization {
   employeeLeavePolicyAssignments EmployeeLeavePolicyAssignment[]
   leaveBalanceAccounts         LeaveBalanceAccount[]
   leaveRequests                LeaveRequest[]
+  profileChangeRequests        ProfileChangeRequest[]
 
   @@index([code])
   @@index([isActive])
@@ -232,6 +233,7 @@ model User {
   decidedLeaves       LeaveApproval[]                @relation("LeaveApprover")
   cancelledLeaves     LeaveRequest[]                 @relation("LeaveCanceller")
   performedLeaveTransactions LeaveBalanceTransaction[] @relation("LeaveTransactionActor")
+  reviewedProfileChanges     ProfileChangeRequest[]    @relation("ProfileChangeReviewer")
 
   @@unique([organizationId, email])
   @@unique([organizationId, employeeCode])
@@ -497,6 +499,7 @@ model Employee {
   leavePolicyAssignments       EmployeeLeavePolicyAssignment[]
   leaveBalanceAccounts         LeaveBalanceAccount[]
   leaveRequests                LeaveRequest[]
+  profileChangeRequests        ProfileChangeRequest[]
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -635,6 +638,43 @@ model EmployeeDocumentMetadata {
   @@index([documentType])
   @@index([isVerified])
   @@map("employee_documents_metadata")
+}
+
+enum ProfileChangeRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model ProfileChangeRequest {
+  id             String                     @id @default(uuid())
+  organizationId String
+  organization   Organization               @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  employeeId     String
+  employee       Employee                   @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  // Staged proposed changes (contacts & emergency contacts)
+  data           Json                       // Requested changes
+  currentData    Json?                      // Snapshot of authoritative data at request time
+  reason         String?                    // Employee notes/reason
+
+  status         ProfileChangeRequestStatus @default(PENDING)
+  submittedAt    DateTime                   @default(now())
+
+  reviewedAt     DateTime?
+  reviewerId     String?
+  reviewer       User?                      @relation("ProfileChangeReviewer", fields: [reviewerId], references: [id], onDelete: SetNull)
+  reviewNotes    String?
+
+  createdAt      DateTime                   @default(now())
+  updatedAt      DateTime                   @updatedAt
+
+  @@index([organizationId, status])
+  @@index([employeeId])
+  @@index([status])
+  @@index([submittedAt])
+  @@map("profile_change_requests")
 }
 
 // -----------------------------------------------------------------------------

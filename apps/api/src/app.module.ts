@@ -21,6 +21,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
 import { MailModule } from './modules/mail/mail.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { ManagerModule } from './modules/manager/manager.module';
+import { AnnouncementsModule } from './modules/announcements/announcements.module';
 
 import { JwtAuthGuard } from './modules/auth/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
@@ -57,6 +58,7 @@ import { PermissionsGuard } from './common/guards/permissions.guard';
     MailModule,
     AuditModule,
     ManagerModule,
+    AnnouncementsModule,
   ],
   providers: [
     {

@@ -118,6 +118,7 @@ describe('AttendanceService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
         findUnique: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
+        count: jest.fn().mockResolvedValue(0),
         upsert: jest
           .fn()
           .mockImplementation(({ create }) => Promise.resolve({ id: 'summary-1', ...create })),
@@ -2436,6 +2437,78 @@ describe('AttendanceService', () => {
           }),
         }),
       );
+    });
+  });
+
+  describe('getMyHistory (Employee Attendance History & Permissions)', () => {
+    const mockDailySummary = {
+      id: 'sum-1',
+      organizationId: mockOrgId,
+      employeeId: mockEmployeeId,
+      date: new Date('2026-10-09T00:00:00.000Z'),
+      status: 'PRESENT',
+      firstCheckIn: new Date('2026-10-09T09:05:00.000Z'),
+      lastCheckOut: new Date('2026-10-09T18:10:00.000Z'),
+      totalWorkMinutes: 485,
+      totalBreakMinutes: 60,
+      lateMinutes: 5,
+      overtimeMinutes: 25,
+      shift: { name: 'General', startTime: '09:00', endTime: '18:00' },
+      officialVisit: null,
+      wfhRequest: null,
+    };
+
+    it('returns attendance history summaries with pagination and own-record isolation', async () => {
+      prisma.attendanceDailySummary.count.mockResolvedValue(1);
+      prisma.attendanceDailySummary.findMany.mockResolvedValue([mockDailySummary]);
+      prisma.attendanceSession.findMany.mockResolvedValue([]);
+
+      const result = await service.getMyHistory(mockUser, 30, undefined, undefined, 1);
+
+      expect(result.data.meta.total).toBe(1);
+      expect(result.data.summaries.length).toBe(1);
+      expect(result.data.summaries[0].dateStr).toBe('2026-10-09');
+      expect(result.data.summaries[0].status).toBe('PRESENT');
+      expect(result.data.summaries[0].netHours).toBe(8.08);
+
+      expect(prisma.attendanceDailySummary.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: mockOrgId,
+            employeeId: mockEmployeeId,
+          }),
+          take: 30,
+          skip: 0,
+        }),
+      );
+    });
+
+    it('applies date boundaries when startDate and endDate are provided', async () => {
+      prisma.attendanceDailySummary.count.mockResolvedValue(1);
+      prisma.attendanceDailySummary.findMany.mockResolvedValue([mockDailySummary]);
+      prisma.attendanceSession.findMany.mockResolvedValue([]);
+
+      const result = await service.getMyHistory(mockUser, 30, '2026-10-01', '2026-10-10', 1);
+
+      expect(result.data.meta.total).toBe(1);
+      expect(prisma.attendanceDailySummary.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            organizationId: mockOrgId,
+            employeeId: mockEmployeeId,
+            date: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
+    });
+
+    it('throws error if employee profile cannot be resolved for user', async () => {
+      prisma.employee.findFirst.mockResolvedValueOnce(null);
+
+      await expect(service.getMyHistory(mockUser, 30, undefined, undefined, 1)).rejects.toThrow();
     });
   });
 });

@@ -2,6 +2,8 @@ import {
   Controller,
   Post,
   Get,
+  Delete,
+  Param,
   Body,
   Req,
   Res,
@@ -160,6 +162,65 @@ export class AuthController {
     return {
       message: 'Password changed successfully. Other active sessions terminated.',
       data: null,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('sessions')
+  @ApiOperation({ summary: 'Retrieve active login sessions for authenticated user' })
+  @ApiResponse({ status: 200, description: 'Sessions retrieved successfully' })
+  async getSessions(@CurrentUser() user: AuthenticatedUser) {
+    const sessions = await this.authService.getUserSessions(user.id, user.sessionId);
+    return {
+      message: 'Active sessions retrieved successfully',
+      data: sessions,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Delete('sessions/:id')
+  @ApiOperation({ summary: 'Revoke specific active session for authenticated user' })
+  @ApiResponse({ status: 200, description: 'Session revoked successfully' })
+  async revokeSession(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') sessionId: string,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    const result = await this.authService.revokeSession(
+      user.id,
+      sessionId,
+      user.sessionId,
+      ipAddress,
+      userAgent,
+    );
+    return {
+      message: 'Session revoked successfully',
+      data: result,
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Delete('sessions')
+  @ApiOperation({ summary: 'Revoke all other active sessions for authenticated user' })
+  @ApiResponse({ status: 200, description: 'Other sessions revoked successfully' })
+  async revokeOtherSessions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Ip() ipAddress: string,
+    @Headers('user-agent') userAgent: string | undefined,
+  ) {
+    const result = await this.authService.revokeOtherSessions(
+      user.id,
+      user.sessionId,
+      ipAddress,
+      userAgent,
+    );
+    return {
+      message: `Successfully revoked ${result.revokedCount} other active session(s)`,
+      data: result,
     };
   }
 

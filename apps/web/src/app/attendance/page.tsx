@@ -146,6 +146,9 @@ export default function AttendancePage() {
   const [isSubmittingCorrection, setIsSubmittingCorrection] = useState(false);
   const [correctionError, setCorrectionError] = useState<string | null>(null);
 
+  const [historyStartDate, setHistoryStartDate] = useState('');
+  const [historyEndDate, setHistoryEndDate] = useState('');
+
   // Fetch today status
   const loadTodayStatus = useCallback(async () => {
     try {
@@ -161,11 +164,17 @@ export default function AttendancePage() {
   }, []);
 
   // Fetch history & corrections
-  const loadHistoryAndCorrections = useCallback(async () => {
+  const loadHistoryAndCorrections = useCallback(async (startDate?: string, endDate?: string) => {
     try {
       setIsLoadingHistory(true);
       const [histRes, corrRes] = await Promise.all([
-        attendanceApi.getMyHistory(30).catch(() => ({ summaries: [] })),
+        attendanceApi
+          .getMyHistory({
+            limit: 50,
+            startDate: startDate || undefined,
+            endDate: endDate || undefined,
+          })
+          .catch(() => ({ summaries: [] })),
         attendanceApi.getMyCorrections().catch(() => []),
       ]);
       setHistoryData(histRes.summaries || []);
@@ -970,20 +979,70 @@ export default function AttendancePage() {
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
                   <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">
-                    <History className="h-5 w-5 text-stone-600" /> Attendance History (Past 30 Days)
+                    <History className="h-5 w-5 text-stone-600" /> Attendance History
                   </h3>
                   <p className="text-xs text-stone-500">
                     Daily summaries, hours recorded, and attendance regularization requests.
                   </p>
                 </div>
+                <div className="flex items-center gap-2 self-start sm:self-auto">
+                  <a
+                    href="/requests"
+                    className="inline-flex items-center px-3 py-1.5 text-xs font-semibold rounded-lg border border-stone-200 bg-white text-stone-700 hover:bg-stone-50 shadow-xs"
+                  >
+                    View All Requests →
+                  </a>
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setIsCorrectionModalOpen(true)}
+                    className="border-stone-300 text-stone-700"
+                  >
+                    <FileEdit className="h-3.5 w-3.5 mr-1.5 text-amber-700" /> Request Correction
+                  </Button>
+                </div>
+              </div>
+
+              {/* Date Filters for History */}
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-stone-50/80 rounded-xl border border-stone-200/80 text-xs">
+                <span className="font-semibold text-stone-600">Date Filter:</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-stone-500 text-[11px]">From:</span>
+                  <input
+                    type="date"
+                    value={historyStartDate}
+                    onChange={(e) => setHistoryStartDate(e.target.value)}
+                    className="px-2.5 py-1 text-xs rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-stone-500 text-[11px]">To:</span>
+                  <input
+                    type="date"
+                    value={historyEndDate}
+                    onChange={(e) => setHistoryEndDate(e.target.value)}
+                    className="px-2.5 py-1 text-xs rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
                 <Button
                   size="sm"
-                  variant="secondary"
-                  onClick={() => setIsCorrectionModalOpen(true)}
-                  className="self-start sm:self-auto border-stone-300 text-stone-700"
+                  onClick={() => loadHistoryAndCorrections(historyStartDate, historyEndDate)}
+                  className="bg-stone-800 hover:bg-stone-900 text-white text-xs px-3 py-1 h-auto"
                 >
-                  <FileEdit className="h-3.5 w-3.5 mr-1.5 text-amber-700" /> Request Correction
+                  Apply
                 </Button>
+                {(historyStartDate || historyEndDate) && (
+                  <button
+                    onClick={() => {
+                      setHistoryStartDate('');
+                      setHistoryEndDate('');
+                      loadHistoryAndCorrections();
+                    }}
+                    className="text-stone-500 hover:text-stone-800 text-xs underline font-medium"
+                  >
+                    Clear Filter
+                  </button>
+                )}
               </div>
 
               {isLoadingHistory ? (

@@ -46,6 +46,7 @@ import {
   WfhRequest,
   LeaveRequestStatus,
 } from '@hrms/database';
+import { Prisma } from '@prisma/client';
 
 export function formatCorrectionReason(
   category: string,
@@ -2467,7 +2468,13 @@ export class AttendanceService {
   /**
    * Retrieves past attendance daily summaries and sessions for current employee
    */
-  async getMyHistory(user: AuthenticatedUser, limit: number = 30) {
+  async getMyHistory(
+    user: AuthenticatedUser,
+    limit: number = 30,
+    startDate?: string,
+    endDate?: string,
+    page: number = 1,
+  ) {
     const employee = await this.prisma.employee.findFirst({
       where: { userId: user.id, organizationId: user.organizationId, deletedAt: null },
     });
@@ -2480,25 +2487,54 @@ export class AttendanceService {
       });
     }
 
-    const summaries = await this.prisma.attendanceDailySummary.findMany({
-      where: {
-        organizationId: user.organizationId,
-        employeeId: employee.id,
-      },
-      orderBy: { date: 'desc' },
-      take: limit,
-      include: {
-        shift: true,
-        officialVisit: true,
-        wfhRequest: true,
-      },
-    });
+    const where: Prisma.AttendanceDailySummaryWhereInput = {
+      organizationId: user.organizationId,
+      employeeId: employee.id,
+    };
+
+    if (startDate || endDate) {
+      where.date = {};
+      if (startDate) {
+        where.date.gte = new Date(`${startDate}T00:00:00.000Z`);
+      }
+      if (endDate) {
+        where.date.lte = new Date(`${endDate}T23:59:59.999Z`);
+      }
+    }
+
+    const skip = Math.max(0, (page - 1) * limit);
+
+    const [total, summaries] = await Promise.all([
+      this.prisma.attendanceDailySummary.count({ where }),
+      this.prisma.attendanceDailySummary.findMany({
+        where,
+        orderBy: { date: 'desc' },
+        skip,
+        take: limit,
+        include: {
+          shift: true,
+          officialVisit: true,
+          wfhRequest: true,
+        },
+      }),
+    ]);
+
+    const sessionsWhere: Prisma.AttendanceSessionWhereInput = {
+      organizationId: user.organizationId,
+      employeeId: employee.id,
+    };
+    if (startDate || endDate) {
+      sessionsWhere.date = {};
+      if (startDate) {
+        sessionsWhere.date.gte = new Date(`${startDate}T00:00:00.000Z`);
+      }
+      if (endDate) {
+        sessionsWhere.date.lte = new Date(`${endDate}T23:59:59.999Z`);
+      }
+    }
 
     const sessions = await this.prisma.attendanceSession.findMany({
-      where: {
-        organizationId: user.organizationId,
-        employeeId: employee.id,
-      },
+      where: sessionsWhere,
       orderBy: { date: 'desc' },
       take: limit * 2,
       include: {
@@ -2522,6 +2558,12 @@ export class AttendanceService {
           breakHours: Math.round((s.totalBreakMinutes / 60) * 100) / 100,
         })),
         sessions,
+        meta: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
       },
     };
   }

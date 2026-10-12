@@ -417,6 +417,13 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       requiredPermission: 'WFH_VIEW',
     },
     {
+      id: 'emp-requests',
+      label: 'My Requests',
+      href: '/requests',
+      icon: 'CheckSquare',
+      allowedRoles: ['EMPLOYEE'],
+    },
+    {
       id: 'emp-docs',
       label: 'My Documents',
       href: '/documents',
@@ -429,6 +436,13 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       label: 'Profile',
       href: '/profile',
       icon: 'UserCircle',
+      allowedRoles: ['EMPLOYEE'],
+    },
+    {
+      id: 'emp-settings',
+      label: 'Settings',
+      href: '/settings',
+      icon: 'Settings',
       allowedRoles: ['EMPLOYEE'],
     },
   ],

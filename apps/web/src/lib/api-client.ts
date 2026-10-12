@@ -6,6 +6,15 @@ import {
   DailyAttendanceReportResponse,
   MonthlyAttendanceReportFilterDto,
   MonthlyAttendanceReportResponse,
+  EmployeeDashboardResponse,
+  UnifiedRequestsQuery,
+  UnifiedRequestsResponse,
+  EmployeeDocumentItem,
+  EmployeeDocumentStats,
+  AnnouncementItem,
+  CreateAnnouncementDto,
+  UpdateAnnouncementDto,
+  UserSessionItem,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -247,6 +256,50 @@ export const authApi = {
     });
     return { message: response.message };
   },
+
+  /**
+   * Change user account password and terminate other active sessions (Phase 8 Step 6)
+   */
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ message: string }> {
+    const response = await fetchWithAuth<null>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    });
+    return { message: response.message };
+  },
+
+  /**
+   * Retrieve active login sessions for current user (Phase 8 Step 6)
+   */
+  async getSessions(): Promise<UserSessionItem[]> {
+    const response = await fetchWithAuth<UserSessionItem[]>('/auth/sessions', {
+      method: 'GET',
+    });
+    return response.data || [];
+  },
+
+  /**
+   * Revoke a specific active session by ID
+   */
+  async revokeSession(sessionId: string): Promise<{ success: boolean; isCurrentSession: boolean }> {
+    const response = await fetchWithAuth<{ success: boolean; isCurrentSession: boolean }>(
+      `/auth/sessions/${sessionId}`,
+      {
+        method: 'DELETE',
+      },
+    );
+    return response.data;
+  },
+
+  /**
+   * Terminate all other active login sessions except current session
+   */
+  async revokeOtherSessions(): Promise<{ revokedCount: number }> {
+    const response = await fetchWithAuth<{ revokedCount: number }>('/auth/sessions', {
+      method: 'DELETE',
+    });
+    return response.data;
+  },
 };
 
 /**
@@ -461,6 +514,11 @@ export const employeesApi = {
     return res.data;
   },
 
+  async getMyDashboard() {
+    const res = await fetchWithAuth<EmployeeDashboardResponse>('/employees/me/dashboard');
+    return res.data;
+  },
+
   async findOne(id: string) {
     const res = await fetchWithAuth<any>(`/employees/${id}`);
     return res.data;
@@ -581,6 +639,79 @@ export const employeesApi = {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+  },
+
+  async createProfileChangeRequest(data: {
+    personalEmail?: string;
+    phone?: string;
+    alternatePhone?: string;
+    address?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    emergencyContacts?: Array<{
+      name: string;
+      relationship: string;
+      phone: string;
+      alternatePhone?: string;
+      address?: string;
+      isPrimary?: boolean;
+    }>;
+    reason?: string;
+  }) {
+    const res = await fetchWithAuth<any>('/employees/me/profile-change-request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async getMyProfileChangeRequests() {
+    const res = await fetchWithAuth<any[]>('/employees/me/profile-change-requests');
+    return res.data;
+  },
+
+  async cancelProfileChangeRequest(id: string) {
+    const res = await fetchWithAuth<any>(`/employees/me/profile-change-requests/${id}/cancel`, {
+      method: 'POST',
+    });
+    return res.data;
+  },
+
+  async getProfileChangeRequests(params?: { status?: string; page?: number; limit?: number }) {
+    const query = new URLSearchParams();
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<any[]>(`/employees/profile-change-requests${qs}`);
+    return { items: res.data, meta: res.meta };
+  },
+
+  async reviewProfileChangeRequest(
+    id: string,
+    data: { decision: 'APPROVED' | 'REJECTED'; reviewNotes?: string },
+  ) {
+    const res = await fetchWithAuth<any>(`/employees/profile-change-requests/${id}/review`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async getMyRequests(params?: UnifiedRequestsQuery): Promise<UnifiedRequestsResponse> {
+    const query = new URLSearchParams();
+    if (params?.type && params.type !== 'ALL') query.set('type', params.type);
+    if (params?.status && params.status !== 'ALL') query.set('status', params.status);
+    if (params?.search) query.set('search', params.search);
+    if (params?.startDate) query.set('startDate', params.startDate);
+    if (params?.endDate) query.set('endDate', params.endDate);
+    if (params?.page) query.set('page', String(params.page));
+    if (params?.limit) query.set('limit', String(params.limit));
+    const qs = query.toString() ? `?${query.toString()}` : '';
+    const res = await fetchWithAuth<UnifiedRequestsResponse>(`/employees/me/requests${qs}`);
+    return res.data;
   },
 };
 
@@ -881,8 +1012,21 @@ export const attendanceApi = {
     return res.data;
   },
 
-  async getMyHistory(limit = 30) {
-    const res = await fetchWithAuth<any>(`/attendance/my-history?limit=${limit}`);
+  async getMyHistory(
+    params?: number | { limit?: number; page?: number; startDate?: string; endDate?: string },
+  ) {
+    const query = new URLSearchParams();
+    if (typeof params === 'number') {
+      query.set('limit', String(params));
+    } else if (params) {
+      if (params.limit) query.set('limit', String(params.limit));
+      if (params.page) query.set('page', String(params.page));
+      if (params.startDate) query.set('startDate', params.startDate);
+      if (params.endDate) query.set('endDate', params.endDate);
+    } else {
+      query.set('limit', '30');
+    }
+    const res = await fetchWithAuth<any>(`/attendance/my-history?${query.toString()}`);
     return res.data;
   },
 
@@ -1946,6 +2090,160 @@ export const managerApi = {
     if (params?.format) query.set('format', params.format);
     const qs = query.toString() ? `?${query.toString()}` : '';
     const res = await fetchWithAuth<any>(`/manager/reports/availability${qs}`);
+    return res;
+  },
+};
+
+export const documentsApi = {
+  async getMyDocuments(): Promise<{ items: EmployeeDocumentItem[]; stats: EmployeeDocumentStats }> {
+    const res = await fetchWithAuth<any>('/documents/me');
+    return res.data;
+  },
+
+  async uploadMyDocument(formData: FormData): Promise<EmployeeDocumentItem> {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/documents/me/upload`, {
+      method: 'POST',
+      headers,
+      body: formData,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || `Upload failed with status ${response.status}`);
+    }
+
+    const result = await response.json();
+    return result.data;
+  },
+
+  async downloadMyDocument(documentId: string, fileName?: string): Promise<void> {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/documents/me/${documentId}/download`, {
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Download failed');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || 'document';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  async getPreviewBlob(documentId: string): Promise<{ url: string; mimeType: string }> {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/documents/me/${documentId}/preview`, {
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to load document preview');
+    }
+
+    const mimeType = response.headers.get('Content-Type') || 'application/pdf';
+    const blob = await response.blob();
+    return {
+      url: window.URL.createObjectURL(blob),
+      mimeType,
+    };
+  },
+
+  async deleteMyDocument(documentId: string): Promise<{ message: string }> {
+    const res = await fetchWithAuth<any>(`/documents/me/${documentId}`, {
+      method: 'DELETE',
+    });
+    return res;
+  },
+
+  async getCompanyPolicies(): Promise<any[]> {
+    const res = await fetchWithAuth<any[]>('/documents/policies');
+    return res.data;
+  },
+
+  async getEmployeeDocuments(
+    employeeId: string,
+  ): Promise<{ items: EmployeeDocumentItem[]; stats: EmployeeDocumentStats }> {
+    const res = await fetchWithAuth<any>(`/documents/employee/${employeeId}`);
+    return res.data;
+  },
+
+  async verifyDocument(
+    documentId: string,
+    data: { decision: 'VERIFIED' | 'REJECTED'; notes?: string },
+  ): Promise<EmployeeDocumentItem> {
+    const res = await fetchWithAuth<any>(`/documents/${documentId}/verify`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+};
+
+export const announcementsApi = {
+  async getMyAnnouncements(): Promise<AnnouncementItem[]> {
+    const res = await fetchWithAuth<any>('/announcements');
+    return res.data;
+  },
+
+  async getAdminAnnouncements(params?: {
+    status?: string;
+    search?: string;
+  }): Promise<AnnouncementItem[]> {
+    const q = new URLSearchParams();
+    if (params?.status) q.append('status', params.status);
+    if (params?.search) q.append('search', params.search);
+    const queryString = q.toString() ? `?${q.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/announcements/admin${queryString}`);
+    return res.data;
+  },
+
+  async createAnnouncement(data: CreateAnnouncementDto): Promise<AnnouncementItem> {
+    const res = await fetchWithAuth<any>('/announcements', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async updateAnnouncement(id: string, data: UpdateAnnouncementDto): Promise<AnnouncementItem> {
+    const res = await fetchWithAuth<any>(`/announcements/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async archiveAnnouncement(id: string): Promise<{ success: boolean; message: string }> {
+    const res = await fetchWithAuth<any>(`/announcements/${id}`, {
+      method: 'DELETE',
+    });
     return res;
   },
 };
