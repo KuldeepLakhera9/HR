@@ -3622,6 +3622,13 @@ export const payrollApi = {
     });
     return res;
   },
+
+  async getSnapshotCalculationDetail(runId: string, snapshotId: string) {
+    const res = await fetchWithAuth<any>(
+      `/payroll/runs/${runId}/snapshots/${snapshotId}/calculation-detail`,
+    );
+    return res;
+  },
 };
 
 export const apiClient = {

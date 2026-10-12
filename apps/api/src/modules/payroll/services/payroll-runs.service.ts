@@ -18,6 +18,8 @@ import {
   RejectPayrollRunDto,
 } from '../dto/payroll-run.dto';
 
+import { PayrollCalculationEngineService } from './payroll-calculation-engine.service';
+
 @Injectable()
 export class PayrollRunsService {
   private readonly logger = new Logger(PayrollRunsService.name);
@@ -25,6 +27,7 @@ export class PayrollRunsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly calculationEngine: PayrollCalculationEngineService,
   ) {}
 
   /**
@@ -404,16 +407,16 @@ export class PayrollRunsService {
         });
       }
 
-      let runGross = 0;
-      let runDeductions = 0;
-      let runNet = 0;
+      let runGross = new Prisma.Decimal(0);
+      let runDeductions = new Prisma.Decimal(0);
+      let runNet = new Prisma.Decimal(0);
       let exceptionCount = 0;
       const exceptionsList: any[] = [];
 
-      // Process eligible employees
+      // Process eligible employees using dedicated calculation engine
       for (const emp of eligibleEmployees) {
-        // Find applicable approved compensation
-        const compensation = await this.prisma.employeeCompensation.findFirst({
+        // Find applicable approved compensations for period
+        const compensations = await this.prisma.employeeCompensation.findMany({
           where: {
             employeeId: emp.id,
             status: 'APPROVED',
@@ -426,132 +429,153 @@ export class PayrollRunsService {
               include: { component: true },
             },
           },
-          orderBy: { effectiveFrom: 'desc' },
+          orderBy: { effectiveFrom: 'asc' },
         });
 
-        const payslipNumber = `PAY-${period.year}${String(period.month).padStart(2, '0')}-${emp.employeeCode}-R${run.runNumber}V${nextCalcVersion}`;
+        // Find approved adjustments for period
+        const adjustments = await this.prisma.payrollAdjustment.findMany({
+          where: {
+            organizationId,
+            employeeId: emp.id,
+            periodId: period.id,
+            status: 'APPROVED',
+          },
+        });
 
-        let earnedGross = 0;
-        let totalEmpDeductions = 0;
-        let netSalary = 0;
-        let isException = false;
-        let exceptionReason: string | null = null;
-        let baseMonthlyGross = 0;
+        // Build compensation segment inputs
+        const compensationSegments = compensations.map((comp) => {
+          // Calculate overlap days within period
+          const segStart =
+            comp.effectiveFrom > periodStartDate ? comp.effectiveFrom : periodStartDate;
+          const segEnd =
+            comp.effectiveTo && comp.effectiveTo < periodEndDate ? comp.effectiveTo : periodEndDate;
+          const diffMs = Math.abs(segEnd.getTime() - segStart.getTime());
+          const activeDaysInPeriod = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 
-        if (!compensation) {
-          isException = true;
-          exceptionReason = 'No approved compensation assignment active for this period';
+          return {
+            compensationId: comp.id,
+            structureId: comp.structureId,
+            structureName: comp.structure?.name,
+            structureVersion: comp.structure?.version,
+            currency: comp.structure?.currency || 'INR',
+            ctcAnnual: comp.ctcAnnual,
+            grossMonthly: comp.grossMonthly,
+            effectiveFrom: comp.effectiveFrom,
+            effectiveTo: comp.effectiveTo,
+            activeDaysInPeriod,
+            segmentStartDate: segStart,
+            segmentEndDate: segEnd,
+            items: comp.items.map((item) => ({
+              componentId: item.componentId,
+              componentCode: item.component?.code || 'UNKNOWN',
+              componentName: item.component?.name || 'Component',
+              type: (item.component?.type as any) || 'EARNING',
+              calculationType: (item.component?.calculationType as any) || 'FLAT_AMOUNT',
+              amountOrPercentage: item.monthlyAmount,
+              formula: item.component?.formula,
+              isProRataApplicable: item.component?.isProRataApplicable ?? true,
+              isStatutory: item.component?.isStatutory ?? false,
+              affectsNetSalary: item.component?.affectsNetSalary ?? true,
+              displayOrder: item.component?.displayOrder ?? 0,
+            })),
+          };
+        });
+
+        // Delegate calculation to domain service
+        const calcOutput = this.calculationEngine.calculateEmployeePayroll(
+          {
+            employeeId: emp.id,
+            employeeCode: emp.employeeCode,
+            employeeName: emp.displayName,
+            departmentName: emp.employment?.department?.name,
+            designationTitle: emp.employment?.designation?.title,
+            branchName: emp.employment?.branch?.name,
+            period: {
+              id: period.id,
+              year: period.year,
+              month: period.month,
+              startDate: period.startDate,
+              endDate: period.endDate,
+              totalDays: period.totalDays,
+            },
+            calendarDays: totalCalendarDays,
+            workingDays: totalCalendarDays,
+            paidDays: totalCalendarDays,
+            lopDays: 0,
+            compensations: compensationSegments,
+            adjustments: adjustments.map((adj) => ({
+              adjustmentId: adj.id,
+              type: adj.type as any,
+              title: adj.title,
+              amount: adj.amount,
+              isTaxable: adj.isTaxable,
+            })),
+          },
+          run.runNumber,
+          nextCalcVersion,
+        );
+
+        runGross = runGross.plus(calcOutput.earnedGross);
+        runDeductions = runDeductions.plus(calcOutput.totalEmployeeDeductions);
+        runNet = runNet.plus(calcOutput.netSalary);
+
+        if (calcOutput.isException) {
           exceptionCount++;
           exceptionsList.push({
             employeeId: emp.id,
             employeeCode: emp.employeeCode,
             displayName: emp.displayName,
-            reason: exceptionReason,
+            reason: calcOutput.exceptionReason,
           });
-        } else {
-          baseMonthlyGross = Number(compensation.grossMonthly);
-
-          // Phase 11.4 Baseline calculation (full deterministic engine in 11.5)
-          // Sum up components
-          let calcEarnings = 0;
-          let calcDeductions = 0;
-
-          const snapshotItemsData: any[] = [];
-
-          if (compensation.items && compensation.items.length > 0) {
-            for (const item of compensation.items) {
-              const comp = item.component;
-              const stdAmount = Number(item.monthlyAmount);
-              // Baseline standard amounts
-              if (comp.type === 'EARNING') {
-                calcEarnings += stdAmount;
-              } else if (comp.type === 'DEDUCTION') {
-                calcDeductions += stdAmount;
-              }
-
-              snapshotItemsData.push({
-                componentId: comp.id,
-                componentCode: comp.code,
-                componentName: comp.name,
-                type: comp.type,
-                standardAmount: new Prisma.Decimal(stdAmount),
-                earnedAmount: new Prisma.Decimal(stdAmount),
-                displayOrder: comp.displayOrder,
-              });
-            }
-          } else {
-            // Default flat allocation if items not explicitly segmented
-            calcEarnings = baseMonthlyGross;
-          }
-
-          earnedGross = calcEarnings;
-          totalEmpDeductions = calcDeductions;
-          netSalary = Math.max(0, earnedGross - totalEmpDeductions);
-
-          runGross += earnedGross;
-          runDeductions += totalEmpDeductions;
-          runNet += netSalary;
-
-          // Create snapshot with items
-          await this.prisma.employeePayrollSnapshot.create({
-            data: {
-              organizationId,
-              payrollRunId: runId,
-              employeeId: emp.id,
-              payslipNumber,
-              payslipStatus: 'GENERATED',
-              employeeCode: emp.employeeCode,
-              employeeName: emp.displayName,
-              departmentName: emp.employment?.department?.name || null,
-              designationTitle: emp.employment?.designation?.title || null,
-              branchName: emp.employment?.branch?.name || null,
-              calendarDays: new Prisma.Decimal(totalCalendarDays),
-              workingDays: new Prisma.Decimal(totalCalendarDays),
-              paidDays: new Prisma.Decimal(totalCalendarDays),
-              lopDays: new Prisma.Decimal(0),
-              baseMonthlyGross: new Prisma.Decimal(baseMonthlyGross),
-              earnedGross: new Prisma.Decimal(earnedGross),
-              totalDeductions: new Prisma.Decimal(totalEmpDeductions),
-              netSalary: new Prisma.Decimal(netSalary),
-              roundingAdjustment: new Prisma.Decimal(0),
-              currency: compensation.structure?.currency || 'INR',
-              isException: false,
-              exceptionReason: null,
-              items: {
-                create: snapshotItemsData,
-              },
-            },
-          });
-          continue;
         }
 
-        // Create exception snapshot without compensation
+        // Persist reproducible snapshot with line items
         await this.prisma.employeePayrollSnapshot.create({
           data: {
             organizationId,
             payrollRunId: runId,
             employeeId: emp.id,
-            payslipNumber,
+            payslipNumber: calcOutput.payslipNumber,
             payslipStatus: 'GENERATED',
-            employeeCode: emp.employeeCode,
-            employeeName: emp.displayName,
+            employeeCode: calcOutput.employeeCode,
+            employeeName: calcOutput.employeeName,
             departmentName: emp.employment?.department?.name || null,
             designationTitle: emp.employment?.designation?.title || null,
             branchName: emp.employment?.branch?.name || null,
-            calendarDays: new Prisma.Decimal(totalCalendarDays),
-            workingDays: new Prisma.Decimal(totalCalendarDays),
-            paidDays: new Prisma.Decimal(0),
-            lopDays: new Prisma.Decimal(totalCalendarDays),
-            baseMonthlyGross: new Prisma.Decimal(0),
-            earnedGross: new Prisma.Decimal(0),
-            totalDeductions: new Prisma.Decimal(0),
-            netSalary: new Prisma.Decimal(0),
-            roundingAdjustment: new Prisma.Decimal(0),
-            currency: 'INR',
-            isException: true,
-            exceptionReason,
+            calendarDays: calcOutput.calendarDays,
+            workingDays: calcOutput.workingDays,
+            paidDays: calcOutput.paidDays,
+            lopDays: calcOutput.lopDays,
+            baseMonthlyGross: calcOutput.baseMonthlyGross,
+            earnedGross: calcOutput.earnedGross,
+            totalDeductions: calcOutput.totalEmployeeDeductions,
+            netSalary: calcOutput.netSalary,
+            roundingAdjustment: calcOutput.roundingAdjustment,
+            currency: calcOutput.currency,
+            calculationInputSnapshot: calcOutput.calculationInputSnapshot as any,
+            isException: calcOutput.isException,
+            exceptionReason: calcOutput.exceptionReason,
+            items: {
+              create: calcOutput.items.map((it) => ({
+                componentId: it.componentId || null,
+                componentCode: it.componentCode,
+                componentName: it.componentName,
+                type: it.type,
+                standardAmount: it.standardAmount,
+                earnedAmount: it.earnedAmount,
+                displayOrder: it.displayOrder,
+              })),
+            },
           },
         });
+
+        // Link adjustments to this run
+        if (adjustments.length > 0) {
+          await this.prisma.payrollAdjustment.updateMany({
+            where: { id: { in: adjustments.map((a) => a.id) } },
+            data: { payrollRunId: runId },
+          });
+        }
       }
 
       // Transition to REVIEW_PENDING and update totals
@@ -561,9 +585,9 @@ export class PayrollRunsService {
           data: {
             status: 'REVIEW_PENDING',
             totalEmployees: eligibleEmployees.length,
-            totalGross: new Prisma.Decimal(runGross),
-            totalDeductions: new Prisma.Decimal(runDeductions),
-            totalNet: new Prisma.Decimal(runNet),
+            totalGross: runGross,
+            totalDeductions: runDeductions,
+            totalNet: runNet,
             calculatedAt: new Date(),
             exceptionCount,
             exceptions: exceptionsList.length > 0 ? (exceptionsList as any) : undefined,
@@ -1012,5 +1036,34 @@ export class PayrollRunsService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  /**
+   * Get calculation detail and breakdown for a single snapshot
+   */
+  async getSnapshotCalculationDetail(organizationId: string, runId: string, snapshotId: string) {
+    const snapshot = await this.prisma.employeePayrollSnapshot.findFirst({
+      where: { id: snapshotId, payrollRunId: runId, organizationId },
+      include: {
+        items: {
+          orderBy: { displayOrder: 'asc' },
+        },
+        payrollRun: {
+          select: {
+            id: true,
+            title: true,
+            status: true,
+            runNumber: true,
+            calculationVersion: true,
+          },
+        },
+      },
+    });
+
+    if (!snapshot) {
+      throw new NotFoundException(`Payroll snapshot ${snapshotId} not found.`);
+    }
+
+    return snapshot;
   }
 }

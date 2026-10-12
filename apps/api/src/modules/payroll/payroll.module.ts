@@ -11,6 +11,7 @@ import { SalaryStructuresService } from './services/salary-structures.service';
 import { EmployeeCompensationService } from './services/employee-compensation.service';
 import { PayrollPeriodsService } from './services/payroll-periods.service';
 import { PayrollRunsService } from './services/payroll-runs.service';
+import { PayrollCalculationEngineService } from './services/payroll-calculation-engine.service';
 
 @Module({
   imports: [PrismaModule, AuditModule],
@@ -27,6 +28,7 @@ import { PayrollRunsService } from './services/payroll-runs.service';
     EmployeeCompensationService,
     PayrollPeriodsService,
     PayrollRunsService,
+    PayrollCalculationEngineService,
   ],
   exports: [
     SalaryComponentsService,
@@ -34,6 +36,7 @@ import { PayrollRunsService } from './services/payroll-runs.service';
     EmployeeCompensationService,
     PayrollPeriodsService,
     PayrollRunsService,
+    PayrollCalculationEngineService,
   ],
 })
 export class PayrollModule {}

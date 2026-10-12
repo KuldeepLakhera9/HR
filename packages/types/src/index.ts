@@ -3507,3 +3507,48 @@ export interface PayrollRunScopePreviewResult {
     hasActiveCompensation: boolean;
   }>;
 }
+
+export interface CalculationReconciliationDto {
+  grossEarningsMatch: boolean;
+  deductionsMatch: boolean;
+  netPayReconciled: boolean;
+  calculatedNetMinusSummary: number;
+  warnings: string[];
+}
+
+export interface CalculationLineItemExplanationDto {
+  componentCode: string;
+  componentName: string;
+  type: ComponentType;
+  isEmployerContribution: boolean;
+  standardAmount: number;
+  earnedAmount: number;
+  calculationType: string;
+  formula?: string | null;
+  inputSource: string;
+  displayOrder: number;
+  explanation: string;
+}
+
+export interface CalculationDetailSnapshotDto {
+  snapshotId: string;
+  employeeCode: string;
+  employeeName: string;
+  payslipNumber: string;
+  calendarDays: number;
+  paidDays: number;
+  lopDays: number;
+  prorationRatio: number;
+  baseMonthlyGross: number;
+  earnedGross: number;
+  totalEmployeeDeductions: number;
+  totalEmployerContributions: number;
+  roundingAdjustment: number;
+  netSalary: number;
+  reconciliation: CalculationReconciliationDto;
+  lineItems: CalculationLineItemExplanationDto[];
+  calculationInputSnapshot?: Record<string, any> | null;
+  warnings: string[];
+  isException: boolean;
+  exceptionReason?: string | null;
+}

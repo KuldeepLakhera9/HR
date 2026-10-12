@@ -230,4 +230,24 @@ export class PayrollRunsController {
       data,
     };
   }
+
+  @Get(':id/snapshots/:snapshotId/calculation-detail')
+  @RequirePermissions('PAYROLL_VIEW')
+  @ApiOperation({ summary: 'Get restricted itemized calculation detail and input snapshot' })
+  async getSnapshotCalculationDetail(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') runId: string,
+    @Param('snapshotId') snapshotId: string,
+  ) {
+    const data = await this.runsService.getSnapshotCalculationDetail(
+      user.organizationId,
+      runId,
+      snapshotId,
+    );
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Calculation detail retrieved successfully',
+      data,
+    };
+  }
 }

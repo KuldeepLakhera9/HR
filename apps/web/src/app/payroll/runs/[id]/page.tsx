@@ -78,6 +78,22 @@ export default function PayrollRunDetailPage() {
 
   // Selected snapshot for breakdown modal
   const [selectedSnapshot, setSelectedSnapshot] = useState<any>(null);
+  const [calculationDetail, setCalculationDetail] = useState<any>(null);
+  const [loadingDetail, setLoadingDetail] = useState(false);
+
+  const handleOpenSnapshotDetail = async (snapshot: any) => {
+    setSelectedSnapshot(snapshot);
+    setLoadingDetail(true);
+    setCalculationDetail(null);
+    try {
+      const res = await apiClient.getSnapshotCalculationDetail(runId, snapshot.id);
+      setCalculationDetail(res?.data || null);
+    } catch (err) {
+      console.error('Failed to load calculation detail', err);
+    } finally {
+      setLoadingDetail(false);
+    }
+  };
 
   const fetchRunData = useCallback(async () => {
     try {
@@ -721,7 +737,7 @@ export default function PayrollRunDetailPage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => setSelectedSnapshot(s)}
+                              onClick={() => handleOpenSnapshotDetail(s)}
                               className="h-7 text-[11px] border-stone-200"
                             >
                               <Eye className="w-3 h-3 mr-1 text-stone-400" />
@@ -788,8 +804,11 @@ export default function PayrollRunDetailPage() {
           {/* ------------------------------------------------------------------ */}
           <Dialog
             isOpen={Boolean(selectedSnapshot)}
-            onClose={() => setSelectedSnapshot(null)}
-            title="Employee Calculation Snapshot"
+            onClose={() => {
+              setSelectedSnapshot(null);
+              setCalculationDetail(null);
+            }}
+            title="Employee Payroll Calculation Detail & Audit Snapshot"
             description={
               selectedSnapshot
                 ? `${selectedSnapshot.employeeName} (${selectedSnapshot.employeeCode}) • Payslip: ${selectedSnapshot.payslipNumber}`
@@ -797,7 +816,7 @@ export default function PayrollRunDetailPage() {
             }
           >
             {selectedSnapshot && (
-              <div className="space-y-4 pt-2 text-xs">
+              <div className="space-y-4 pt-2 text-xs max-h-[75vh] overflow-y-auto pr-1">
                 {selectedSnapshot.isException && (
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-xs flex items-start gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
@@ -809,25 +828,59 @@ export default function PayrollRunDetailPage() {
                   </div>
                 )}
 
-                <div className="grid grid-cols-2 gap-3 p-3 bg-stone-50 rounded-lg border border-stone-200 font-mono">
+                {/* Audit Reconciliation Banner */}
+                {calculationDetail?.reconciliation && (
+                  <div
+                    className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
+                      calculationDetail.reconciliation.isReconciled
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                        : 'bg-rose-50 border-rose-200 text-rose-900'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      {calculationDetail.reconciliation.isReconciled ? (
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                      )}
+                      <div>
+                        <span className="font-bold">
+                          {calculationDetail.reconciliation.isReconciled
+                            ? 'Deterministic Financial Reconciliation: VERIFIED'
+                            : 'Reconciliation Discrepancy Flagged'}
+                        </span>
+                        <div className="text-[10px] opacity-80">
+                          {calculationDetail.reconciliation.isReconciled
+                            ? `Sum of line-item earnings (₹${calculationDetail.reconciliation.sumItemEarnings}) and deductions (₹${calculationDetail.reconciliation.sumItemDeductions}) perfectly balance to Net Pay.`
+                            : calculationDetail.reconciliation.discrepancyReason}
+                        </div>
+                      </div>
+                    </div>
+                    <Badge
+                      variant="outline"
+                      className={`text-[10px] font-mono ${
+                        calculationDetail.reconciliation.isReconciled
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                          : 'bg-rose-100 text-rose-800 border-rose-300'
+                      }`}
+                    >
+                      v{calculationDetail.calculationVersion}
+                    </Badge>
+                  </div>
+                )}
+
+                {/* High-Level Calculation Metrics */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 p-3 bg-stone-50 rounded-lg border border-stone-200 font-mono text-xs">
                   <div>
                     <span className="text-[10px] text-stone-400 block uppercase">
-                      Calendar Days
+                      Days (Cal / Paid)
                     </span>
                     <span className="font-bold text-stone-800">
-                      {Number(selectedSnapshot.calendarDays)}
+                      {Number(selectedSnapshot.calendarDays)} / {Number(selectedSnapshot.paidDays)}
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-stone-400 block uppercase">Paid Days</span>
-                    <span className="font-bold text-stone-800">
-                      {Number(selectedSnapshot.paidDays)}
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] text-stone-400 block uppercase">
-                      Base Monthly Gross
-                    </span>
+                    <span className="text-[10px] text-stone-400 block uppercase">Base Monthly</span>
                     <span className="font-bold text-stone-800">
                       ₹
                       {Number(selectedSnapshot.baseMonthlyGross).toLocaleString('en-IN', {
@@ -836,10 +889,52 @@ export default function PayrollRunDetailPage() {
                     </span>
                   </div>
                   <div>
-                    <span className="text-[10px] text-stone-400 block uppercase">
-                      Net Payable Salary
+                    <span className="text-[10px] text-stone-400 block uppercase">Earned Gross</span>
+                    <span className="font-bold text-stone-900">
+                      ₹
+                      {Number(selectedSnapshot.earnedGross).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                      })}
                     </span>
-                    <span className="font-bold text-emerald-800 text-sm">
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-stone-400 block uppercase">Deductions</span>
+                    <span className="font-bold text-rose-700">
+                      ₹
+                      {Number(selectedSnapshot.totalDeductions).toLocaleString('en-IN', {
+                        minimumFractionDigits: 2,
+                      })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-stone-400 block uppercase">
+                      Employer Contrib.
+                    </span>
+                    <span className="font-bold text-stone-600">
+                      ₹
+                      {Number(
+                        calculationDetail?.inputSnapshot?.totalEmployerContributions ?? 0,
+                      ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] text-stone-400 block uppercase">
+                      Rounding Adjustment
+                    </span>
+                    <span className="font-bold text-stone-600">
+                      ₹
+                      {Number(
+                        calculationDetail?.roundingAdjustment ??
+                          selectedSnapshot.roundingAdjustment ??
+                          0,
+                      ).toFixed(2)}
+                    </span>
+                  </div>
+                  <div className="sm:col-span-2 bg-white p-2 rounded border border-stone-200">
+                    <span className="text-[10px] text-stone-400 block uppercase font-sans font-semibold">
+                      Net Payable Take-Home
+                    </span>
+                    <span className="font-bold text-emerald-800 text-base">
                       ₹
                       {Number(selectedSnapshot.netSalary).toLocaleString('en-IN', {
                         minimumFractionDigits: 2,
@@ -848,10 +943,84 @@ export default function PayrollRunDetailPage() {
                   </div>
                 </div>
 
-                {/* Itemized Components */}
+                {/* Calculation Explanations & Rule Versions */}
                 <div className="space-y-2">
-                  <div className="font-bold text-stone-800">Component Line Items</div>
-                  {selectedSnapshot.items && selectedSnapshot.items.length > 0 ? (
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-stone-800">
+                      Itemized Line Items & Calculation Explanations
+                    </span>
+                    <span className="text-[10px] text-stone-400">
+                      {loadingDetail ? 'Loading formulas...' : 'Traceable rule derivations'}
+                    </span>
+                  </div>
+
+                  {calculationDetail?.lineItemExplanations &&
+                  calculationDetail.lineItemExplanations.length > 0 ? (
+                    <div className="border border-stone-200 rounded-lg overflow-hidden divide-y divide-stone-100">
+                      {calculationDetail.lineItemExplanations.map((line: any, idx: number) => (
+                        <div
+                          key={idx}
+                          className="p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs hover:bg-stone-50/70 transition-colors"
+                        >
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="font-semibold text-stone-900">
+                                {line.componentName}
+                              </span>
+                              <Badge
+                                variant="outline"
+                                className={`text-[9px] px-1.5 py-0 ${
+                                  line.type === 'EARNING'
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : line.type === 'DEDUCTION'
+                                      ? 'bg-rose-50 text-rose-800 border-rose-200'
+                                      : 'bg-stone-100 text-stone-700 border-stone-200'
+                                }`}
+                              >
+                                {line.type}
+                              </Badge>
+                              {line.isProrated && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[9px] px-1 py-0 bg-blue-50 text-blue-700 border-blue-200"
+                                >
+                                  PRORATED
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="text-[10px] text-stone-500 font-mono">
+                              {line.explanation}
+                            </div>
+                          </div>
+
+                          <div className="text-right font-mono shrink-0">
+                            <div
+                              className={`font-bold ${
+                                line.type === 'EARNING'
+                                  ? 'text-stone-900'
+                                  : line.type === 'DEDUCTION'
+                                    ? 'text-rose-700'
+                                    : 'text-stone-500'
+                              }`}
+                            >
+                              {line.type === 'DEDUCTION' ? '-' : ''}₹
+                              {Number(line.earnedAmount).toLocaleString('en-IN', {
+                                minimumFractionDigits: 2,
+                              })}
+                            </div>
+                            {line.baseAmount !== undefined && (
+                              <div className="text-[10px] text-stone-400">
+                                Base: ₹
+                                {Number(line.baseAmount).toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : selectedSnapshot.items && selectedSnapshot.items.length > 0 ? (
                     <div className="border border-stone-200 rounded-lg overflow-hidden divide-y divide-stone-100">
                       {selectedSnapshot.items.map((item: any) => (
                         <div
@@ -886,8 +1055,31 @@ export default function PayrollRunDetailPage() {
                   )}
                 </div>
 
+                {/* Calculation Warnings if any */}
+                {calculationDetail?.inputSnapshot?.warnings &&
+                  calculationDetail.inputSnapshot.warnings.length > 0 && (
+                    <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-800 text-[11px] space-y-1">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                        <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+                        Calculation Warnings
+                      </div>
+                      <ul className="list-disc pl-4 space-y-0.5">
+                        {calculationDetail.inputSnapshot.warnings.map((w: string, i: number) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
                 <div className="flex justify-end pt-2 border-t border-stone-200">
-                  <Button size="sm" variant="outline" onClick={() => setSelectedSnapshot(null)}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setSelectedSnapshot(null);
+                      setCalculationDetail(null);
+                    }}
+                  >
                     Close
                   </Button>
                 </div>

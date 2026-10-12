@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PayrollPeriodsService } from '../services/payroll-periods.service';
 import { PayrollRunsService } from '../services/payroll-runs.service';
+import { PayrollCalculationEngineService } from '../services/payroll-calculation-engine.service';
 import { Prisma } from '@prisma/client';
 
 describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () => {
@@ -41,6 +42,11 @@ describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () =
       },
       employeeCompensation: {
         findFirst: jest.fn(),
+        findMany: jest.fn(),
+      },
+      payrollAdjustment: {
+        findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       employeePayrollSnapshot: {
         create: jest.fn(),
@@ -58,7 +64,11 @@ describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () =
     };
 
     periodsService = new PayrollPeriodsService(mockPrisma, mockAudit);
-    runsService = new PayrollRunsService(mockPrisma, mockAudit);
+    runsService = new PayrollRunsService(
+      mockPrisma,
+      mockAudit,
+      new PayrollCalculationEngineService(),
+    );
   });
 
   describe('Payroll Period Management', () => {
@@ -273,38 +283,55 @@ describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () =
       ]);
 
       // emp-1 has active compensation; emp-2 has none (triggers exception)
+      const emp1Comp = {
+        id: 'comp-1',
+        effectiveFrom: new Date('2026-01-01'),
+        effectiveTo: null,
+        ctcAnnual: new Prisma.Decimal(1200000),
+        grossMonthly: new Prisma.Decimal(100000),
+        items: [
+          {
+            monthlyAmount: new Prisma.Decimal(60000),
+            component: {
+              id: 'c1',
+              code: 'BASIC',
+              name: 'Basic',
+              type: 'EARNING',
+              calculationType: 'FLAT_AMOUNT',
+              displayOrder: 1,
+            },
+          },
+          {
+            monthlyAmount: new Prisma.Decimal(40000),
+            component: {
+              id: 'c2',
+              code: 'HRA',
+              name: 'HRA',
+              type: 'EARNING',
+              calculationType: 'FLAT_AMOUNT',
+              displayOrder: 2,
+            },
+          },
+          {
+            monthlyAmount: new Prisma.Decimal(5000),
+            component: {
+              id: 'c3',
+              code: 'PF',
+              name: 'Provident Fund',
+              type: 'DEDUCTION',
+              calculationType: 'FLAT_AMOUNT',
+              displayOrder: 3,
+            },
+          },
+        ],
+        structure: { currency: 'INR' },
+      };
+
+      mockPrisma.employeeCompensation.findMany
+        .mockResolvedValueOnce([emp1Comp])
+        .mockResolvedValueOnce([]);
       mockPrisma.employeeCompensation.findFirst
-        .mockResolvedValueOnce({
-          id: 'comp-1',
-          grossMonthly: new Prisma.Decimal(100000),
-          items: [
-            {
-              monthlyAmount: new Prisma.Decimal(60000),
-              component: {
-                id: 'c1',
-                code: 'BASIC',
-                name: 'Basic',
-                type: 'EARNING',
-                displayOrder: 1,
-              },
-            },
-            {
-              monthlyAmount: new Prisma.Decimal(40000),
-              component: { id: 'c2', code: 'HRA', name: 'HRA', type: 'EARNING', displayOrder: 2 },
-            },
-            {
-              monthlyAmount: new Prisma.Decimal(5000),
-              component: {
-                id: 'c3',
-                code: 'PF',
-                name: 'Provident Fund',
-                type: 'DEDUCTION',
-                displayOrder: 3,
-              },
-            },
-          ],
-          structure: { currency: 'INR' },
-        })
+        .mockResolvedValueOnce(emp1Comp)
         .mockResolvedValueOnce(null);
 
       mockPrisma.payrollRun.update.mockImplementation((args: any) => ({
