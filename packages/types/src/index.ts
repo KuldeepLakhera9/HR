@@ -2256,3 +2256,160 @@ export interface EligibilityPreviewDto {
     joiningDate?: string | null;
   }>;
 }
+
+// -----------------------------------------------------------------------------
+// Performance Review & Self-Assessment DTOs
+// -----------------------------------------------------------------------------
+
+export interface SelfAssessmentAttachment {
+  url: string;
+  name: string;
+  size?: number;
+  mimeType?: string;
+}
+
+export interface PerformanceReviewItemDto {
+  id: string;
+  reviewId: string;
+  goalId?: string | null;
+  goal?: PerformanceGoalDto | null;
+  competencyId?: string | null;
+  competency?: {
+    id: string;
+    name: string;
+    description: string;
+    category: CompetencyCategory;
+    weight: number;
+  } | null;
+  selfRating?: number | null;
+  selfComments?: string | null;
+  selfEvidenceUrl?: string | null;
+  managerRating?: number | null;
+  managerComments?: string | null;
+  isNotApplicable: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PerformanceReviewHistoryDto {
+  id: string;
+  reviewId: string;
+  actorId: string;
+  actor?: {
+    id: string;
+    displayName: string;
+    employeeCode: string;
+  };
+  action: string;
+  changeReason?: string | null;
+  previousState?: any;
+  newState?: any;
+  createdAt: string;
+}
+
+export interface PerformanceReviewDto {
+  id: string;
+  organizationId: string;
+  cycleId: string;
+  cycle?: ReviewCycleDto;
+  employeeId: string;
+  employee?: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+    profilePhoto?: string | null;
+    employment?: {
+      department?: { id: string; name: string } | null;
+      designation?: { id: string; title: string } | null;
+      branch?: { id: string; name: string } | null;
+    } | null;
+  };
+  managerId?: string | null;
+  manager?: {
+    id: string;
+    employeeCode: string;
+    displayName: string;
+  } | null;
+  participantId?: string | null;
+  participant?: ReviewCycleParticipantDto | null;
+  templateVersion: number;
+  status: PerformanceReviewStatus;
+  selfSummary?: string | null;
+  selfAchievements?: string | null;
+  selfChallenges?: string | null;
+  skillsDeveloped?: string | null;
+  developmentInterests?: string | null;
+  selfEvidenceAttachments?: SelfAssessmentAttachment[] | null;
+  selfSubmittedAt?: string | null;
+  managerSummary?: string | null;
+  managerStrengths?: string | null;
+  managerImprovements?: string | null;
+  managerSubmittedAt?: string | null;
+  calculatedGoalsScore?: number | null;
+  calculatedCompetenciesScore?: number | null;
+  overallScore?: number | null;
+  calculationBreakdown?: any;
+  scoreExplanation?: string | null;
+  reopenReason?: string | null;
+  reopenedById?: string | null;
+  reopenedAt?: string | null;
+  finalizedById?: string | null;
+  finalizedAt?: string | null;
+  employeeAcknowledgedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  items?: PerformanceReviewItemDto[];
+  history?: PerformanceReviewHistoryDto[];
+}
+
+export interface SelfAssessmentItemInput {
+  goalId?: string;
+  competencyId?: string;
+  selfRating?: number;
+  selfComments?: string;
+  selfEvidenceUrl?: string;
+  isNotApplicable?: boolean;
+}
+
+export interface SaveSelfAssessmentDraftDto {
+  cycleId: string;
+  selfSummary?: string;
+  selfAchievements?: string;
+  selfChallenges?: string;
+  skillsDeveloped?: string;
+  developmentInterests?: string;
+  selfEvidenceAttachments?: SelfAssessmentAttachment[];
+  items?: SelfAssessmentItemInput[];
+}
+
+export interface SubmitSelfAssessmentDto {
+  cycleId: string;
+  selfSummary: string;
+  selfAchievements: string;
+  selfChallenges?: string;
+  skillsDeveloped?: string;
+  developmentInterests?: string;
+  selfEvidenceAttachments?: SelfAssessmentAttachment[];
+  items?: SelfAssessmentItemInput[];
+}
+
+export interface ReopenSelfAssessmentDto {
+  reason: string;
+}
+
+export interface EmployeeActiveReviewContextDto {
+  participant: ReviewCycleParticipantDto;
+  cycle: ReviewCycleDto;
+  review?: PerformanceReviewDto | null;
+  goals: PerformanceGoalDto[];
+  competencies: Array<{
+    id: string;
+    category: CompetencyCategory;
+    name: string;
+    description: string;
+    weight: number;
+  }>;
+  isDeadlinePassed: boolean;
+  canEdit: boolean;
+  canSubmit: boolean;
+}

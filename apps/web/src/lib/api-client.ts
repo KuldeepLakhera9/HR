@@ -31,6 +31,12 @@ import {
   ReassignManagerDto,
   ExemptParticipantDto,
   EligibilityPreviewDto,
+  PerformanceReviewDto,
+  SaveSelfAssessmentDraftDto,
+  SubmitSelfAssessmentDto,
+  ReopenSelfAssessmentDto,
+  EmployeeActiveReviewContextDto,
+  SelfAssessmentAttachment,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2470,6 +2476,52 @@ export const performanceApi = {
         body: JSON.stringify(data),
       },
     );
+    return res.data;
+  },
+
+  // Employee Self-Assessment
+  async getSelfAssessmentContext(cycleId?: string): Promise<EmployeeActiveReviewContextDto> {
+    const q = cycleId ? `?cycleId=${encodeURIComponent(cycleId)}` : '';
+    const res = await fetchWithAuth<any>(`/performance/self-assessment/context${q}`);
+    return res.data;
+  },
+
+  async saveSelfAssessmentDraft(data: SaveSelfAssessmentDraftDto): Promise<PerformanceReviewDto> {
+    const res = await fetchWithAuth<any>('/performance/self-assessment/draft', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async submitSelfAssessment(data: SubmitSelfAssessmentDto): Promise<PerformanceReviewDto> {
+    const res = await fetchWithAuth<any>('/performance/self-assessment/submit', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res.data;
+  },
+
+  async getSelfAssessmentReview(id: string): Promise<PerformanceReviewDto> {
+    const res = await fetchWithAuth<any>(`/performance/self-assessment/review/${id}`);
+    return res.data;
+  },
+
+  async reopenSelfAssessment(id: string, reason: string): Promise<PerformanceReviewDto> {
+    const res = await fetchWithAuth<any>(`/performance/self-assessment/review/${id}/reopen`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+    return res.data;
+  },
+
+  async uploadSelfAssessmentEvidence(file: File): Promise<SelfAssessmentAttachment> {
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetchWithAuth<any>('/performance/self-assessment/evidence', {
+      method: 'POST',
+      body: formData,
+    });
     return res.data;
   },
 };

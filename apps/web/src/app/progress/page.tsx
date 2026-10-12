@@ -25,6 +25,7 @@ import {
   Dialog,
 } from '@hrms/ui';
 import { ReviewCyclesView } from '../../components/performance/ReviewCyclesView';
+import { SelfAssessmentView } from '../../components/performance/SelfAssessmentView';
 import {
   TrendingUp,
   Target,
@@ -57,9 +58,25 @@ import {
 export default function ProgressGoalsPage() {
   const { user } = useAuth();
   const { role } = useRole();
+  const isHrOrAdmin = role === 'ADMIN' || role === 'HR';
 
-  // Section Switcher (HR & Admin can toggle between Goals and Cycle Administration)
-  const [activeSection, setActiveSection] = useState<'GOALS' | 'CYCLES'>('GOALS');
+  // Section Switcher: Goals, Review Cycles, or Employee Self-Assessment
+  const [activeSection, setActiveSection] = useState<'GOALS' | 'CYCLES' | 'SELF_ASSESSMENT'>(
+    'GOALS',
+  );
+
+  // URL query param support for deep linking to self-assessment
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab') || params.get('section');
+      if (tabParam === 'self-assessment' || tabParam === 'SELF_ASSESSMENT') {
+        setActiveSection('SELF_ASSESSMENT');
+      } else if (tabParam === 'cycles' || tabParam === 'CYCLES') {
+        if (isHrOrAdmin) setActiveSection('CYCLES');
+      }
+    }
+  }, [isHrOrAdmin]);
 
   // Navigation Scope Tabs: 'MY_GOALS' | 'TEAM_GOALS' | 'ORG_GOALS'
   const [activeTab, setActiveTab] = useState<'MY_GOALS' | 'TEAM_GOALS' | 'ORG_GOALS'>('MY_GOALS');
@@ -120,7 +137,6 @@ export default function ProgressGoalsPage() {
   const [decisionReason, setDecisionReason] = useState('');
 
   const isManagerOrAdmin = role === 'MANAGER' || role === 'ADMIN' || role === 'HR';
-  const isHrOrAdmin = role === 'ADMIN' || role === 'HR';
 
   const fetchGoalsData = useCallback(async () => {
     setIsLoading(true);
@@ -380,30 +396,34 @@ export default function ProgressGoalsPage() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={fetchGoalsData}
-              disabled={isLoading}
-              className="gap-2 border-stone-200 text-stone-700 hover:bg-stone-50"
-            >
-              <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
-              Sync
-            </Button>
+            {activeSection === 'GOALS' && (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={fetchGoalsData}
+                  disabled={isLoading}
+                  className="gap-2 border-stone-200 text-stone-700 hover:bg-stone-50"
+                >
+                  <RefreshCw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  Sync
+                </Button>
 
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => {
-                resetGoalForm();
-                setEditingGoal(null);
-                setIsCreateModalOpen(true);
-              }}
-              className="gap-2 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-xs"
-            >
-              <Plus className="h-4 w-4" />
-              New Goal
-            </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  onClick={() => {
+                    resetGoalForm();
+                    setEditingGoal(null);
+                    setIsCreateModalOpen(true);
+                  }}
+                  className="gap-2 bg-amber-600 hover:bg-amber-700 text-white font-medium shadow-xs"
+                >
+                  <Plus className="h-4 w-4" />
+                  New Goal
+                </Button>
+              </>
+            )}
           </div>
         </div>
 
@@ -438,20 +458,33 @@ export default function ProgressGoalsPage() {
           </div>
         )}
 
-        {/* Section Navigation Tabs for HR & Admin */}
-        {isHrOrAdmin && (
-          <div className="flex border-b border-stone-200 gap-6 pt-1">
-            <button
-              onClick={() => setActiveSection('GOALS')}
-              className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
-                activeSection === 'GOALS'
-                  ? 'border-amber-600 text-amber-900'
-                  : 'border-transparent text-stone-500 hover:text-stone-800'
-              }`}
-            >
-              <Target className="h-4 w-4" />
-              Goals & OKRs Management
-            </button>
+        {/* Section Navigation Tabs */}
+        <div className="flex border-b border-stone-200 gap-6 pt-1">
+          <button
+            onClick={() => setActiveSection('GOALS')}
+            className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
+              activeSection === 'GOALS'
+                ? 'border-amber-600 text-amber-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <Target className="h-4 w-4" />
+            Goals & OKRs Management
+          </button>
+
+          <button
+            onClick={() => setActiveSection('SELF_ASSESSMENT')}
+            className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
+              activeSection === 'SELF_ASSESSMENT'
+                ? 'border-amber-600 text-amber-900'
+                : 'border-transparent text-stone-500 hover:text-stone-800'
+            }`}
+          >
+            <FileText className="h-4 w-4" />
+            My Self-Assessment
+          </button>
+
+          {isHrOrAdmin && (
             <button
               onClick={() => setActiveSection('CYCLES')}
               className={`pb-2.5 text-sm font-semibold transition-colors border-b-2 flex items-center gap-2 ${
@@ -463,8 +496,8 @@ export default function ProgressGoalsPage() {
               <Calendar className="h-4 w-4" />
               Review Cycles & Administration
             </button>
-          </div>
-        )}
+          )}
+        </div>
 
         {activeSection === 'CYCLES' && isHrOrAdmin ? (
           <ReviewCyclesView
@@ -472,6 +505,8 @@ export default function ProgressGoalsPage() {
               type === 'success' ? setFeedbackSuccess(msg) : setFeedbackError(msg)
             }
           />
+        ) : activeSection === 'SELF_ASSESSMENT' ? (
+          <SelfAssessmentView onRefreshParent={fetchGoalsData} />
         ) : (
           <>
             {/* KPI Overview Cards */}

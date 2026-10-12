@@ -514,6 +514,7 @@ model Employee {
   developmentPlans             DevelopmentPlan[]               @relation("EmployeeDevelopmentPlans")
   participatingCycles          ReviewCycleParticipant[]        @relation("CycleParticipantEmployee")
   evaluatingParticipants       ReviewCycleParticipant[]        @relation("CycleParticipantManager")
+  reviewHistories              PerformanceReviewHistory[]      @relation("ReviewHistoryActor")
 
   @@unique([organizationId, employeeCode])
   @@index([organizationId])
@@ -1838,12 +1839,20 @@ model PerformanceReview {
   managerId      String?
   manager        Employee?    @relation("ManagerReviews", fields: [managerId], references: [id], onDelete: SetNull)
 
+  participantId String?
+  participant   ReviewCycleParticipant? @relation(fields: [participantId], references: [id], onDelete: SetNull)
+
+  templateVersion Int @default(1)
+
   status PerformanceReviewStatus @default(NOT_STARTED)
 
-  selfSummary      String?
-  selfAchievements String?
-  selfChallenges   String?
-  selfSubmittedAt  DateTime?
+  selfSummary             String?
+  selfAchievements        String?
+  selfChallenges          String?
+  skillsDeveloped         String?
+  developmentInterests    String?
+  selfEvidenceAttachments Json?
+  selfSubmittedAt         DateTime?
 
   managerSummary      String?
   managerStrengths    String?
@@ -1858,6 +1867,7 @@ model PerformanceReview {
 
   reopenReason           String?
   reopenedById           String?
+  reopenedAt             DateTime?
   finalizedById          String?
   finalizedAt            DateTime?
   employeeAcknowledgedAt DateTime?
@@ -1868,11 +1878,13 @@ model PerformanceReview {
   items            PerformanceReviewItem[]
   feedbackNotes    PerformanceFeedback[]
   developmentPlans DevelopmentPlan[]
+  history          PerformanceReviewHistory[]
 
   @@unique([cycleId, employeeId])
   @@index([organizationId, cycleId])
   @@index([managerId, status])
   @@index([employeeId, status])
+  @@index([participantId])
   @@map("performance_reviews")
 }
 
@@ -1881,13 +1893,14 @@ model PerformanceReviewItem {
   reviewId String
   review   PerformanceReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
 
-  goalId       String?
-  goal         PerformanceGoal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
-  competencyId String?
-  competency   PerformanceCompetency? @relation(fields: [competencyId], references: [id], onDelete: SetNull)
+  goalId          String?
+  goal            PerformanceGoal?       @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  competencyId    String?
+  competency      PerformanceCompetency? @relation(fields: [competencyId], references: [id], onDelete: SetNull)
 
   selfRating      Float?
   selfComments    String?
+  selfEvidenceUrl String?
   managerRating   Float?
   managerComments String?
   isNotApplicable Boolean @default(false)
@@ -1964,6 +1977,8 @@ model ReviewCycleParticipant {
   enrolledAt DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  reviews PerformanceReview[]
+
   @@unique([cycleId, employeeId])
   @@index([cycleId, status])
   @@index([employeeId])
@@ -1988,3 +2003,23 @@ model ReviewCycleHistory {
   @@index([createdAt])
   @@map("review_cycle_histories")
 }
+
+model PerformanceReviewHistory {
+  id       String            @id @default(uuid())
+  reviewId String
+  review   PerformanceReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+  actorId  String
+  actor    Employee          @relation("ReviewHistoryActor", fields: [actorId], references: [id], onDelete: Cascade)
+
+  action        String
+  changeReason  String?
+  previousState Json?
+  newState      Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([reviewId])
+  @@index([createdAt])
+  @@map("performance_review_histories")
+}
+
