@@ -118,29 +118,30 @@ export class PayrollRunsService {
       }
     }
 
-    // Inspect if employees have active approved compensation
-    const sampleEmployees = await Promise.all(
-      employees.slice(0, 15).map(async (emp) => {
-        const compensation = await this.prisma.employeeCompensation.findFirst({
-          where: {
-            employeeId: emp.id,
-            status: 'APPROVED',
-            effectiveFrom: { lte: periodEndDate },
-            OR: [{ effectiveTo: null }, { effectiveTo: { gte: periodStartDate } }],
-          },
-        });
+    // Batch query active approved compensation for sample preview employees (avoid N+1 queries)
+    const sampleEmpSlice = employees.slice(0, 15);
+    const sampleEmpIds = sampleEmpSlice.map((emp) => emp.id);
 
-        return {
-          id: emp.id,
-          employeeCode: emp.employeeCode,
-          displayName: emp.displayName,
-          branch: emp.employment?.branch?.name || null,
-          department: emp.employment?.department?.name || null,
-          designation: emp.employment?.designation?.title || null,
-          hasActiveCompensation: Boolean(compensation),
-        };
-      }),
-    );
+    const activeCompensations = await this.prisma.employeeCompensation.findMany({
+      where: {
+        employeeId: { in: sampleEmpIds },
+        status: 'APPROVED',
+        effectiveFrom: { lte: periodEndDate },
+        OR: [{ effectiveTo: null }, { effectiveTo: { gte: periodStartDate } }],
+      },
+      select: { employeeId: true },
+    });
+    const compensatedEmpIds = new Set(activeCompensations.map((c) => c.employeeId));
+
+    const sampleEmployees = sampleEmpSlice.map((emp) => ({
+      id: emp.id,
+      employeeCode: emp.employeeCode,
+      displayName: emp.displayName,
+      branch: emp.employment?.branch?.name || null,
+      department: emp.employment?.department?.name || null,
+      designation: emp.employment?.designation?.title || null,
+      hasActiveCompensation: compensatedEmpIds.has(emp.id),
+    }));
 
     return {
       scope: dto.scope || 'ALL',
@@ -429,34 +430,52 @@ export class PayrollRunsService {
       let exceptionCount = 0;
       const exceptionsList: any[] = [];
 
+      // Batch pre-fetch compensations and adjustments for all eligible employees (O(1) lookups vs O(N) database queries)
+      const eligibleEmployeeIds = eligibleEmployees.map((e) => e.id);
+
+      const allCompensations = await this.prisma.employeeCompensation.findMany({
+        where: {
+          employeeId: { in: eligibleEmployeeIds },
+          status: 'APPROVED',
+          effectiveFrom: { lte: periodEndDate },
+          OR: [{ effectiveTo: null }, { effectiveTo: { gte: periodStartDate } }],
+        },
+        include: {
+          structure: true,
+          items: {
+            include: { component: true },
+          },
+        },
+        orderBy: { effectiveFrom: 'asc' },
+      });
+
+      const compensationsByEmployee = new Map<string, typeof allCompensations>();
+      for (const comp of allCompensations) {
+        const list = compensationsByEmployee.get(comp.employeeId) || [];
+        list.push(comp);
+        compensationsByEmployee.set(comp.employeeId, list);
+      }
+
+      const allAdjustments = await this.prisma.payrollAdjustment.findMany({
+        where: {
+          organizationId,
+          employeeId: { in: eligibleEmployeeIds },
+          periodId: period.id,
+          status: 'APPROVED',
+        },
+      });
+
+      const adjustmentsByEmployee = new Map<string, typeof allAdjustments>();
+      for (const adj of allAdjustments) {
+        const list = adjustmentsByEmployee.get(adj.employeeId) || [];
+        list.push(adj);
+        adjustmentsByEmployee.set(adj.employeeId, list);
+      }
+
       // Process eligible employees using dedicated calculation engine
       for (const emp of eligibleEmployees) {
-        // Find applicable approved compensations for period
-        const compensations = await this.prisma.employeeCompensation.findMany({
-          where: {
-            employeeId: emp.id,
-            status: 'APPROVED',
-            effectiveFrom: { lte: periodEndDate },
-            OR: [{ effectiveTo: null }, { effectiveTo: { gte: periodStartDate } }],
-          },
-          include: {
-            structure: true,
-            items: {
-              include: { component: true },
-            },
-          },
-          orderBy: { effectiveFrom: 'asc' },
-        });
-
-        // Find approved adjustments for period
-        const adjustments = await this.prisma.payrollAdjustment.findMany({
-          where: {
-            organizationId,
-            employeeId: emp.id,
-            periodId: period.id,
-            status: 'APPROVED',
-          },
-        });
+        const compensations = compensationsByEmployee.get(emp.id) || [];
+        const adjustments = adjustmentsByEmployee.get(emp.id) || [];
 
         // Build compensation segment inputs
         const compensationSegments = compensations.map((comp) => {

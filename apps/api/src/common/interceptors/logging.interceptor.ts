@@ -2,6 +2,7 @@ import { Injectable, NestInterceptor, ExecutionContext, CallHandler, Logger } fr
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 import { Request } from 'express';
+import { sanitizeUrlForLogging } from '../utils/security.util';
 
 @Injectable()
 export class LoggingInterceptor implements NestInterceptor {
@@ -16,7 +17,8 @@ export class LoggingInterceptor implements NestInterceptor {
     return next.handle().pipe(
       tap(() => {
         const responseTime = Date.now() - now;
-        this.logger.log(`${method} ${url} - ${responseTime}ms`);
+        const sanitizedUrl = sanitizeUrlForLogging(url);
+        this.logger.log(`${method} ${sanitizedUrl} - ${responseTime}ms`);
       }),
     );
   }

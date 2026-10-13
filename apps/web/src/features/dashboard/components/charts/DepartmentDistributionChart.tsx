@@ -10,7 +10,14 @@ const mockData = [
   { department: 'Finance', count: 6 },
 ];
 
-export const DepartmentDistributionChart: React.FC = () => {
+export interface DepartmentDistributionDataPoint {
+  department: string;
+  count: number;
+}
+
+export const DepartmentDistributionChart: React.FC<{
+  data?: DepartmentDistributionDataPoint[];
+}> = ({ data = mockData }) => {
   return (
     <div className="w-full h-64">
       <ResponsiveContainer width="100%" height="100%">

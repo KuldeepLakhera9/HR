@@ -353,6 +353,7 @@ describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () =
       // emp-1 has active compensation; emp-2 has none (triggers exception)
       const emp1Comp = {
         id: 'comp-1',
+        employeeId: 'emp-1',
         effectiveFrom: new Date('2026-01-01'),
         effectiveTo: null,
         ctcAnnual: new Prisma.Decimal(1200000),
@@ -395,9 +396,7 @@ describe('Phase 11.4: Payroll Periods and Payroll Run Orchestration Tests', () =
         structure: { currency: 'INR' },
       };
 
-      mockPrisma.employeeCompensation.findMany
-        .mockResolvedValueOnce([emp1Comp])
-        .mockResolvedValueOnce([]);
+      mockPrisma.employeeCompensation.findMany.mockResolvedValue([emp1Comp]);
       mockPrisma.employeeCompensation.findFirst
         .mockResolvedValueOnce(emp1Comp)
         .mockResolvedValueOnce(null);

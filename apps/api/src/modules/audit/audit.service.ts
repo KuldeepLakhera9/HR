@@ -45,6 +45,19 @@ export class AuditService {
     /longitude/i,
     /exactCoords/i,
     /rawCoordinates/i,
+    /bankAccount/i,
+    /accountNumber/i,
+    /ifsc/i,
+    /panNumber/i,
+    /aadhaar/i,
+    /ssn/i,
+    /cvv/i,
+    /creditCard/i,
+    /salary/i,
+    /ctc/i,
+    /basePay/i,
+    /netPay/i,
+    /grossPay/i,
   ];
 
   constructor(private readonly prisma: PrismaService) {}

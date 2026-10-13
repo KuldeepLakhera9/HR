@@ -43,6 +43,7 @@ import {
   ProfileChangeRequestStatus,
 } from '@prisma/client';
 import * as XLSX from 'xlsx';
+import { sanitizeCsvRow } from '../../common/utils/security.util';
 import * as argon2 from 'argon2';
 
 @Injectable()
@@ -2865,7 +2866,7 @@ export class EmployeesService {
         row['Phone'] = e.phone || '';
       }
 
-      return row;
+      return sanitizeCsvRow(row);
     });
 
     const worksheet = XLSX.utils.json_to_sheet(exportRows);

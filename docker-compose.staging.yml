@@ -1,0 +1,120 @@
+# ==============================================================================
+# PeopleOS HRMS — Datacenter Staging & Production Docker Compose Configuration
+# ==============================================================================
+# Architecture Rules Enforced:
+# 1. PostgreSQL is strictly isolated on 'backend_net' with ZERO public host port bindings.
+# 2. 'web' service cannot communicate directly with PostgreSQL.
+# 3. Only 'nginx' exposes public ports 80 (HTTP redirect) and 443 (HTTPS TLS).
+# 4. Sensitive documents & payloads streamed strictly through authenticated API.
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. PostgreSQL 16 Relational Database Engine (Isolated Backend)
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: hrms_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?ERROR: POSTGRES_PASSWORD must be explicitly provided in staging/prod}
+      POSTGRES_DB: ${POSTGRES_DB:-hrms_db}
+    # NOTE: NO public host port mapping! Accessible only within Docker internal networks.
+    # If DBA access is needed from host localhost only, use: - '127.0.0.1:5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-hrms_user} -d ${POSTGRES_DB:-hrms_db}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - backend_net
+
+  # ----------------------------------------------------------------------------
+  # 2. NestJS Backend Core API Service
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: hrms_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: ${NODE_ENV:-staging}
+      PORT: 4000
+      API_PREFIX: ${API_PREFIX:-api/v1}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hrms_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hrms_db}?schema=public&sslmode=prefer
+      CORS_ORIGIN: ${CORS_ORIGIN:-https://hrms-staging.local,https://localhost}
+      JWT_SECRET: ${JWT_SECRET:?ERROR: JWT_SECRET must be set}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?ERROR: JWT_REFRESH_SECRET must be set}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+    # No direct host exposure: Nginx proxies to api:4000 internally
+    networks:
+      - backend_net
+      - frontend_net
+
+  # ----------------------------------------------------------------------------
+  # 3. Next.js Web Frontend Portal (SSR + Client)
+  # ----------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    container_name: hrms_web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: ${NODE_ENV:-staging}
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+      NEXT_PUBLIC_APP_NAME: "PeopleOS HRMS"
+      NEXT_PUBLIC_APP_ENV: ${NODE_ENV:-staging}
+    # No direct host exposure: Nginx proxies to web:3000 internally
+    networks:
+      - frontend_net
+
+  # ----------------------------------------------------------------------------
+  # 4. Nginx Reverse Proxy with TLS Hardening & Security Headers
+  # ----------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: hrms_nginx
+    restart: unless-stopped
+    depends_on:
+      - web
+      - api
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - ./infrastructure/nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infrastructure/nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - frontend_net
+
+# ------------------------------------------------------------------------------
+# Network Topology Isolation
+# ------------------------------------------------------------------------------
+networks:
+  # Public-facing network: Only Nginx and Web containers interact here
+  frontend_net:
+    driver: bridge
+  # Isolated database network: Only API and PostgreSQL interact here
+  backend_net:
+    driver: bridge
+    internal: true # Disallows external egress from backend network
+
+# ------------------------------------------------------------------------------
+# Persistent Volume Mounts
+# ------------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    driver: local

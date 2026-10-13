@@ -11,18 +11,39 @@ async function bootstrap() {
   const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
 
-  // 1. Cookie Parser
+  // 1. Security Headers & Hardening Middleware
+  const expressApp = app.getHttpAdapter().getInstance();
+  if (expressApp && typeof expressApp.disable === 'function') {
+    expressApp.disable('x-powered-by');
+  }
+
+  app.use((_req: any, res: any, next: any) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-XSS-Protection', '0');
+    res.setHeader('Permissions-Policy', 'geolocation=(), camera=(), microphone=()');
+    if (process.env.NODE_ENV === 'production') {
+      res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+    }
+    if (typeof res.removeHeader === 'function') {
+      res.removeHeader('X-Powered-By');
+    }
+    next();
+  });
+
+  // 2. Cookie Parser
   const parseCookies =
     typeof cookieParser === 'function'
       ? cookieParser
       : (cookieParser as unknown as { default: typeof cookieParser }).default || cookieParser;
   app.use(parseCookies());
 
-  // 2. Global Prefix - /api/v1
+  // 3. Global Prefix - /api/v1
   const apiPrefix = process.env.API_PREFIX || 'api/v1';
   app.setGlobalPrefix(apiPrefix);
 
-  // 3. Global Validation
+  // 4. Global Validation
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,
@@ -32,11 +53,11 @@ async function bootstrap() {
     }),
   );
 
-  // 4. Global Filters & Interceptors
+  // 5. Global Filters & Interceptors
   app.useGlobalFilters(new AllExceptionsFilter());
   app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
 
-  // 5. CORS
+  // 6. CORS
   const configuredOrigins = (process.env.CORS_ORIGIN || '')
     .split(',')
     .map((o) => o.trim())
@@ -67,32 +88,40 @@ async function bootstrap() {
     credentials: true,
   });
 
-  // 5. Swagger / OpenAPI Documentation
-  const swaggerConfig = new DocumentBuilder()
-    .setTitle('PeopleOS HRMS API')
-    .setDescription('Production-grade self-hosted Human Resource Management System REST API')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .addTag('Health', 'Application and database connectivity probes')
-    .addTag('Auth', 'Authentication and session tokens')
-    .addTag('Users', 'User accounts & profiles')
-    .addTag('Roles', 'Role management')
-    .addTag('Permissions', 'Granular system privileges')
-    .addTag('Organization', 'Organization hierarchy, branches and departments')
-    .addTag('Employees', 'Employee directory')
-    .addTag('Attendance', 'Attendance tracking (Office / Official Visit / WFH)')
-    .addTag('Official Visits', 'Outdoor duty and official travel workflows')
-    .addTag('Leave', 'Leave balances and requests')
-    .addTag('Reports', 'MIS and workforce analytics')
-    .addTag('Documents', 'Organization policies and employee files')
-    .addTag('Notifications', 'In-app notification dispatch')
-    .addTag('Audit', 'Immutable enterprise audit logging')
-    .build();
+  // 7. Swagger / OpenAPI Documentation (Restricted in production unless explicitly enabled)
+  const isSwaggerEnabled =
+    process.env.NODE_ENV !== 'production' || process.env.ENABLE_SWAGGER === 'true';
 
-  const document = SwaggerModule.createDocument(app, swaggerConfig);
-  SwaggerModule.setup('api/docs', app, document, {
-    customSiteTitle: 'PeopleOS HRMS API Docs',
-  });
+  if (isSwaggerEnabled) {
+    const swaggerConfig = new DocumentBuilder()
+      .setTitle('PeopleOS HRMS API')
+      .setDescription('Production-grade self-hosted Human Resource Management System REST API')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .addTag('Health', 'Application and database connectivity probes')
+      .addTag('Auth', 'Authentication and session tokens')
+      .addTag('Users', 'User accounts & profiles')
+      .addTag('Roles', 'Role management')
+      .addTag('Permissions', 'Granular system privileges')
+      .addTag('Organization', 'Organization hierarchy, branches and departments')
+      .addTag('Employees', 'Employee directory')
+      .addTag('Attendance', 'Attendance tracking (Office / Official Visit / WFH)')
+      .addTag('Official Visits', 'Outdoor duty and official travel workflows')
+      .addTag('Leave', 'Leave balances and requests')
+      .addTag('Reports', 'MIS and workforce analytics')
+      .addTag('Documents', 'Organization policies and employee files')
+      .addTag('Notifications', 'In-app notification dispatch')
+      .addTag('Audit', 'Immutable enterprise audit logging')
+      .build();
+
+    const document = SwaggerModule.createDocument(app, swaggerConfig);
+    SwaggerModule.setup('api/docs', app, document, {
+      customSiteTitle: 'PeopleOS HRMS API Docs',
+    });
+    logger.log('📄 Swagger UI mounted at /api/docs');
+  } else {
+    logger.log('🔒 Swagger UI disabled in production');
+  }
 
   const port = process.env.PORT || 4000;
   await app.listen(port);

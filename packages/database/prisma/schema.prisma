@@ -397,6 +397,7 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([organizationId])
+  @@index([organizationId, createdAt])
   @@index([userId])
   @@index([entity, entityId])
   @@index([createdAt])
@@ -921,6 +922,7 @@ model AttendanceSession {
 
   @@unique([employeeId, date, sessionNumber])
   @@index([organizationId])
+  @@index([organizationId, date])
   @@index([employeeId, date])
   @@index([status])
   @@index([officialVisitId])

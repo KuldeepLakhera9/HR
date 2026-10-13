@@ -21,7 +21,16 @@ const mockData = [
   { day: 'Sat', present: 22, leave: 2, absent: 1 },
 ];
 
-export const AttendanceTrendChart: React.FC = () => {
+export interface AttendanceTrendDataPoint {
+  day: string;
+  present: number;
+  leave: number;
+  absent: number;
+}
+
+export const AttendanceTrendChart: React.FC<{ data?: AttendanceTrendDataPoint[] }> = ({
+  data = mockData,
+}) => {
   return (
     <div className="w-full h-64">
       <ResponsiveContainer width="100%" height="100%">

@@ -48,6 +48,8 @@ export class AllExceptionsFilter implements ExceptionFilter {
       errors = undefined;
     }
 
+    const cleanPath = request.url ? request.url.split('?')[0] : '';
+
     const errorResponse: ApiErrorResponse = {
       success: false,
       statusCode: status,
@@ -55,7 +57,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       message: Array.isArray(message) ? message.join(', ') : message,
       errors: errors ?? undefined,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: cleanPath,
     };
 
     response.status(status).json(errorResponse);

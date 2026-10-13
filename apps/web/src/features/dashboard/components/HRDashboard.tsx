@@ -1,6 +1,7 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import {
   Users,
   UserCheck,
@@ -13,12 +14,52 @@ import {
   AlertCircle,
   FileCheck,
   ChevronRight,
+  RefreshCw,
+  ArrowRight,
 } from 'lucide-react';
-import { KPICard, ChartCard, Button, Badge } from '@hrms/ui';
+import { KPICard, ChartCard, Button, Badge, Skeleton } from '@hrms/ui';
+import { reportsApi } from '../../../lib/api-client';
 import { AttendanceTrendChart } from './charts/AttendanceTrendChart';
 import { EmployeeProgressChart } from './charts/EmployeeProgressChart';
 
 export const HRDashboard: React.FC = () => {
+  const [data, setData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await reportsApi.getExecutiveDashboard();
+      setData(res);
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load HR operations metrics');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
+
+  const summary = data?.summary;
+  const totalEmployees = summary?.activeHeadcount?.value ?? 0;
+  const attendanceRate = summary?.attendanceRate?.value ?? 0;
+  const periodJoiners = summary?.periodJoiners?.value ?? 0;
+  const periodExits = summary?.periodExits?.value ?? 0;
+  const pendingApprovals = summary?.pendingApprovalsCount?.value ?? 0;
+  const overdueAppraisals = summary?.overdueAppraisalsCount?.value ?? 0;
+
+  // Format attendance trends
+  const trendData = data?.attendanceTrend?.map((t: any) => ({
+    day: t.date ? t.date.slice(5) : 'Day',
+    present: t.presentCount ?? 0,
+    leave: t.leaveCount ?? 0,
+    absent: t.absentCount ?? 0,
+  }));
+
   return (
     <div className="space-y-6">
       {/* Top Welcome */}
@@ -32,83 +73,137 @@ export const HRDashboard: React.FC = () => {
           </p>
         </div>
         <div className="flex items-center gap-3">
-          <Button size="sm" variant="outline" leftIcon={<FileCheck className="h-4 w-4" />}>
-            Generate MIS Report
+          <Button
+            size="sm"
+            variant="outline"
+            leftIcon={<RefreshCw className={`h-3.5 w-3.5 ${isLoading ? 'animate-spin' : ''}`} />}
+            onClick={loadData}
+            disabled={isLoading}
+          >
+            Refresh
           </Button>
-          <Button size="sm" leftIcon={<UserPlus className="h-4 w-4" />}>
-            New Employee
-          </Button>
+          <Link href="/reports">
+            <Button size="sm" variant="outline" leftIcon={<FileCheck className="h-4 w-4" />}>
+              MIS Reports
+            </Button>
+          </Link>
+          <Link href="/employees">
+            <Button size="sm" leftIcon={<UserPlus className="h-4 w-4" />}>
+              Employee Directory
+            </Button>
+          </Link>
         </div>
       </div>
 
-      {/* Row 1: Employee Roster Metrics (Requirement 12) */}
+      {error && (
+        <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertCircle className="h-5 w-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="text-sm font-semibold text-rose-900">
+                Telemetry synchronization warning
+              </p>
+              <p className="text-xs text-rose-700 mt-0.5">{error}</p>
+            </div>
+          </div>
+          <Button size="sm" variant="outline" onClick={loadData}>
+            Retry
+          </Button>
+        </div>
+      )}
+
+      {/* Row 1: Employee Roster Metrics */}
       <div>
         <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2.5">
           Workforce Movement
         </p>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard
-            title="Total Employees"
-            value="72"
-            change={{ value: '+5.8% YoY', trend: 'up' }}
-            icon={<Users className="h-5 w-5 text-amber-700" />}
-            iconBg="bg-amber-100"
-          />
-          <KPICard
-            title="Active Employees"
-            value="70"
-            change={{ value: '2 on probation', trend: 'neutral' }}
-            icon={<UserCheck className="h-5 w-5 text-emerald-700" />}
-            iconBg="bg-emerald-100"
-          />
-          <KPICard
-            title="New Joiners (Month)"
-            value="4"
-            change={{ value: 'Joined Oct 2026', trend: 'up' }}
-            icon={<UserPlus className="h-5 w-5 text-sky-700" />}
-            iconBg="bg-sky-100"
-          />
-          <KPICard
-            title="Exited Employees"
-            value="1"
-            change={{ value: 'Notice completed', trend: 'neutral' }}
-            icon={<UserMinus className="h-5 w-5 text-stone-600" />}
-            iconBg="bg-stone-100"
-          />
-        </div>
+        {isLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => (
+              <div key={i} className="p-5 rounded-xl border border-stone-200 bg-white space-y-3">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-8 w-16" />
+                <Skeleton className="h-3 w-32" />
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KPICard
+              title="Total Active Employees"
+              value={String(totalEmployees)}
+              change={{
+                value: `${data?.departmentBreakdown?.length ?? 0} departments`,
+                trend: 'up',
+              }}
+              icon={<Users className="h-5 w-5 text-amber-700" />}
+              iconBg="bg-amber-100"
+            />
+            <KPICard
+              title="Attendance Rate"
+              value={`${attendanceRate}%`}
+              change={{
+                value: 'Company-wide average',
+                trend: attendanceRate >= 85 ? 'up' : 'down',
+              }}
+              icon={<UserCheck className="h-5 w-5 text-emerald-700" />}
+              iconBg="bg-emerald-100"
+            />
+            <KPICard
+              title="New Joiners (Month)"
+              value={String(periodJoiners)}
+              change={{ value: 'Joined this period', trend: periodJoiners > 0 ? 'up' : 'neutral' }}
+              icon={<UserPlus className="h-5 w-5 text-sky-700" />}
+              iconBg="bg-sky-100"
+            />
+            <KPICard
+              title="Exited Employees"
+              value={String(periodExits)}
+              change={{ value: 'Notice completed', trend: 'neutral' }}
+              icon={<UserMinus className="h-5 w-5 text-stone-600" />}
+              iconBg="bg-stone-100"
+            />
+          </div>
+        )}
       </div>
 
-      {/* Row 2: Today's Attendance Operations (Requirement 12) */}
+      {/* Row 2: Today's Attendance & Compliance Operations */}
       <div>
         <p className="text-xs font-semibold text-stone-500 uppercase tracking-wider mb-2.5">
-          Today's Attendance Operations
+          Operations & Workflow Queue
         </p>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <KPICard
-            title="Present Today"
-            value="64"
-            change={{ value: '52 Office / 12 Remote', trend: 'up' }}
-            icon={<Clock className="h-5 w-5 text-emerald-700" />}
-            iconBg="bg-emerald-100"
-          />
-          <KPICard
-            title="Absent"
-            value="3"
-            change={{ value: 'Unplanned absences', trend: 'down' }}
-            icon={<UserX className="h-5 w-5 text-rose-700" />}
-            iconBg="bg-rose-100"
-          />
-          <KPICard
-            title="On Leave"
-            value="5"
-            change={{ value: 'Approved leaves', trend: 'neutral' }}
-            icon={<CalendarDays className="h-5 w-5 text-amber-700" />}
+            title="Pending Requests"
+            value={String(pendingApprovals)}
+            change={{
+              value: pendingApprovals > 0 ? 'Awaiting reviews' : 'Queue clear',
+              trend: pendingApprovals > 0 ? 'down' : 'neutral',
+            }}
+            icon={<Clock className="h-5 w-5 text-amber-700" />}
             iconBg="bg-amber-100"
           />
           <KPICard
-            title="Official Visits (OD)"
-            value="4"
-            change={{ value: 'Outdoor duty active', trend: 'up' }}
+            title="Performance Appraisals"
+            value={String(overdueAppraisals)}
+            change={{
+              value: overdueAppraisals > 0 ? 'Overdue submissions' : 'On schedule',
+              trend: overdueAppraisals > 0 ? 'down' : 'neutral',
+            }}
+            icon={<AlertCircle className="h-5 w-5 text-rose-700" />}
+            iconBg="bg-rose-100"
+          />
+          <KPICard
+            title="Branches Operating"
+            value={`${data?.branchBreakdown?.length ?? 0} Branches`}
+            change={{ value: 'All locations active', trend: 'neutral' }}
+            icon={<CalendarDays className="h-5 w-5 text-sky-700" />}
+            iconBg="bg-sky-100"
+          />
+          <KPICard
+            title="Payroll Cycle"
+            value="Ready"
+            change={{ value: 'Integrated inputs', trend: 'up' }}
             icon={<Briefcase className="h-5 w-5 text-purple-700" />}
             iconBg="bg-purple-100"
           />
@@ -118,10 +213,10 @@ export const HRDashboard: React.FC = () => {
       {/* Charts Section: Attendance Trend & Employee Progress */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <ChartCard
-          title="Attendance & Remote Trend"
-          subtitle="Distribution of in-office, remote and approved leave"
+          title="Attendance & Absence Trend"
+          subtitle="Real-time daily presence, approved leaves, and absences"
         >
-          <AttendanceTrendChart />
+          <AttendanceTrendChart data={trendData} />
         </ChartCard>
 
         <ChartCard
@@ -138,58 +233,58 @@ export const HRDashboard: React.FC = () => {
         <div className="rounded-xl border border-stone-200/90 bg-white p-5">
           <div className="flex items-center justify-between pb-3 border-b border-stone-100">
             <div>
-              <h3 className="text-sm font-semibold text-stone-900">Pending HR Actions</h3>
-              <p className="text-xs text-stone-500">Items requiring HR review and authorization</p>
+              <h3 className="text-sm font-semibold text-stone-900">
+                Pending Operational Workflows
+              </h3>
+              <p className="text-xs text-stone-500">Cross-module requests and approval queues</p>
             </div>
-            <Badge variant="warning">5 Pending</Badge>
+            <Link href="/requests">
+              <Badge variant="warning">{pendingApprovals} In Queue</Badge>
+            </Link>
           </div>
-          <div className="mt-3 space-y-3">
-            {[
-              {
-                id: '1',
-                title: 'Outdoor Duty / Visit Approval',
-                name: 'Priya Nair',
-                dept: 'Engineering',
-                priority: 'High',
-                time: '2 hours ago',
-              },
-              {
-                id: '2',
-                title: 'Extended Sick Leave (3 Days)',
-                name: 'Karan Mehra',
-                dept: 'Operations',
-                priority: 'Medium',
-                time: '4 hours ago',
-              },
-              {
-                id: '3',
-                title: 'Onboarding Document Verification',
-                name: 'Sunita Rao',
-                dept: 'Finance',
-                priority: 'High',
-                time: 'Yesterday',
-              },
-            ].map((action) => (
-              <div
-                key={action.id}
-                className="flex items-center justify-between p-3 rounded-lg border border-stone-150 hover:bg-stone-50 transition-colors"
-              >
-                <div>
-                  <p className="text-xs font-semibold text-stone-900">{action.title}</p>
-                  <p className="text-[11px] text-stone-500">
-                    {action.name} • {action.dept} • {action.time}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Badge variant={action.priority === 'High' ? 'danger' : 'warning'} size="sm">
-                    {action.priority}
-                  </Badge>
-                  <Button size="sm" variant="outline" className="h-7 text-xs px-2">
-                    Review
-                  </Button>
-                </div>
+          <div className="mt-3 divide-y divide-stone-100">
+            <Link
+              href="/requests"
+              className="py-3 flex items-center justify-between hover:bg-stone-50 px-2 rounded-lg transition-colors group"
+            >
+              <div>
+                <p className="text-xs font-semibold text-stone-900 group-hover:text-amber-700 transition-colors">
+                  Leave & WFH Approvals
+                </p>
+                <p className="text-[11px] text-stone-500">
+                  Escalated and executive management requests
+                </p>
               </div>
-            ))}
+              <ArrowRight className="h-4 w-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+            <Link
+              href="/progress?tab=cycles"
+              className="py-3 flex items-center justify-between hover:bg-stone-50 px-2 rounded-lg transition-colors group"
+            >
+              <div>
+                <p className="text-xs font-semibold text-stone-900 group-hover:text-amber-700 transition-colors">
+                  Performance Review Cycles
+                </p>
+                <p className="text-[11px] text-stone-500">
+                  Participant stages, scores, and review approvals
+                </p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+            <Link
+              href="/payroll"
+              className="py-3 flex items-center justify-between hover:bg-stone-50 px-2 rounded-lg transition-colors group"
+            >
+              <div>
+                <p className="text-xs font-semibold text-stone-900 group-hover:text-amber-700 transition-colors">
+                  Payroll Runs & Exceptions
+                </p>
+                <p className="text-[11px] text-stone-500">
+                  Approval gates, statutory checks, and disbursements
+                </p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-stone-400 group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </div>
         </div>
 
@@ -198,33 +293,38 @@ export const HRDashboard: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-stone-100">
             <div>
               <h3 className="text-sm font-semibold text-stone-900">Department Workforce Roster</h3>
-              <p className="text-xs text-stone-500">Headcount distribution & active leave counts</p>
+              <p className="text-xs text-stone-500">Headcount distribution from database records</p>
             </div>
+            <Link
+              href="/organization"
+              className="text-xs font-medium text-amber-700 hover:text-amber-800"
+            >
+              Manage Org &rarr;
+            </Link>
           </div>
           <div className="mt-3 space-y-3">
-            {[
-              { name: 'Engineering', head: 42, onLeave: 2, attendance: '92%' },
-              { name: 'Human Resources', head: 8, onLeave: 0, attendance: '100%' },
-              { name: 'Operations', head: 16, onLeave: 2, attendance: '88%' },
-              { name: 'Finance', head: 6, onLeave: 1, attendance: '83%' },
-            ].map((dept, i) => (
-              <div
-                key={i}
-                className="flex items-center justify-between p-3 rounded-lg bg-stone-50/60"
-              >
-                <div>
-                  <p className="text-xs font-semibold text-stone-800">{dept.name}</p>
-                  <p className="text-[11px] text-stone-500">
-                    {dept.head} Staff • {dept.onLeave} on leave
-                  </p>
+            {data?.departmentBreakdown && data.departmentBreakdown.length > 0 ? (
+              data.departmentBreakdown.map((dept: any, i: number) => (
+                <div
+                  key={dept.departmentId || i}
+                  className="flex items-center justify-between p-3 rounded-lg bg-stone-50/60"
+                >
+                  <div>
+                    <p className="text-xs font-semibold text-stone-800">{dept.departmentName}</p>
+                    <p className="text-[11px] text-stone-500">{dept.headcount} Staff members</p>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
+                      {dept.percentage}% of org
+                    </span>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <span className="text-xs font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded">
-                    {dept.attendance} present
-                  </span>
-                </div>
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-xs text-stone-400 py-4 text-center">
+                No department distributions found
+              </p>
+            )}
           </div>
         </div>
       </div>

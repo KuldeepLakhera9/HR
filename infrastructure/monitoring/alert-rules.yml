@@ -1,0 +1,48 @@
+# ==============================================================================
+# PeopleOS HRMS — Prometheus Alerting Rules for Datacenter Deployment
+# ==============================================================================
+groups:
+  - name: hrms_payroll_alerts
+    rules:
+      # Alert on Failed Payroll Calculation Orchestration
+      - alert: PayrollCalculationJobFailure
+        expr: increase(hrms_payroll_calculation_failures_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          module: payroll
+        annotations:
+          summary: "Payroll calculation job failed in organization {{ $labels.organizationId }}"
+          description: "A payroll calculation orchestration run encountered an exception and was safely rolled back to DRAFT. Action required: check calculationLog and initiate safe retry."
+
+      # Alert on High API Error Rates
+      - alert: PayrollApiHigh5xxRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.02
+        for: 2m
+        labels:
+          severity: critical
+          tier: api
+        annotations:
+          summary: "HRMS API 5xx error rate exceeds 2%"
+          description: "Elevated error rate detected on backend API services."
+
+      # Alert on PostgreSQL Connection Saturation
+      - alert: PostgresConnectionSaturation
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.80
+        for: 3m
+        labels:
+          severity: warning
+          tier: database
+        annotations:
+          summary: "PostgreSQL active connections exceed 80% of pool limit"
+          description: "Database connection pool near capacity. Risk of calculation job connection timeouts."
+
+      # Alert on Failed Healthcheck
+      - alert: HrmsServiceUnhealthy
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "HRMS service instance {{ $labels.instance }} is down"
+          description: "Health endpoint scrape failed."
