@@ -1,0 +1,14 @@
+# ==============================================================================
+# PeopleOS HRMS — Backend API Service .dockerignore
+# ==============================================================================
+node_modules
+dist
+coverage
+.turbo
+*.log
+.env*
+!.env.example
+src/**/*.spec.ts
+src/tests
+test
+tsconfig.tsbuildinfo

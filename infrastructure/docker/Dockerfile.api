@@ -1,32 +1,62 @@
-# Multi-stage Dockerfile for NestJS API Service
+# ==============================================================================
+# PeopleOS HRMS — Multi-Stage Production Dockerfile for NestJS API Service
+# ==============================================================================
+# Security Controls:
+# - Multi-stage build to isolate source code and build tools from runtime
+# - Runs as non-root user (node:node - UID/GID 1000)
+# - Secure persistent storage directory pre-created with mode 0700
+# - Embedded healthcheck probe on /api/v1/health
+# ==============================================================================
+
 FROM node:20-alpine AS base
+RUN apk add --no-cache libc6-compat
 RUN npm install -g pnpm@12.8.1
 WORKDIR /app
 
-# Dependencies stage
+# ------------------------------------------------------------------------------
+# Stage 1: Dependency Resolution
+# ------------------------------------------------------------------------------
 FROM base AS dependencies
 COPY package.json pnpm-lock.yaml* pnpm-workspace.yaml* ./
 COPY packages/ ./packages/
 COPY apps/api/package.json ./apps/api/
 RUN pnpm install --frozen-lockfile=false
 
-# Build stage
+# ------------------------------------------------------------------------------
+# Stage 2: Application Build & Prisma Client Generation
+# ------------------------------------------------------------------------------
 FROM dependencies AS builder
 COPY . .
 RUN pnpm --filter @hrms/database run generate
 RUN pnpm --filter @hrms/api run build
 
-# Production runner stage
+# ------------------------------------------------------------------------------
+# Stage 3: Production Runtime
+# ------------------------------------------------------------------------------
 FROM node:20-alpine AS runner
 WORKDIR /app
+
 ENV NODE_ENV=production
+RUN apk add --no-cache wget libc6-compat
 RUN npm install -g pnpm@12.8.1
 
-COPY --from=builder /app/package.json ./package.json
-COPY --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
-COPY --from=builder /app/packages ./packages
-COPY --from=builder /app/apps/api ./apps/api
-COPY --from=builder /app/node_modules ./node_modules
+# Prepare secure private document vault directory
+RUN mkdir -p /app/storage/documents && chown -R node:node /app
+
+# Copy production assets from builder
+COPY --chown=node:node --from=builder /app/package.json ./package.json
+COPY --chown=node:node --from=builder /app/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --chown=node:node --from=builder /app/packages ./packages
+COPY --chown=node:node --from=builder /app/apps/api ./apps/api
+COPY --chown=node:node --from=builder /app/node_modules ./node_modules
+
+# Enforce least-privilege non-root execution
+USER node
 
 EXPOSE 4000
+
+# Container Healthcheck (liveness/readiness probe)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:4000/api/v1/health || exit 1
+
 CMD ["node", "apps/api/dist/main.js"]

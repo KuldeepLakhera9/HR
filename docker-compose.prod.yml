@@ -1,0 +1,191 @@
+# ==============================================================================
+# PeopleOS HRMS — Production Enterprise Data-Center Docker Compose
+# ==============================================================================
+# Architecture & Security Standards:
+# 1. Zero Public Database Exposure: PostgreSQL connects only to internal backend_net.
+# 2. Strict Network Segmentation: Web tier cannot access database directly.
+# 3. Persistent Storage Isolation: Dedicated volumes for PostgreSQL data and Document Vault.
+# 4. Mandatory Secret Validation: Fails immediately if critical secrets are omitted.
+# 5. Resource Limits & Log Rotation: Caps container CPU/RAM and prevents disk exhaustion.
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # 1. PostgreSQL 16 Enterprise Relational Database
+  # ----------------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: hrms_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hrms_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?CRITICAL: POSTGRES_PASSWORD must be provided in production}
+      POSTGRES_DB: ${POSTGRES_DB:-hrms_db}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infrastructure/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-hrms_user} -d ${POSTGRES_DB:-hrms_db}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - backend_net
+    deploy:
+      resources:
+        limits:
+          cpus: '4.00'
+          memory: 8192M
+        reservations:
+          cpus: '1.00'
+          memory: 2048M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '50m'
+        max-file: '5'
+    security_opt:
+      - no-new-privileges:true
+
+  # ----------------------------------------------------------------------------
+  # 2. NestJS Core API Engine
+  # ----------------------------------------------------------------------------
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.api
+    container_name: hrms_api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      API_PREFIX: ${API_PREFIX:-api/v1}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-hrms_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-hrms_db}?schema=public&sslmode=prefer&connection_limit=50
+      CORS_ORIGIN: ${CORS_ORIGIN:?CRITICAL: CORS_ORIGIN must be set to the approved corporate FQDN}
+      JWT_SECRET: ${JWT_SECRET:?CRITICAL: JWT_SECRET must be set (min 32 chars)}
+      JWT_EXPIRATION: ${JWT_EXPIRATION:-15m}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?CRITICAL: JWT_REFRESH_SECRET must be set (min 32 chars)}
+      JWT_REFRESH_EXPIRATION: ${JWT_REFRESH_EXPIRATION:-7d}
+      SECURE_DOCUMENT_STORAGE_DIR: /app/storage/documents
+      ENABLE_SWAGGER: ${ENABLE_SWAGGER:-false}
+      MAIL_DRIVER: ${MAIL_DRIVER:-smtp}
+      SMTP_HOST: ${SMTP_HOST:-mailrelay.internal.corp}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-"PeopleOS HRMS <notifications@hrms.internal.corp>"}
+    volumes:
+      # Persistent Storage Vault for Private Employee Documents
+      - document_vault:/app/storage/documents
+    networks:
+      - backend_net
+      - frontend_net
+    deploy:
+      resources:
+        limits:
+          cpus: '4.00'
+          memory: 4096M
+        reservations:
+          cpus: '1.00'
+          memory: 1024M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '50m'
+        max-file: '5'
+    security_opt:
+      - no-new-privileges:true
+
+  # ----------------------------------------------------------------------------
+  # 3. Next.js Web Frontend Portal (SSR)
+  # ----------------------------------------------------------------------------
+  web:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile.web
+    container_name: hrms_web
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      NEXT_TELEMETRY_DISABLED: 1
+      PORT: 3000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+      NEXT_PUBLIC_APP_NAME: "PeopleOS HRMS"
+      NEXT_PUBLIC_APP_ENV: production
+    networks:
+      - frontend_net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.00'
+          memory: 2048M
+        reservations:
+          cpus: '0.50'
+          memory: 512M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '50m'
+        max-file: '5'
+    security_opt:
+      - no-new-privileges:true
+
+  # ----------------------------------------------------------------------------
+  # 4. Ingress Nginx Reverse Proxy with TLS Hardening
+  # ----------------------------------------------------------------------------
+  nginx:
+    image: nginx:alpine
+    container_name: hrms_nginx
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      - '${HTTPS_PORT:-443}:443'
+    volumes:
+      - ./infrastructure/nginx/nginx.prod.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./infrastructure/nginx/certs:/etc/nginx/certs:ro
+    networks:
+      - frontend_net
+    deploy:
+      resources:
+        limits:
+          cpus: '1.00'
+          memory: 1024M
+    logging:
+      driver: 'json-file'
+      options:
+        max-size: '25m'
+        max-file: '3'
+    security_opt:
+      - no-new-privileges:true
+
+# ------------------------------------------------------------------------------
+# Network Isolation Topology
+# ------------------------------------------------------------------------------
+networks:
+  frontend_net:
+    driver: bridge
+  backend_net:
+    driver: bridge
+    internal: true # Disallows external egress from backend network
+
+# ------------------------------------------------------------------------------
+# Persistent Storage Volumes
+# ------------------------------------------------------------------------------
+volumes:
+  postgres_data:
+    driver: local
+  document_vault:
+    driver: local
