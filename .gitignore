@@ -51,4 +51,5 @@ apps/api/storage/*
 
 # Database backups and dumps
 *.sql
+!infrastructure/docker/clean_hrms_seed.sql
 
