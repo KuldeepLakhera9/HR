@@ -50,6 +50,41 @@ export class ExportReportQueryDto {
   @IsString()
   status?: string;
 
+  @ApiPropertyOptional({ description: 'Filter by payroll period ID' })
+  @IsOptional()
+  @IsString()
+  periodId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by payroll run ID' })
+  @IsOptional()
+  @IsString()
+  runId?: string;
+
+  @ApiPropertyOptional({ description: 'Comparison run ID' })
+  @IsOptional()
+  @IsString()
+  compareRunId?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by payroll status' })
+  @IsOptional()
+  @IsString()
+  payrollStatus?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by payment status' })
+  @IsOptional()
+  @IsString()
+  paymentStatus?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by exception severity' })
+  @IsOptional()
+  @IsString()
+  severity?: string;
+
+  @ApiPropertyOptional({ description: 'Filter by adjustment type' })
+  @IsOptional()
+  @IsString()
+  adjustmentType?: string;
+
   @ApiPropertyOptional({
     description: 'Maximum rows to export (bounded limit, max 5000)',
     default: 5000,

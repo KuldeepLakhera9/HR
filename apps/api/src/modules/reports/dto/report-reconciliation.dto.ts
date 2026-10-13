@@ -4,12 +4,13 @@ import { ApiPropertyOptional } from '@nestjs/swagger';
 export class QueryReconciliationDto {
   @ApiPropertyOptional({
     description: 'Filter reconciliation checks by domain',
-    enum: ['ALL', 'WORKFORCE', 'ATTENDANCE', 'LEAVE', 'REQUESTS', 'PERFORMANCE'],
+    enum: ['ALL', 'WORKFORCE', 'ATTENDANCE', 'LEAVE', 'REQUESTS', 'PERFORMANCE', 'PAYROLL'],
     default: 'ALL',
   })
   @IsOptional()
-  @IsIn(['ALL', 'WORKFORCE', 'ATTENDANCE', 'LEAVE', 'REQUESTS', 'PERFORMANCE'])
-  domain?: 'ALL' | 'WORKFORCE' | 'ATTENDANCE' | 'LEAVE' | 'REQUESTS' | 'PERFORMANCE' = 'ALL';
+  @IsIn(['ALL', 'WORKFORCE', 'ATTENDANCE', 'LEAVE', 'REQUESTS', 'PERFORMANCE', 'PAYROLL'])
+  domain?: 'ALL' | 'WORKFORCE' | 'ATTENDANCE' | 'LEAVE' | 'REQUESTS' | 'PERFORMANCE' | 'PAYROLL' =
+    'ALL';
 
   @ApiPropertyOptional({
     description: 'Filter by discrepancy severity',
@@ -23,7 +24,7 @@ export class QueryReconciliationDto {
 
 export interface ReconciliationDiscrepancy {
   id: string;
-  domain: 'WORKFORCE' | 'ATTENDANCE' | 'LEAVE' | 'REQUESTS' | 'PERFORMANCE';
+  domain: 'WORKFORCE' | 'ATTENDANCE' | 'LEAVE' | 'REQUESTS' | 'PERFORMANCE' | 'PAYROLL';
   checkCode: string;
   checkName: string;
   severity: 'CRITICAL' | 'WARNING' | 'INFO';

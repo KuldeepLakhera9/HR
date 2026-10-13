@@ -426,6 +426,112 @@ export class ReportReconciliationService {
       }
     }
 
+    // -------------------------------------------------------------------------
+    // DOMAIN 6: PAYROLL RECORDS RECONCILIATION
+    // -------------------------------------------------------------------------
+    if (shouldRun('PAYROLL')) {
+      // Check DQ-PAY-01: Net salary calculation discrepancy
+      totalChecksEvaluated++;
+      const snapshots = await this.prisma.employeePayrollSnapshot.findMany({
+        where: { organizationId: orgId },
+        select: {
+          id: true,
+          employeeCode: true,
+          payslipNumber: true,
+          earnedGross: true,
+          totalDeductions: true,
+          netSalary: true,
+          roundingAdjustment: true,
+          paidDays: true,
+          calendarDays: true,
+          paymentStatus: true,
+          paymentReference: true,
+        },
+      });
+
+      for (const s of snapshots) {
+        const gross = Number(s.earnedGross);
+        const ded = Number(s.totalDeductions);
+        const net = Number(s.netSalary);
+        const expectedNet = Math.round((gross - ded) * 100) / 100;
+        const diff = Math.abs(expectedNet - net);
+        if (diff > 1.0) {
+          discrepancies.push({
+            id: `dq-pay-01-${s.id}`,
+            domain: 'PAYROLL',
+            checkCode: 'DQ-PAY-01',
+            checkName: 'Net Salary Calculation Discrepancy',
+            severity: 'CRITICAL',
+            recordReference: `PS:${s.payslipNumber || s.employeeCode}`,
+            entityId: s.id,
+            description: `Earned Gross minus Deductions (${expectedNet}) differs from Net Salary (${net}) by ${diff}.`,
+            expectedValue: String(expectedNet),
+            actualValue: String(net),
+            detectedAt: nowIso,
+            suggestedRemediation: 'Revalidate and recalculate the payroll run.',
+          });
+        }
+
+        // Check DQ-PAY-02: Negative Net Salary
+        if (net < 0) {
+          totalChecksEvaluated++;
+          discrepancies.push({
+            id: `dq-pay-02-${s.id}`,
+            domain: 'PAYROLL',
+            checkCode: 'DQ-PAY-02',
+            checkName: 'Negative Net Salary Detected',
+            severity: 'CRITICAL',
+            recordReference: `PS:${s.payslipNumber || s.employeeCode}`,
+            entityId: s.id,
+            description: `Net salary for employee ${s.employeeCode} is negative (${net}).`,
+            expectedValue: '>= 0.00',
+            actualValue: String(net),
+            detectedAt: nowIso,
+            suggestedRemediation:
+              'Apply capping to voluntary deductions or provide salary advance relief.',
+          });
+        }
+
+        // Check DQ-PAY-03: Paid Days exceed Calendar Days
+        if (Number(s.paidDays) > Number(s.calendarDays)) {
+          totalChecksEvaluated++;
+          discrepancies.push({
+            id: `dq-pay-03-${s.id}`,
+            domain: 'PAYROLL',
+            checkCode: 'DQ-PAY-03',
+            checkName: 'Paid Days Exceed Calendar Days',
+            severity: 'WARNING',
+            recordReference: `PS:${s.payslipNumber || s.employeeCode}`,
+            entityId: s.id,
+            description: `Paid days (${s.paidDays}) exceeds calendar days (${s.calendarDays}).`,
+            expectedValue: `<= ${s.calendarDays}`,
+            actualValue: String(s.paidDays),
+            detectedAt: nowIso,
+            suggestedRemediation: 'Review attendance input and proration settings.',
+          });
+        }
+
+        // Check DQ-PAY-04: Disbursed payment missing transaction reference
+        if (s.paymentStatus === 'PAID' && !s.paymentReference) {
+          totalChecksEvaluated++;
+          discrepancies.push({
+            id: `dq-pay-04-${s.id}`,
+            domain: 'PAYROLL',
+            checkCode: 'DQ-PAY-04',
+            checkName: 'Paid Salary Missing Banking Transaction Reference',
+            severity: 'WARNING',
+            recordReference: `PS:${s.payslipNumber || s.employeeCode}`,
+            entityId: s.id,
+            description: `Employee ${s.employeeCode} has status PAID but no bank transaction reference is recorded.`,
+            expectedValue: 'Non-empty reference code',
+            actualValue: 'NULL',
+            detectedAt: nowIso,
+            suggestedRemediation: 'Upload bank disbursement reconciliation acknowledgement file.',
+          });
+        }
+      }
+    }
+
     // Filter by severity if requested
     const filteredDiscrepancies =
       query.severity && query.severity !== 'ALL'
@@ -442,6 +548,7 @@ export class ReportReconciliationService {
       LEAVE: { total: 0, critical: 0, warning: 0, info: 0 },
       REQUESTS: { total: 0, critical: 0, warning: 0, info: 0 },
       PERFORMANCE: { total: 0, critical: 0, warning: 0, info: 0 },
+      PAYROLL: { total: 0, critical: 0, warning: 0, info: 0 },
     };
 
     for (const d of discrepancies) {

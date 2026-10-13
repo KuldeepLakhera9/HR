@@ -68,6 +68,15 @@ import {
   ExecuteSavedReportResultDto,
   PayslipListItemDto,
   PayslipDetailDto,
+  PayrollSummaryReportDto,
+  PayrollCostCenterReportDto,
+  PayrollRegisterReportDto,
+  PayrollEarningsDeductionsReportDto,
+  PayrollExceptionsReportDto,
+  PayrollPeriodComparisonReportDto,
+  PayrollAdjustmentReportDto,
+  PayrollApprovalHistoryReportDto,
+  PaymentReconciliationReportDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -2314,6 +2323,14 @@ export const reportsApi = {
     cycleId?: string;
     requestType?: string;
     status?: string;
+    periodId?: string;
+    runId?: string;
+    compareRunId?: string;
+    payrollStatus?: string;
+    paymentStatus?: string;
+    severity?: string;
+    adjustmentType?: string;
+    employmentStatus?: string;
     limit?: number;
   }): Promise<void> {
     const params = new URLSearchParams();
@@ -2328,6 +2345,19 @@ export const reportsApi = {
     if (query.requestType && query.requestType !== 'ALL')
       params.append('requestType', query.requestType);
     if (query.status && query.status !== 'ALL') params.append('status', query.status);
+    if (query.periodId && query.periodId !== 'ALL') params.append('periodId', query.periodId);
+    if (query.runId && query.runId !== 'ALL') params.append('runId', query.runId);
+    if (query.compareRunId && query.compareRunId !== 'ALL')
+      params.append('compareRunId', query.compareRunId);
+    if (query.payrollStatus && query.payrollStatus !== 'ALL')
+      params.append('payrollStatus', query.payrollStatus);
+    if (query.paymentStatus && query.paymentStatus !== 'ALL')
+      params.append('paymentStatus', query.paymentStatus);
+    if (query.severity && query.severity !== 'ALL') params.append('severity', query.severity);
+    if (query.adjustmentType && query.adjustmentType !== 'ALL')
+      params.append('adjustmentType', query.adjustmentType);
+    if (query.employmentStatus && query.employmentStatus !== 'ALL')
+      params.append('employmentStatus', query.employmentStatus);
     if (query.limit) params.append('limit', String(query.limit));
 
     const token = getAccessToken();
@@ -2358,6 +2388,147 @@ export const reportsApi = {
     a.click();
     window.URL.revokeObjectURL(url);
     document.body.removeChild(a);
+  },
+
+  // ---------------------------------------------------------------------------
+  // Phase 11.10: Enterprise Payroll Management & Analytics Endpoints
+  // ---------------------------------------------------------------------------
+  async getPayrollSummary(query?: Record<string, any>): Promise<PayrollSummaryReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/summary${qs}`);
+    return res.data;
+  },
+
+  async getPayrollCostCenters(query?: Record<string, any>): Promise<PayrollCostCenterReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/cost-center${qs}`);
+    return res.data;
+  },
+
+  async getPayrollRegister(query?: Record<string, any>): Promise<PayrollRegisterReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/register${qs}`);
+    return res.data;
+  },
+
+  async getPayrollEarningsDeductions(
+    query?: Record<string, any>,
+  ): Promise<PayrollEarningsDeductionsReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/earnings-deductions${qs}`);
+    return res.data;
+  },
+
+  async getPayrollExceptionsReport(
+    query?: Record<string, any>,
+  ): Promise<PayrollExceptionsReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/exceptions${qs}`);
+    return res.data;
+  },
+
+  async getPayrollPeriodComparison(
+    query?: Record<string, any>,
+  ): Promise<PayrollPeriodComparisonReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/period-comparison${qs}`);
+    return res.data;
+  },
+
+  async getPayrollAdjustmentsReport(
+    query?: Record<string, any>,
+  ): Promise<PayrollAdjustmentReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/adjustments${qs}`);
+    return res.data;
+  },
+
+  async getPayrollApprovalHistory(
+    query?: Record<string, any>,
+  ): Promise<PayrollApprovalHistoryReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/approval-history${qs}`);
+    return res.data;
+  },
+
+  async getPayrollPaymentReconciliation(
+    query?: Record<string, any>,
+  ): Promise<PaymentReconciliationReportDto> {
+    const params = new URLSearchParams();
+    if (query) {
+      Object.entries(query).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== '' && v !== 'ALL') {
+          params.append(k, String(v));
+        }
+      });
+    }
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<any>(`/reports/payroll/payment-reconciliation${qs}`);
+    return res.data;
   },
 
   async getReconciliationAudit(query?: { domain?: string; severity?: string }): Promise<any> {

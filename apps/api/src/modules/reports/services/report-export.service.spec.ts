@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { ForbiddenException, BadRequestException } from '@nestjs/common';
 import { ReportExportService } from './report-export.service';
+import { PayrollAnalyticsService } from './payroll-analytics.service';
 import { PrismaService } from '../../../common/prisma/prisma.service';
 import { HierarchyService } from '../../employees/hierarchy.service';
 import { AuthenticatedUser } from '../../auth/interfaces/auth.interface';
@@ -84,6 +85,23 @@ describe('ReportExportService (Phase 10 - Step 8: Secure Report Exports)', () =>
         ReportExportService,
         { provide: PrismaService, useValue: prisma },
         { provide: HierarchyService, useValue: hierarchyService },
+        {
+          provide: PayrollAnalyticsService,
+          useValue: {
+            checkPayrollReportAccess: jest.fn(),
+            getPayrollSummaryReport: jest.fn().mockResolvedValue({}),
+            getCostCenterReport: jest.fn().mockResolvedValue({}),
+            getPayrollRegisterReport: jest.fn().mockResolvedValue({ items: [] }),
+            getEarningsDeductionsReport: jest
+              .fn()
+              .mockResolvedValue({ earnings: [], deductions: [], employerContributions: [] }),
+            getPayrollExceptionsReport: jest.fn().mockResolvedValue({}),
+            getPeriodComparisonReport: jest.fn().mockResolvedValue({ variances: [] }),
+            getPayrollAdjustmentsReport: jest.fn().mockResolvedValue({ items: [] }),
+            getPayrollApprovalHistory: jest.fn().mockResolvedValue({ items: [] }),
+            getPaymentReconciliationReport: jest.fn().mockResolvedValue({ items: [] }),
+          },
+        },
       ],
     }).compile();
 

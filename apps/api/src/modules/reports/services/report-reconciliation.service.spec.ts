@@ -72,6 +72,11 @@ describe('ReportReconciliationService (Phase 10 - Step 10: Data Quality & Report
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn(),
       },
+      employeePayrollSnapshot: {
+        findMany: jest.fn().mockResolvedValue([]),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({

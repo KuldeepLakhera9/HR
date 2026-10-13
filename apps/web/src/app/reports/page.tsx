@@ -11,6 +11,7 @@ import { AttendanceAnalyticsTab } from './components/AttendanceAnalyticsTab';
 import { RequestAnalyticsTab } from './components/RequestAnalyticsTab';
 import { PerformanceAnalyticsTab } from './components/PerformanceAnalyticsTab';
 import { MisReportLibraryTab } from './components/MisReportLibraryTab';
+import { PayrollAnalyticsTab } from './components/PayrollAnalyticsTab';
 import {
   Users,
   UserCheck,
@@ -20,6 +21,7 @@ import {
   TrendingUp,
   Award,
   Library,
+  DollarSign,
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
@@ -46,13 +48,18 @@ import {
 } from 'recharts';
 
 export default function ReportsPage() {
-  const { user } = useAuth();
+  const { user, hasRole, hasPermission } = useAuth();
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [mainTab, setMainTab] = useState<
-    'EXECUTIVE' | 'WORKFORCE' | 'ATTENDANCE' | 'REQUESTS' | 'PERFORMANCE' | 'LIBRARY'
+    'EXECUTIVE' | 'WORKFORCE' | 'ATTENDANCE' | 'REQUESTS' | 'PERFORMANCE' | 'LIBRARY' | 'PAYROLL'
   >('EXECUTIVE');
+
+  const canAccessPayrollReports = Boolean(
+    hasRole(['ADMIN', 'HR']) ||
+    hasPermission(['payroll:reports_view', 'payroll:view_all', 'payroll:manage', 'REPORT_VIEW']),
+  );
 
   // Filter States
   const [datePreset, setDatePreset] = useState<'7D' | '30D' | 'MTD' | 'CUSTOM'>('30D');
@@ -292,6 +299,19 @@ export default function ReportsPage() {
             <Library className="h-4 w-4 text-amber-600" />
             MIS Report Library
           </button>
+          {canAccessPayrollReports && (
+            <button
+              onClick={() => setMainTab('PAYROLL')}
+              className={`flex items-center gap-2 border-b-2 px-4 py-2.5 text-xs font-semibold transition-all ${
+                mainTab === 'PAYROLL'
+                  ? 'border-emerald-600 text-emerald-900 bg-emerald-50/40'
+                  : 'border-transparent text-stone-600 hover:text-stone-900 hover:border-stone-300'
+              }`}
+            >
+              <DollarSign className="h-4 w-4 text-emerald-600" />
+              Payroll & Financial Analytics
+            </button>
+          )}
         </div>
 
         {mainTab === 'WORKFORCE' ? (
@@ -304,6 +324,8 @@ export default function ReportsPage() {
           <PerformanceAnalyticsTab />
         ) : mainTab === 'LIBRARY' ? (
           <MisReportLibraryTab />
+        ) : mainTab === 'PAYROLL' ? (
+          <PayrollAnalyticsTab />
         ) : (
           <>
             {/* Filter Bar */}

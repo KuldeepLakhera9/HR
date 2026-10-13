@@ -90,6 +90,18 @@ describe('Phase 10 — Step 7: MIS Report Library Specification Tests', () => {
       getDevelopmentPlanReport: jest.fn().mockResolvedValue({}),
     };
 
+    const mockPayrollAnalytics = {
+      getPayrollSummaryReport: jest.fn().mockResolvedValue({}),
+      getCostCenterReport: jest.fn().mockResolvedValue({}),
+      getPayrollRegisterReport: jest.fn().mockResolvedValue({}),
+      getEarningsDeductionsReport: jest.fn().mockResolvedValue({}),
+      getPayrollExceptionsReport: jest.fn().mockResolvedValue({}),
+      getPeriodComparisonReport: jest.fn().mockResolvedValue({}),
+      getPayrollAdjustmentsReport: jest.fn().mockResolvedValue({}),
+      getApprovalHistoryReport: jest.fn().mockResolvedValue({}),
+      getPaymentReconciliationReport: jest.fn().mockResolvedValue({}),
+    };
+
     service = new MisReportLibraryService(
       mockPrisma,
       mockHierarchy,
@@ -97,6 +109,7 @@ describe('Phase 10 — Step 7: MIS Report Library Specification Tests', () => {
       mockAttendanceAnalytics,
       mockRequestAnalytics,
       mockPerformanceAnalytics,
+      mockPayrollAnalytics as any,
     );
   });
 

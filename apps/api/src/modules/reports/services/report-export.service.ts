@@ -3,6 +3,7 @@ import { PrismaService } from '../../../common/prisma/prisma.service';
 import { HierarchyService } from '../../employees/hierarchy.service';
 import { AuthenticatedUser } from '../../auth/interfaces/auth.interface';
 import { ExportReportQueryDto } from '../dto/report-export-query.dto';
+import { PayrollAnalyticsService } from './payroll-analytics.service';
 
 @Injectable()
 export class ReportExportService {
@@ -11,6 +12,7 @@ export class ReportExportService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly hierarchyService: HierarchyService,
+    private readonly payrollAnalyticsService: PayrollAnalyticsService,
   ) {}
 
   /**
@@ -80,6 +82,12 @@ export class ReportExportService {
   ): Promise<{ filename: string; csv: string; rowCount: number; contentType: string }> {
     const { scopedEmployeeIds } = await this.resolveScopedEmployeeIds(user);
     const limit = Math.min(query.limit || 5000, 5000); // Bounded memory limit
+
+    // Dedicated permission gate for payroll reports
+    if (query.reportKey && query.reportKey.startsWith('REP-PAY-')) {
+      const isEmployeeLevel = query.reportKey === 'REP-PAY-03';
+      this.payrollAnalyticsService.checkPayrollReportAccess(user, isEmployeeLevel);
+    }
 
     // Validate date boundary if both provided
     if (query.startDate && query.endDate) {
@@ -501,6 +509,340 @@ export class ReportExportService {
             rev?.finalizedAt ? rev.finalizedAt.toISOString().split('T')[0] : '',
           ];
         });
+        break;
+      }
+
+      // 5. Phase 11.10: Enterprise Payroll Management Reports
+      case 'REP-PAY-01': {
+        headers = [
+          'Period Year',
+          'Period Month',
+          'Run Title',
+          'Calculation Version',
+          'Run Status',
+          'Processed Employees',
+          'Base Monthly Gross',
+          'Earned Gross',
+          'Employee Deductions',
+          'Rounding Adjustment',
+          'Net Salary Payout',
+          'Employer Contributions',
+          'Total Cost to Company (CTC)',
+          'Gross-Net Reconciled',
+        ];
+        const rep = await this.payrollAnalyticsService.getPayrollSummaryReport(user, query);
+        rows = [
+          [
+            rep.period.year,
+            rep.period.month,
+            rep.run.title,
+            `v${rep.run.calculationVersion}`,
+            rep.run.status,
+            rep.headcount.totalEmployees,
+            rep.financialTotals.baseMonthlyGross.toFixed(2),
+            rep.financialTotals.earnedGross.toFixed(2),
+            rep.financialTotals.totalEmployeeDeductions.toFixed(2),
+            rep.financialTotals.roundingAdjustment.toFixed(2),
+            rep.financialTotals.netSalary.toFixed(2),
+            rep.financialTotals.totalEmployerContributions.toFixed(2),
+            rep.financialTotals.totalCostToCompany.toFixed(2),
+            rep.reconciliationAudit.grossMinusDeductionsEqualsNet ? 'YES' : 'NO',
+          ].map(String),
+        ];
+        break;
+      }
+
+      case 'REP-PAY-02': {
+        headers = [
+          'Cost Center Dimension',
+          'Cost Center Name',
+          'Headcount',
+          'Earned Gross',
+          'Employee Deductions',
+          'Net Salary',
+          'Employer Contributions',
+          'Total CTC',
+          'Percentage of Payroll (%)',
+        ];
+        const rep = await this.payrollAnalyticsService.getCostCenterReport(user, query);
+        rows = [
+          ...rep.departments.map((d) =>
+            [
+              'DEPARTMENT',
+              d.name,
+              d.employeeCount,
+              d.earnedGross.toFixed(2),
+              d.employeeDeductions.toFixed(2),
+              d.netPay.toFixed(2),
+              d.employerContributions.toFixed(2),
+              d.totalCtc.toFixed(2),
+              `${d.percentageOfTotalPayroll}%`,
+            ].map(String),
+          ),
+          ...rep.branches.map((b) =>
+            [
+              'BRANCH',
+              b.name,
+              b.employeeCount,
+              b.earnedGross.toFixed(2),
+              b.employeeDeductions.toFixed(2),
+              b.netPay.toFixed(2),
+              b.employerContributions.toFixed(2),
+              b.totalCtc.toFixed(2),
+              `${b.percentageOfTotalPayroll}%`,
+            ].map(String),
+          ),
+        ];
+        break;
+      }
+
+      case 'REP-PAY-03': {
+        headers = [
+          'Employee Code',
+          'Employee Name',
+          'Department',
+          'Designation',
+          'Branch',
+          'Working Days',
+          'Paid Days',
+          'LOP Days',
+          'Base Monthly Salary',
+          'Earned Gross',
+          'Total Deductions',
+          'Net Salary',
+          'Employer Cost',
+          'Total CTC',
+          'Payment Method',
+          'Payment Status',
+          'Payslip Status',
+          'Masked Bank Account',
+          'Masked PAN',
+        ];
+        const rep = await this.payrollAnalyticsService.getPayrollRegisterReport(user, {
+          ...query,
+          limit,
+        });
+        rows = rep.items.map((emp) =>
+          [
+            emp.employeeCode,
+            emp.employeeName,
+            emp.departmentName,
+            emp.designationTitle,
+            emp.branchName,
+            emp.workingDays,
+            emp.paidDays,
+            emp.lopDays,
+            emp.baseSalary.toFixed(2),
+            emp.earnedGross.toFixed(2),
+            emp.totalDeductions.toFixed(2),
+            emp.netSalary.toFixed(2),
+            emp.employerCost.toFixed(2),
+            emp.totalCtc.toFixed(2),
+            emp.paymentMethod,
+            emp.paymentStatus,
+            emp.payslipStatus,
+            emp.bankAccountMasked || '••••••••4812',
+            emp.panMasked || '•••••9018A',
+          ].map(String),
+        );
+        break;
+      }
+
+      case 'REP-PAY-04': {
+        headers = [
+          'Category',
+          'Component Code',
+          'Component Name',
+          'Participating Employees',
+          'Standard Allocated Amount',
+          'Earned Disbursed Amount',
+          'Category Share (%)',
+        ];
+        const rep = await this.payrollAnalyticsService.getEarningsDeductionsReport(user, query);
+        rows = [
+          ...rep.earnings.map((e) =>
+            [
+              'EARNING',
+              e.componentCode,
+              e.componentName,
+              e.employeeCount,
+              e.totalStandardAmount.toFixed(2),
+              e.totalEarnedAmount.toFixed(2),
+              `${e.percentageOfCategory}%`,
+            ].map(String),
+          ),
+          ...rep.deductions.map((d) =>
+            [
+              'DEDUCTION',
+              d.componentCode,
+              d.componentName,
+              d.employeeCount,
+              d.totalStandardAmount.toFixed(2),
+              d.totalEarnedAmount.toFixed(2),
+              `${d.percentageOfCategory}%`,
+            ].map(String),
+          ),
+          ...rep.employerContributions.map((ec) =>
+            [
+              'EMPLOYER_CONTRIBUTION',
+              ec.componentCode,
+              ec.componentName,
+              ec.employeeCount,
+              ec.totalStandardAmount.toFixed(2),
+              ec.totalEarnedAmount.toFixed(2),
+              `${ec.percentageOfCategory}%`,
+            ].map(String),
+          ),
+        ];
+        break;
+      }
+
+      case 'REP-PAY-05': {
+        headers = [
+          'Exception ID',
+          'Severity',
+          'Category',
+          'Title',
+          'Employee Name',
+          'Status',
+          'Resolution Action',
+          'Notes',
+        ];
+        const rep = await this.payrollAnalyticsService.getPayrollExceptionsReport(user, query);
+        rows = (rep.unresolvedWarnings || []).map((ex) =>
+          [
+            ex.id,
+            'WARNING',
+            ex.category,
+            ex.title,
+            ex.employeeName || 'N/A',
+            'OPEN',
+            'PENDING_REVIEW',
+            '',
+          ].map(String),
+        );
+        break;
+      }
+
+      case 'REP-PAY-06': {
+        headers = [
+          'Comparison Metric',
+          'Base Period Value',
+          'Comparison Period Value',
+          'Absolute Difference',
+          'Percentage Change (%)',
+          'Trend',
+        ];
+        const rep = await this.payrollAnalyticsService.getPeriodComparisonReport(user, query);
+        rows = rep.variances.map((v) =>
+          [
+            v.metric,
+            v.baseValue.toFixed(2),
+            v.compareValue.toFixed(2),
+            v.absoluteChange.toFixed(2),
+            `${v.percentageChange}%`,
+            v.trend,
+          ].map(String),
+        );
+        break;
+      }
+
+      case 'REP-PAY-07': {
+        headers = [
+          'Adjustment ID',
+          'Employee Code',
+          'Employee Name',
+          'Type',
+          'Amount (INR)',
+          'Taxable',
+          'Status',
+          'Reason',
+          'Requested By',
+          'Approved By',
+          'Date',
+        ];
+        const rep = await this.payrollAnalyticsService.getPayrollAdjustmentsReport(user, query);
+        rows = rep.items.map((adj) =>
+          [
+            adj.id,
+            adj.employeeCode,
+            adj.employeeName,
+            adj.adjustmentType,
+            adj.amount.toFixed(2),
+            adj.taxable ? 'YES' : 'NO',
+            adj.status,
+            adj.reason,
+            adj.requestedBy,
+            adj.approvedBy || 'N/A',
+            adj.createdAt.split('T')[0],
+          ].map(String),
+        );
+        break;
+      }
+
+      case 'REP-PAY-08': {
+        headers = [
+          'Approval ID',
+          'Run Title',
+          'Period',
+          'From Status',
+          'To Status',
+          'Action',
+          'Decision Maker',
+          'Actor Email',
+          'Role',
+          'Decision Timestamp',
+          'Comments',
+        ];
+        const rep = await this.payrollAnalyticsService.getApprovalHistoryReport(user, query);
+        rows = rep.items.map((h) =>
+          [
+            h.id,
+            h.runTitle,
+            h.periodName,
+            h.fromStatus,
+            h.toStatus,
+            h.action,
+            h.actorName,
+            h.actorEmail,
+            h.actorRole,
+            h.decisionTimestamp,
+            h.comments || '',
+          ].map(String),
+        );
+        break;
+      }
+
+      case 'REP-PAY-09': {
+        headers = [
+          'Employee Code',
+          'Employee Name',
+          'Department',
+          'Bank Name',
+          'Masked Account',
+          'Net Payable (INR)',
+          'Payment Method',
+          'Payment Reference',
+          'Payment Status',
+          'Paid At',
+          'Reconciled Status',
+        ];
+        const rep = await this.payrollAnalyticsService.getPaymentReconciliationReport(user, query);
+        rows = rep.items.map((p) =>
+          [
+            p.employeeCode,
+            p.employeeName,
+            p.departmentName,
+            p.bankName,
+            p.bankAccountMasked,
+            p.netPayable.toFixed(2),
+            p.paymentMethod,
+            p.paymentReference || 'N/A',
+            p.paymentStatus,
+            p.paidAt ? p.paidAt.split('T')[0] : 'N/A',
+            p.isReconciled ? 'RECONCILED' : 'UNRECONCILED',
+          ].map(String),
+        );
         break;
       }
 

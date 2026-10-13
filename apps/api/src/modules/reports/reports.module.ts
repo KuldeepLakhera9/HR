@@ -24,7 +24,10 @@ import { AttendanceReportingService } from '../attendance/attendance-reporting.s
 import { DailyAttendanceReportQueryDto } from '../attendance/dto/daily-attendance-report-query.dto';
 import { MonthlyAttendanceReportQueryDto } from '../attendance/dto/monthly-attendance-report-query.dto';
 import { EmployeesModule } from '../employees/employees.module';
+import { AuditModule } from '../audit/audit.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { PayrollReportQueryDto } from './dto/payroll-analytics-query.dto';
+import { PayrollAnalyticsService } from './services/payroll-analytics.service';
 import { ExecutiveDashboardQueryDto } from './dto/executive-dashboard-query.dto';
 import { ExecutiveDashboardService } from './services/executive-dashboard.service';
 import {
@@ -81,6 +84,7 @@ export class ReportsController {
     private readonly misReportLibraryService: MisReportLibraryService,
     private readonly reportExportService: ReportExportService,
     private readonly reportReconciliationService: ReportReconciliationService,
+    private readonly payrollAnalyticsService: PayrollAnalyticsService,
   ) {}
 
   @Get('executive/dashboard')
@@ -306,6 +310,140 @@ export class ReportsController {
   }
 
   // ---------------------------------------------------------------------------
+  // Phase 11.10: Enterprise Payroll Management & Analytics Endpoints
+  // ---------------------------------------------------------------------------
+
+  @Get('payroll/summary')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Get payroll summary report with gross-to-net reconciliation and status rollups',
+  })
+  async getPayrollSummary(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getPayrollSummaryReport(user, query);
+    return {
+      message: 'Payroll summary report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/cost-center')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get department and branch payroll cost center allocations' })
+  async getPayrollCostCenters(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getCostCenterReport(user, query);
+    return {
+      message: 'Payroll cost center report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/register')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({
+    summary: 'Get confidential employee-level payroll register (strictly authorized)',
+  })
+  async getPayrollRegister(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getPayrollRegisterReport(user, query);
+    return {
+      message: 'Payroll register report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/earnings-deductions')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get itemized earnings and deductions component breakdown' })
+  async getPayrollEarningsDeductions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getEarningsDeductionsReport(user, query);
+    return {
+      message: 'Payroll earnings and deductions report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/exceptions')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get payroll calculation exceptions and diagnostics' })
+  async getPayrollExceptions(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getPayrollExceptionsReport(user, query);
+    return {
+      message: 'Payroll exceptions report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/period-comparison')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get period-over-period payroll variance and movement comparison' })
+  async getPayrollPeriodComparison(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getPeriodComparisonReport(user, query);
+    return {
+      message: 'Payroll period comparison report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/adjustments')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get payroll manual adjustments and offsets report' })
+  async getPayrollAdjustments(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getPayrollAdjustmentsReport(user, query);
+    return {
+      message: 'Payroll adjustments report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/approval-history')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get payroll workflow approval and finalization audit trail' })
+  async getPayrollApprovalHistory(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getApprovalHistoryReport(user, query);
+    return {
+      message: 'Payroll approval history report retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('payroll/payment-reconciliation')
+  @RequirePermissions('REPORT_VIEW')
+  @ApiOperation({ summary: 'Get payment disbursement settlement and bank reconciliation report' })
+  async getPayrollPaymentReconciliation(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query() query: PayrollReportQueryDto,
+  ) {
+    const data = await this.payrollAnalyticsService.getPaymentReconciliationReport(user, query);
+    return {
+      message: 'Payment reconciliation report retrieved successfully',
+      data,
+    };
+  }
+
+  // ---------------------------------------------------------------------------
   // Centralized MIS Report Library Endpoints
   // ---------------------------------------------------------------------------
 
@@ -431,7 +569,7 @@ export class ReportsController {
 }
 
 @Module({
-  imports: [AttendanceModule, EmployeesModule, PrismaModule],
+  imports: [AttendanceModule, EmployeesModule, AuditModule, PrismaModule],
   controllers: [ReportsController],
   providers: [
     ReportsService,
@@ -443,6 +581,7 @@ export class ReportsController {
     MisReportLibraryService,
     ReportExportService,
     ReportReconciliationService,
+    PayrollAnalyticsService,
   ],
   exports: [
     ReportsService,
@@ -454,6 +593,7 @@ export class ReportsController {
     MisReportLibraryService,
     ReportExportService,
     ReportReconciliationService,
+    PayrollAnalyticsService,
   ],
 })
 export class ReportsModule {}

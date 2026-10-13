@@ -3143,7 +3143,8 @@ export interface DevelopmentPlanAnalyticsDto {
 // 31. Phase 10: MIS Report Library & Saved Report Definitions
 // -----------------------------------------------------------------------------
 
-export type ReportCategory = 'WORKFORCE' | 'ATTENDANCE' | 'LEAVE_REQUESTS' | 'PERFORMANCE';
+export type ReportCategory =
+  'WORKFORCE' | 'ATTENDANCE' | 'LEAVE_REQUESTS' | 'PERFORMANCE' | 'PAYROLL';
 
 export interface MisReportCatalogItemDto {
   key: string;
@@ -3946,4 +3947,282 @@ export interface PayrollExceptionsSummaryDto {
     title: string;
     employeeName?: string | null;
   }>;
+}
+
+export type PayrollExceptionsReportDto = PayrollExceptionsSummaryDto;
+
+// -----------------------------------------------------------------------------
+// Phase 11.10: Payroll Reports, Secure Exports & Reconciliation DTOs
+// -----------------------------------------------------------------------------
+
+export interface PayrollSummaryReportDto {
+  period: {
+    id: string;
+    year: number;
+    month: number;
+    startDate: string;
+    endDate: string;
+    status: string;
+  };
+  run: {
+    id: string;
+    title: string;
+    runNumber: number;
+    calculationVersion: number;
+    status: string;
+    parentRunId?: string | null;
+    approvedAt?: string | null;
+    lockedAt?: string | null;
+    publishedAt?: string | null;
+  };
+  headcount: {
+    totalEmployees: number;
+    paidEmployees: number;
+    zeroNetEmployees: number;
+    exceptionEmployees: number;
+  };
+  financialTotals: {
+    baseMonthlyGross: number;
+    earnedGross: number;
+    totalEmployeeDeductions: number;
+    totalEmployerContributions: number;
+    roundingAdjustment: number;
+    netSalary: number;
+    totalCostToCompany: number;
+  };
+  statusBreakdown: {
+    draftCount: number;
+    approvedCount: number;
+    lockedCount: number;
+    publishedCount: number;
+    paidCount: number;
+  };
+  currency: string;
+  reconciliationAudit: {
+    grossMinusDeductionsEqualsNet: boolean;
+    roundingBalanceValid: boolean;
+    discrepancyAmount: number;
+  };
+}
+
+export interface PayrollCostCenterItemDto {
+  dimension: 'DEPARTMENT' | 'BRANCH';
+  id: string;
+  name: string;
+  employeeCount: number;
+  earnedGross: number;
+  employeeDeductions: number;
+  netPay: number;
+  employerContributions: number;
+  totalCtc: number;
+  percentageOfTotalPayroll: number;
+}
+
+export interface PayrollCostCenterReportDto {
+  periodId: string;
+  runId: string;
+  runTitle: string;
+  runStatus: string;
+  totalHeadcount: number;
+  totalCostToCompany: number;
+  departments: PayrollCostCenterItemDto[];
+  branches: PayrollCostCenterItemDto[];
+}
+
+export interface PayrollRegisterEmployeeItemDto {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentName: string;
+  designationTitle: string;
+  branchName: string;
+  employmentStatus: string;
+  workingDays: number;
+  paidDays: number;
+  lopDays: number;
+  baseSalary: number;
+  earnedGross: number;
+  totalDeductions: number;
+  netSalary: number;
+  employerCost: number;
+  totalCtc: number;
+  paymentMethod: string;
+  paymentStatus: string;
+  payslipStatus: string;
+  bankAccountMasked?: string | null;
+  panMasked?: string | null;
+}
+
+export interface PayrollRegisterReportDto {
+  periodId: string;
+  runId: string;
+  runTitle: string;
+  runStatus: string;
+  items: PayrollRegisterEmployeeItemDto[];
+  summary: {
+    totalEmployees: number;
+    totalEarnedGross: number;
+    totalDeductions: number;
+    totalNetSalary: number;
+    totalEmployerCost: number;
+    totalCtc: number;
+  };
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+export interface PayrollEarningsDeductionsItemDto {
+  componentCode: string;
+  componentName: string;
+  type: 'EARNING' | 'DEDUCTION' | 'EMPLOYER_CONTRIBUTION';
+  employeeCount: number;
+  totalStandardAmount: number;
+  totalEarnedAmount: number;
+  percentageOfCategory: number;
+}
+
+export interface PayrollEarningsDeductionsReportDto {
+  periodId: string;
+  runId: string;
+  runTitle: string;
+  runStatus: string;
+  totalGrossEarnings: number;
+  totalDeductions: number;
+  totalEmployerContributions: number;
+  netDisbursement: number;
+  earnings: PayrollEarningsDeductionsItemDto[];
+  deductions: PayrollEarningsDeductionsItemDto[];
+  employerContributions: PayrollEarningsDeductionsItemDto[];
+}
+
+export interface PayrollPeriodComparisonVarianceDto {
+  metric: string;
+  baseValue: number;
+  compareValue: number;
+  absoluteChange: number;
+  percentageChange: number;
+  trend: 'UP' | 'DOWN' | 'NEUTRAL';
+}
+
+export interface PayrollPeriodComparisonReportDto {
+  basePeriod: { id: string; title: string; year: number; month: number };
+  comparePeriod: { id: string; title: string; year: number; month: number };
+  variances: PayrollPeriodComparisonVarianceDto[];
+  movementAnalysis: {
+    newJoinersCount: number;
+    newJoinersGross: number;
+    exitsCount: number;
+    exitsGrossDifference: number;
+    compensationIncreasesCount: number;
+    compensationIncreasesAmount: number;
+    netImpact: number;
+  };
+  departmentComparisons: Array<{
+    departmentName: string;
+    baseHeadcount: number;
+    compareHeadcount: number;
+    baseGross: number;
+    compareGross: number;
+    variance: number;
+  }>;
+}
+
+export interface PayrollAdjustmentReportItemDto {
+  id: string;
+  employeeId: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentName: string;
+  adjustmentType: string;
+  amount: number;
+  taxable: boolean;
+  reason: string;
+  status: string;
+  requestedBy: string;
+  approvedBy?: string | null;
+  periodYear: number;
+  periodMonth: number;
+  createdAt: string;
+}
+
+export interface PayrollAdjustmentReportDto {
+  periodId?: string;
+  items: PayrollAdjustmentReportItemDto[];
+  summary: {
+    totalAdjustments: number;
+    totalAdditions: number;
+    totalDeductions: number;
+    netAdjustmentImpact: number;
+    pendingApprovalCount: number;
+    approvedCount: number;
+  };
+}
+
+export interface PayrollApprovalHistoryReportItemDto {
+  id: string;
+  runId: string;
+  runTitle: string;
+  periodName: string;
+  fromStatus: string;
+  toStatus: string;
+  action: string;
+  actorId: string;
+  actorName: string;
+  actorEmail: string;
+  actorRole: string;
+  comments?: string | null;
+  decisionTimestamp: string;
+  isCompliantSeparationOfDuties: boolean;
+}
+
+export interface PayrollApprovalHistoryReportDto {
+  runId?: string;
+  items: PayrollApprovalHistoryReportItemDto[];
+  summary: {
+    totalActions: number;
+    submissionCount: number;
+    approvalCount: number;
+    rejectionCount: number;
+    lockingCount: number;
+    publishingCount: number;
+  };
+}
+
+export interface PaymentReconciliationItemDto {
+  snapshotId: string;
+  employeeCode: string;
+  employeeName: string;
+  departmentName: string;
+  bankName: string;
+  bankAccountMasked: string;
+  netPayable: number;
+  paymentMethod: string;
+  paymentReference?: string | null;
+  paymentStatus: string;
+  paidAt?: string | null;
+  isReconciled: boolean;
+  reconciliationNotes?: string | null;
+}
+
+export interface PaymentReconciliationReportDto {
+  periodId: string;
+  runId: string;
+  runTitle: string;
+  summary: {
+    totalPayable: number;
+    totalDisbursed: number;
+    pendingAmount: number;
+    failedAmount: number;
+    totalEmployees: number;
+    paidCount: number;
+    pendingCount: number;
+    failedCount: number;
+    reconciliationPercentage: number;
+  };
+  items: PaymentReconciliationItemDto[];
 }

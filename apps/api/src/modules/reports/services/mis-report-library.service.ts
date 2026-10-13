@@ -12,6 +12,7 @@ import { WorkforceAnalyticsService } from './workforce-analytics.service';
 import { AttendanceAnalyticsService } from './attendance-analytics.service';
 import { RequestAnalyticsService } from './request-analytics.service';
 import { PerformanceAnalyticsService } from './performance-analytics.service';
+import { PayrollAnalyticsService } from './payroll-analytics.service';
 import {
   CreateSavedReportDefinitionDto,
   QuerySavedReportsDto,
@@ -354,6 +355,204 @@ export class MisReportLibraryService {
       allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
       supportedViews: ['CHART', 'TABLE'],
     },
+
+    // 5. Phase 11.10: Enterprise Payroll Management & Reconciliation
+    {
+      key: 'REP-PAY-01',
+      title: 'Executive Payroll Summary & Reconciliation',
+      category: 'PAYROLL',
+      description:
+        'Authoritative gross-to-net reconciliation summary across active and historical runs with rounding balance audits and status rollups.',
+      endpoint: '/reports/payroll/summary',
+      supportedFilters: ['periodId', 'runId', 'departmentId', 'branchId', 'payrollStatus'],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-01',
+          name: 'Net Payroll Spend',
+          formula: 'Earned Gross - Total Deductions + Rounding Adjustment',
+        },
+        {
+          code: 'M-PAY-02',
+          name: 'Total Cost to Company (CTC)',
+          formula: 'Earned Gross + Employer Contributions',
+        },
+      ],
+      dataFreshness:
+        'Immutable snapshot aggregations tied to approved and locked payroll calculation versions',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['CHART', 'TABLE'],
+    },
+    {
+      key: 'REP-PAY-02',
+      title: 'Department & Branch Payroll Cost Centers',
+      category: 'PAYROLL',
+      description:
+        'Cost allocation across organizational dimensions including department and branch payroll percentages of total company payroll spend.',
+      endpoint: '/reports/payroll/cost-center',
+      supportedFilters: ['periodId', 'runId', 'departmentId', 'branchId'],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-03',
+          name: 'Cost Center Ratio',
+          formula: 'Department Total CTC / Total Organization CTC * 100',
+        },
+      ],
+      dataFreshness: 'Real-time calculation run rollup with departmental assignment mapping',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['CHART', 'TABLE'],
+    },
+    {
+      key: 'REP-PAY-03',
+      title: 'Comprehensive Payroll Register (Restricted)',
+      category: 'PAYROLL',
+      description:
+        'Confidential employee-level salary register itemizing working days, paid days, LOP, base salary, gross earnings, deductions, net salary, and disbursement channels.',
+      endpoint: '/reports/payroll/register',
+      supportedFilters: [
+        'periodId',
+        'runId',
+        'departmentId',
+        'branchId',
+        'payrollStatus',
+        'paymentStatus',
+        'search',
+        'page',
+        'limit',
+      ],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-04',
+          name: 'Employee Net Pay',
+          formula: 'Earned Gross - Statutory Deductions - Voluntary Deductions',
+        },
+      ],
+      dataFreshness: 'Direct snapshot read with masked banking and tax identifiers',
+      allowedRoles: ['ADMIN', 'HR'],
+      supportedViews: ['TABLE'],
+    },
+    {
+      key: 'REP-PAY-04',
+      title: 'Salary Earnings & Deductions Breakdown',
+      category: 'PAYROLL',
+      description:
+        'Itemized line-item ledger across all salary component types (Basic, HRA, Allowances, PF, PT, TDS, ESI, and Overtime) with employee participation metrics.',
+      endpoint: '/reports/payroll/earnings-deductions',
+      supportedFilters: ['periodId', 'runId', 'departmentId'],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-05',
+          name: 'Component Utilization',
+          formula: 'Component Earned Amount / Category Total * 100',
+        },
+      ],
+      dataFreshness: 'Verified line-item calculation snapshot aggregates',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['CHART', 'TABLE'],
+    },
+    {
+      key: 'REP-PAY-05',
+      title: 'Payroll Exceptions & Discrepancies',
+      category: 'PAYROLL',
+      description:
+        'Diagnostic log of blocking calculation errors, warnings, unresolved attendance inputs, negative net pay exceptions, and override decisions.',
+      endpoint: '/reports/payroll/exceptions',
+      supportedFilters: ['periodId', 'runId', 'severity', 'status'],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-06',
+          name: 'Blocking Exception Count',
+          formula: 'Sum of open BLOCKING_ERROR exceptions',
+        },
+      ],
+      dataFreshness: 'Live transactional exception ledger synchronized with run orchestration',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['TABLE'],
+    },
+    {
+      key: 'REP-PAY-06',
+      title: 'Longitudinal Payroll Period Comparison',
+      category: 'PAYROLL',
+      description:
+        'Variance analysis between successive payroll cycles identifying employee count changes, salary increments, joiner/leaver impacts, and gross deviations.',
+      endpoint: '/reports/payroll/period-comparison',
+      supportedFilters: ['periodId', 'runId', 'compareRunId', 'comparePeriodId', 'departmentId'],
+      supportedDatePresets: ['MONTH_OVER_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-07',
+          name: 'Payroll Variance (%)',
+          formula: '(Current Run Gross - Base Run Gross) / Base Run Gross * 100',
+        },
+      ],
+      dataFreshness: 'Comparative delta computed across consecutive finalized calculation versions',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['CHART', 'TABLE'],
+    },
+    {
+      key: 'REP-PAY-07',
+      title: 'Manual Payroll Adjustments & Offsets',
+      category: 'PAYROLL',
+      description:
+        'Audit trail of manual payroll adjustments (bonuses, arrear payouts, expense reimbursements, and LOP offsets) with approval metadata.',
+      endpoint: '/reports/payroll/adjustments',
+      supportedFilters: ['periodId', 'adjustmentType', 'payrollStatus'],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-08',
+          name: 'Net Adjustment Impact',
+          formula: 'Total Additions - Total Deductions',
+        },
+      ],
+      dataFreshness: 'Immediate transactional ledger reflecting adjustment approval states',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['TABLE'],
+    },
+    {
+      key: 'REP-PAY-08',
+      title: 'Payroll Finalization & Approval History',
+      category: 'PAYROLL',
+      description:
+        'Compliance audit log of workflow approval transitions (Submission, Review, Approval, Rejection, Locking, and Publishing) with separation-of-duties evidence.',
+      endpoint: '/reports/payroll/approval-history',
+      supportedFilters: ['runId', 'periodId'],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-09',
+          name: 'Approval Turnaround',
+          formula: 'Timestamp difference between submission and final sign-off',
+        },
+      ],
+      dataFreshness: 'Immutable audit log of all transition events',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['TABLE'],
+    },
+    {
+      key: 'REP-PAY-09',
+      title: 'Bank Disbursement & Payment Reconciliation',
+      category: 'PAYROLL',
+      description:
+        'Reconciliation of bank disbursement status, tracking settled payouts, pending transactions, failed direct deposits, and bank batch references.',
+      endpoint: '/reports/payroll/payment-reconciliation',
+      supportedFilters: ['periodId', 'runId', 'departmentId', 'paymentStatus'],
+      supportedDatePresets: ['CURRENT_MONTH', 'LAST_MONTH', 'CUSTOM'],
+      metricDefinitions: [
+        {
+          code: 'M-PAY-10',
+          name: 'Reconciliation Percentage',
+          formula: 'Disbursed Amount / Total Net Payable * 100',
+        },
+      ],
+      dataFreshness: 'Bank settlement file upload and payment processor webhook updates',
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      supportedViews: ['CHART', 'TABLE'],
+    },
   ];
 
   constructor(
@@ -363,6 +562,7 @@ export class MisReportLibraryService {
     private readonly attendanceAnalyticsService: AttendanceAnalyticsService,
     private readonly requestAnalyticsService: RequestAnalyticsService,
     private readonly performanceAnalyticsService: PerformanceAnalyticsService,
+    private readonly payrollAnalyticsService: PayrollAnalyticsService,
   ) {}
 
   /**
@@ -637,6 +837,33 @@ export class MisReportLibraryService {
         break;
       case 'REP-PM-03':
         data = await this.performanceAnalyticsService.getDevelopmentPlanReport(user, config);
+        break;
+      case 'REP-PAY-01':
+        data = await this.payrollAnalyticsService.getPayrollSummaryReport(user, config);
+        break;
+      case 'REP-PAY-02':
+        data = await this.payrollAnalyticsService.getCostCenterReport(user, config);
+        break;
+      case 'REP-PAY-03':
+        data = await this.payrollAnalyticsService.getPayrollRegisterReport(user, config);
+        break;
+      case 'REP-PAY-04':
+        data = await this.payrollAnalyticsService.getEarningsDeductionsReport(user, config);
+        break;
+      case 'REP-PAY-05':
+        data = await this.payrollAnalyticsService.getPayrollExceptionsReport(user, config);
+        break;
+      case 'REP-PAY-06':
+        data = await this.payrollAnalyticsService.getPeriodComparisonReport(user, config);
+        break;
+      case 'REP-PAY-07':
+        data = await this.payrollAnalyticsService.getPayrollAdjustmentsReport(user, config);
+        break;
+      case 'REP-PAY-08':
+        data = await this.payrollAnalyticsService.getApprovalHistoryReport(user, config);
+        break;
+      case 'REP-PAY-09':
+        data = await this.payrollAnalyticsService.getPaymentReconciliationReport(user, config);
         break;
       default:
         throw new BadRequestException(`Unmapped report key '${existing.reportKey}'`);
