@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Dialog, Badge, Button } from '@hrms/ui';
 import { leaveApi } from '../../lib/api-client';
 import {
@@ -30,7 +30,7 @@ export const BalanceLedgerModal: React.FC<BalanceLedgerModalProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [ledgerData, setLedgerData] = useState<any>(null);
 
-  const fetchLedger = async () => {
+  const fetchLedger = useCallback(async () => {
     if (!accountId) return;
     setLoading(true);
     setError(null);
@@ -46,7 +46,7 @@ export const BalanceLedgerModal: React.FC<BalanceLedgerModalProps> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [accountId]);
 
   useEffect(() => {
     if (isOpen && accountId) {
@@ -55,7 +55,7 @@ export const BalanceLedgerModal: React.FC<BalanceLedgerModalProps> = ({
       setLedgerData(null);
       setError(null);
     }
-  }, [isOpen, accountId]);
+  }, [isOpen, accountId, fetchLedger]);
 
   if (!isOpen) return null;
 

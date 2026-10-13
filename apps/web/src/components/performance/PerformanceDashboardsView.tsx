@@ -71,9 +71,12 @@ export const PerformanceDashboardsView: React.FC<PerformanceDashboardsViewProps>
   const [isExporting, setIsExporting] = useState(false);
 
   // Notification helper
-  const notify = (msg: string, type: 'success' | 'error' = 'success') => {
-    if (onNotify) onNotify(msg, type);
-  };
+  const notify = useCallback(
+    (msg: string, type: 'success' | 'error' = 'success') => {
+      if (onNotify) onNotify(msg, type);
+    },
+    [onNotify],
+  );
 
   // Fetch Dashboard Data based on active tab
   const fetchDashboardData = useCallback(async () => {
@@ -94,7 +97,7 @@ export const PerformanceDashboardsView: React.FC<PerformanceDashboardsViewProps>
     } finally {
       setIsLoading(false);
     }
-  }, [activeDashboardTab]);
+  }, [activeDashboardTab, notify]);
 
   useEffect(() => {
     fetchDashboardData();

@@ -1,128 +1,132 @@
-# PeopleOS — Production-Grade Self-Hosted HRMS Platform
+# PeopleOS — Enterprise Production-Grade Self-Hosted HRMS Platform
 
-> **Modern, Calm, Professional Human Resource Management for Private Datacenters**
+> **Modern, Calm, Professional Human Resource Management for Private Data Centers**
 
-PeopleOS is an enterprise HRMS designed for organizations that require complete on-premise data sovereignty without mandatory monthly SaaS subscriptions. Built with a modular monolith architecture, PeopleOS supports clean boundaries that can scale or split into microservices in future phases.
-
----
-
-## 🌟 Key Features (Phase 1 Foundation)
-
-- **Monorepo Architecture**: Powered by pnpm workspaces and Turborepo.
-- **Modern Web App**: Next.js 14 (App Router), Tailwind CSS, Lucide icons, and Recharts.
-- **Warm Professional Design System**: Cohesive design tokens inspired by modern HR SaaS (amber/gold primary, warm ivory background, crisp white surfaces, and semantic status indicators).
-- **Four Core Role Dashboards**:
-  - 👑 **ADMIN**: Organization health, branches, audit logs, and system governance.
-  - 👥 **HR**: Workforce directory, attendance overview, leave approvals, and employee enablement.
-  - 👔 **MANAGER**: Squad attendance, leave/outdoor duty approvals, and sprint deliverables.
-  - 👤 **EMPLOYEE**: Check-in status, punch in/out, leave balances, upcoming leaves, and notices.
-- **Architectural Attendance Modes (Prepared for Phase 2)**:
-  - 🏢 **OFFICE**: Geofenced GPS validation.
-  - 💼 **OFFICIAL VISIT (OD)**: Outdoor duty trips with authorized geofence bypass.
-  - 🏠 **WORK FROM HOME (WFH)**: Remote attendance workflows.
-- **Modular NestJS Backend**: REST API with global validation, exception filters, logging, consistent response envelopes, and Swagger/OpenAPI docs.
-- **PostgreSQL Database with Prisma**: 11 foundational entities with relations, indexes, timestamps, and soft deletes.
-- **Self-Hosted Infrastructure**: Docker Compose with PostgreSQL, NestJS API, Next.js Web, and Nginx reverse proxy.
+PeopleOS is an enterprise-grade, self-hosted Human Resource Management System (HRMS) built specifically for organizations requiring complete on-premise data sovereignty in private data centers and restricted network environments (including HPC cluster data centers with Network Access Control).
 
 ---
 
-## 🏗️ Repository Structure
+## 🌟 Key Functional Modules (Phases 1–18 Complete)
+
+- **Authentication & Session Security**: Argon2 password hashing, short-lived JWT access tokens (15m), secure `httpOnly` refresh cookies (7d), and session revocation.
+- **Role-Based Access Control (RBAC)**: Multi-tiered governance with four distinct personas:
+  - 👑 **ADMIN**: System administration, organization structure, audit log explorer, and security configuration.
+  - 👥 **HR**: Workforce directory, attendance exceptions, leave ledgers, MIS reports, and payroll engine.
+  - 👔 **MANAGER**: Team rosters, consolidated approvals inbox, outdoor visit verifications, and performance reviews.
+  - 👤 **EMPLOYEE**: Self-service profile, daily check-in, leave applications, WFH requests, and personal payslips.
+- **Attendance Engine**: Geofenced office check-in, manager-approved Work-From-Home (WFH), and outdoor Official Visits (OD).
+- **Leave Management**: Balance accrual ledger, sandwich rule evaluation, overdraw prevention, and department leave calendars.
+- **Performance Management (PMS)**: Quarterly review cycles, employee self-assessment, manager reviews, and goal tracking.
+- **Enterprise Payroll Engine**: Component formula evaluation, compensation structures, period orchestration, LOP calculation, locked runs, and in-memory streaming of digital payslips in Indian Rupees (INR) with masked bank/PAN details.
+- **Document Storage Vault**: Secure filesystem storage (`0600` POSIX mode), deep magic-byte validation, and path traversal protection.
+- **Enterprise MIS & Reports**: Headcount analytics, attendance reconciliation, payroll variance, and SheetJS Excel (XLSX) exports.
+- **Data Center DevOps & Disaster Recovery**: Multi-stage non-root Docker builds (`USER node`), Prometheus alerting, automated database backups with SHA-256 verification, and documented DR procedures.
+
+---
+
+## 🏗️ Repository Architecture
 
 ```
 ├── apps/
-│   ├── api/                  # NestJS 10 REST API (/api/v1/...)
-│   └── web/                  # Next.js 14 App Router Frontend
+│   ├── api/                  # NestJS 10 Modular REST API (/api/v1/...)
+│   └── web/                  # Next.js 14 App Router SSR & Hydration Frontend
 ├── packages/
 │   ├── config/               # Design tokens, role navigation & brand constants
-│   ├── database/             # Prisma schema (11 entities), migrations & seed
+│   ├── database/             # Prisma 6 schema (26 migrations), seed & composite indexes
 │   ├── eslint-config/        # Monorepo linting presets
-│   ├── types/                # Domain models, role types, API envelopes
-│   └── ui/                   # Reusable HRMS component library (30+ components)
+│   ├── types/                # Domain models, role types, API response envelopes
+│   └── ui/                   # Shared accessible component library (@hrms/ui)
 ├── infrastructure/
-│   ├── docker/               # Multi-stage Dockerfiles & Docker Compose
-│   ├── monitoring/           # Prometheus scraping config
-│   ├── nginx/                # Reverse proxy configuration
-│   └── postgres/             # Database initialization scripts
-└── docs/                     # Technical architecture documentation
+│   ├── docker/               # Hardened multi-stage Dockerfiles (Dockerfile.api, Dockerfile.web)
+│   ├── monitoring/           # Prometheus scraping & alerting rules
+│   ├── nginx/                # Production reverse proxy with TLS hardening & HSTS
+│   ├── postgres/             # Database initialization scripts
+│   └── scripts/              # Automated backup-db.sh, restore-db.sh, rollback-app.sh
+└── docs/
+    ├── deployment/           # Phase 17 data-center operational standards (13 documents)
+    ├── release/              # Phase 18 UAT, inventory, and release reports (6 documents)
+    └── user-guide.md         # End-user guide for Admin, HR, Manager, and Employee
 ```
 
 ---
 
-## 🚀 Quick Start & Development
+## 🚀 Quick Start & Development Setup
 
 ### Prerequisites
 
 - Node.js >= 20.0.0
-- pnpm >= 9.0.0
-- Docker & Docker Compose (optional for local PostgreSQL)
+- pnpm >= 9.0.0 (pnpm 12.8.1 recommended)
+- PostgreSQL 16 (or Docker Compose)
 
 ### 1. Installation
 
 ```bash
-# Install all dependencies across the monorepo
-pnpm install
+# Clone the repository
+git clone https://github.com/KuldeepLakhera9/HR.git
+cd HR
 
-# Generate Prisma Client
-pnpm --filter @hrms/database run generate
+# Install monorepo dependencies
+pnpm install
 ```
 
-### 2. Environment Variables
-
-Create `.env` from template:
+### 2. Environment Configuration
 
 ```bash
+# Copy example environment configuration
 cp .env.example .env
 ```
 
-| Variable              | Description                  | Default                                                                     |
-| --------------------- | ---------------------------- | --------------------------------------------------------------------------- |
-| `DATABASE_URL`        | PostgreSQL connection string | `postgresql://hrms_user:hrms_password@localhost:5432/hrms_db?schema=public` |
-| `PORT`                | API server port              | `4000`                                                                      |
-| `API_PREFIX`          | REST API route prefix        | `api/v1`                                                                    |
-| `NEXT_PUBLIC_API_URL` | Frontend API client base URL | `http://localhost:4000/api/v1`                                              |
-
-### 3. Run Development Servers
+### 3. Database Setup & Migration
 
 ```bash
-# Run both Next.js and NestJS concurrently via Turborepo
-pnpm dev
+# Generate Prisma Client
+pnpm --filter @hrms/database run generate
+
+# Deploy database migrations
+pnpm --filter @hrms/database run db:migrate
 ```
 
-- **Web Frontend**: [http://localhost:3000](http://localhost:3000)
-- **API Server**: [http://localhost:4000/api/v1](http://localhost:4000/api/v1)
-- **API Swagger Docs**: [http://localhost:4000/api/docs](http://localhost:4000/api/docs)
-- **Health Check**: [http://localhost:4000/api/v1/health](http://localhost:4000/api/v1/health)
-
----
-
-## 🐳 Docker Deployment
-
-To launch the full self-hosted stack in Docker:
+### 4. Running the Development Server
 
 ```bash
-# Build and start PostgreSQL, API, Web, and Nginx
-docker compose up -d --build
+# Start all workspace services via Turborepo
+pnpm run dev
 
-# Check status
-docker compose ps
+# Frontend Web Portal: http://localhost:8080
+# Backend REST API:    http://localhost:4000/api/v1
+# Swagger UI Docs:     http://localhost:4000/api/docs (Development only)
 ```
 
-The application will be accessible at `http://localhost` via the Nginx reverse proxy.
-
----
-
-## 🧪 Verification & Quality
+### 5. Running Tests & Type Checking
 
 ```bash
-# Run TypeScript type check across all packages and apps
-pnpm typecheck
+# Execute full automated test suite (1,133 tests)
+pnpm run test
 
-# Check formatting
-pnpm format:check
+# Run TypeScript compilation checks across all 7 packages
+pnpm run typecheck
+
+# Check code formatting
+pnpm run format:check
 ```
 
 ---
 
-## 📄 License
+## 🔒 Production Data-Center Deployment
 
-Private & Proprietary. All rights reserved.
+```bash
+# 1. Prepare production environment
+sudo cp .env.production.example /etc/hrms/.env.production
+sudo chmod 600 /etc/hrms/.env.production
+
+# 2. Launch production containers
+docker compose -f docker-compose.prod.yml --env-file /etc/hrms/.env.production up -d --build
+
+# 3. Deploy database migrations
+docker compose -f docker-compose.prod.yml exec api npx prisma migrate deploy
+
+# 4. Verify system health
+curl -s http://127.0.0.1:4000/api/v1/health
+```
+
+For complete deployment specifications, refer to [docs/deployment/](file:///c:/Kuldeep's%20Work/Projects/HR/docs/deployment) and [docs/user-guide.md](file:///c:/Kuldeep's%20Work/Projects/HR/docs/user-guide.md).

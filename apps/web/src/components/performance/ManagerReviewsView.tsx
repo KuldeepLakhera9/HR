@@ -120,9 +120,12 @@ export const ManagerReviewsView: React.FC<ManagerReviewsViewProps> = ({ onNotify
   const [isRecalculating, setIsRecalculating] = useState(false);
 
   // Notification helper
-  const notify = (msg: string, type: 'success' | 'error' = 'success') => {
-    if (onNotify) onNotify(msg, type);
-  };
+  const notify = useCallback(
+    (msg: string, type: 'success' | 'error' = 'success') => {
+      if (onNotify) onNotify(msg, type);
+    },
+    [onNotify],
+  );
 
   // Fetch Inbox Data
   const fetchInbox = useCallback(async () => {
@@ -142,7 +145,7 @@ export const ManagerReviewsView: React.FC<ManagerReviewsViewProps> = ({ onNotify
     } finally {
       setIsLoading(false);
     }
-  }, [statusFilter, searchQuery, page]);
+  }, [statusFilter, searchQuery, page, notify]);
 
   useEffect(() => {
     fetchInbox();

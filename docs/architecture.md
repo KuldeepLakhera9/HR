@@ -1,31 +1,72 @@
-# PeopleOS HRMS — System Architecture
+# PeopleOS HRMS — Complete System Architecture
 
-## 1. High-Level Overview
+**Document ID:** `ARCH-SYSTEM-001`  
+**Phase:** 18 — Final HRMS UAT, Documentation, Release Validation & Sign-Off  
+**Target Environment:** Private Enterprise Data Center  
+**Classification:** Confidential — Engineering Architecture Standard
 
-PeopleOS is an enterprise-grade, self-hosted Human Resource Management System (HRMS) built specifically for organizations requiring full data sovereignty on private datacenter infrastructure.
+---
+
+## 1. System Vision & Architectural Principles
+
+PeopleOS HRMS is an enterprise-grade, self-hosted Human Resource Management System built specifically for organizations requiring full data sovereignty on private data-center infrastructure.
 
 ### Architectural Core Principles
 
-- **Modular Monolith**: A unified codebase organized strictly by clear domain module boundaries. No premature microservices overhead, but decoupled enough that any module (such as Attendance, Leave, or Payroll in future phases) can be extracted into an independent microservice if needed.
-- **Zero Cloud Rent / Self-Hosted Sovereignty**: No mandatory SaaS services, external cloud subscriptions, or vendor-locked vendor APIs. Runs completely on Linux/Docker with PostgreSQL.
-- **Centralized Design System**: Cohesive warm-professional UI tokens, robust accessibility, responsive behavior (Desktop-first for Admin/HR, Mobile-first for Employee workflows).
-- **Role-Based Governance**: Four clean user-facing personas (`ADMIN`, `HR`, `MANAGER`, `EMPLOYEE`) powered internally by a granular permission catalog.
+1. **Modular Monolith**: A unified codebase organized strictly by clear domain module boundaries. High cohesion, low coupling, zero premature distributed-network complexity.
+2. **Zero Cloud Rent / Complete Data Sovereignty**: No mandatory SaaS dependencies, external cloud subscriptions, or vendor-locked APIs. Runs completely on Linux, Docker, and PostgreSQL 16.
+3. **Defense-in-Depth Security**: Multi-tier authentication (Argon2, short-lived JWT, secure cookies), server-side RBAC, ownership scope verification, in-memory financial streaming, and POSIX `0600` document storage vaults.
+4. **Resilient Data Operations**: Relational integrity with 26 linear Prisma migrations, composite performance indexes, deterministic state machines, and tested disaster recovery procedures.
+
+---
+
+## 2. Global Topology & Logical Architecture
 
 ```mermaid
-graph TD
-    Client[Web Browser / Mobile Client] --> Nginx[Nginx Reverse Proxy :80]
-    Nginx -->|/api/*| API[NestJS Modular Monolith :4000]
-    Nginx -->|/*| Web[Next.js Web Application :3000]
-    API --> DB[(PostgreSQL 16 Database :5432)]
-    API --> Prisma[Prisma ORM Client]
+flowchart TB
+    subgraph Client_Tier ["Client Tier (Browser & Mobile Devices)"]
+        Browser["Modern Web Client (Chrome / Edge / Safari / Firefox)"]
+    end
+
+    subgraph Ingress_Tier ["Ingress & Reverse Proxy Gateway"]
+        Nginx["Nginx Reverse Proxy (:80 -> :443 TLS 1.3 Termination)\nStrict Security Headers | HSTS | Anti-Caching Rules"]
+    end
+
+    subgraph App_Tier ["Application Tier (Dedicated VM / Non-Root node:1000)"]
+        Web["hrms_web (Next.js 14 SSR & Hydration)\nInternal Port: 3000 | Zero Direct DB Access"]
+        API["hrms_api (NestJS 10 Modular Core)\nInternal Port: 4000 | Global Pipes | Exception Filters"]
+    end
+
+    subgraph Storage_Tier ["Stateful Storage Tier (Isolated Backend Network)"]
+        DB[("hrms_postgres (PostgreSQL 16 Engine)\nInternal Port: 5432 | Zero Public Port Exposure\n26 Migrations | Composite Performance Indexes")]
+        Vault[("Private Document Vault\n/var/hrms/storage/documents\nPOSIX Mode: 0600 | Magic-Byte Inspected")]
+        Backups[("Secure Backup Staging\n/var/backups/hrms/postgres\nSHA-256 Checksums | 14-Day Pruning")]
+    end
+
+    subgraph Enterprise_Integration ["Enterprise Data-Center Services"]
+        Mail["Corporate SMTP Relay (:587 STARTTLS)"]
+        Prometheus["Prometheus Monitoring (:4000 /api/v1/health)"]
+    end
+
+    Browser -->|"HTTPS / TCP 443"| Nginx
+    Nginx -->|"Proxy Pass / HTTP 3000"| Web
+    Nginx -->|"Proxy Pass / HTTP 4000 (Anti-Cached)"| API
+    Web -.->|"Client API Calls via Nginx"| API
+    API -->|"Prisma Client Pool (max 50) / TCP 5432"| DB
+    API -->|"Stream Local Files (0600 Mode)"| Vault
+    API -.->|"Transactional Mail / TCP 587"| Mail
+    Prometheus -.->|"Health Scrape / TCP 4000"| API
+    DB -.->|"pg_dump Automated Nightly"| Backups
 ```
 
-## 2. Monorepo Structure
+---
+
+## 3. Monorepo Structure & Package Boundaries
 
 ```
 ├── apps/
-│   ├── api/                  # NestJS Modular Backend
-│   └── web/                  # Next.js 14 Web Frontend
+│   ├── api/                  # NestJS 10 Modular Backend (/api/v1/...)
+│   └── web/                  # Next.js 14 Web Frontend (SSR + Client Hydration)
 ├── packages/
 │   ├── config/               # Shared tokens, navigation & environment constants
 │   ├── database/             # Prisma schema, migrations, seed & client
@@ -34,32 +75,26 @@ graph TD
 │   └── ui/                   # Reusable HRMS design system & component library
 ├── infrastructure/
 │   ├── docker/               # Production & Dev Dockerfiles & compose
-│   ├── monitoring/           # Prometheus scraping & health monitor configs
+│   ├── monitoring/           # Prometheus scraping & alerting rules
 │   ├── nginx/                # Nginx reverse proxy configuration
-│   └── postgres/             # PostgreSQL init scripts & extensions
-└── docs/                     # Comprehensive architecture & engineering documentation
+│   ├── postgres/             # PostgreSQL init scripts & extensions
+│   └── scripts/              # Automated backup-db.sh, restore-db.sh, rollback-app.sh
+└── docs/                     # System architecture & engineering documentation
 ```
 
-## 3. Four Core Roles
+---
 
-1. **ADMIN**: Full system administration, branch configuration, audit log inspection, and tenant setup.
-2. **HR**: Organization directory, company-wide attendance monitoring, leave master, and document management.
-3. **MANAGER**: Direct squad supervision, team attendance verification, leave approvals, and official visit authorizations.
-4. **EMPLOYEE**: Personal attendance punch (Office / OD / WFH), leave applications, documents, and notifications.
+## 4. Four Core User Personas & Scoping
 
-## 4. Future Attendance Architectural Modes (Requirement 25)
+1. **`ADMIN`**: Global organization governance, system settings, role assignment, audit log explorer, and security configuration.
+2. **`HR`**: Organization-wide employee directory, attendance anomaly queues, leave policy ledgers, MIS analytics, and the enterprise payroll calculation engine.
+3. **`MANAGER`**: Team roster oversight, direct report request approvals (leave, WFH, official visits), and performance review assessments.
+4. **`EMPLOYEE`**: Self-service profile, daily check-in (Office, WFH, OD), leave applications, goal tracking, and personal digital payslips.
 
-1. **OFFICE**: Attendance validation strictly against branch GPS coordinates within the organization-defined radius (e.g. 150m).
-2. **OFFICIAL VISIT (OD)**: Allows outdoor duty punch outside the office perimeter when supported by an approved Official Visit workflow.
-3. **WORK FROM HOME (WFH)**: Remote check-in authorized through manager-approved remote work requests.
+---
 
-## 5. Data Access Scopes & Authorization
+## 5. Security & Privacy Architecture
 
-In Phase 2 Step 6, the system formalizes data access scopes:
-
-- **`GLOBAL`**: Cross-tenant administrative reach (`ADMIN`).
-- **`ORGANIZATION`**: Tenant-wide visibility (`HR`).
-- **`TEAM`**: Supervised team/department visibility (`MANAGER`).
-- **`SELF`**: Personal identity and records (`EMPLOYEE`).
-
-Detailed blueprint and policy handler specification: [Data Access Scope Architecture](file:///c:/Kuldeep's%20Work/Projects/HR/docs/data-access-scope-architecture.md).
+- **Stateless Tokens with Cookie Storage:** 15-minute access tokens paired with 7-day refresh tokens stored in `httpOnly`, `Secure`, `SameSite=Lax` cookies.
+- **In-Memory Streaming:** Generated payslips are rendered on-the-fly via `pdfkit` directly into binary `Buffer` streams, ensuring private financial data is never saved to unencrypted temporary files on disk.
+- **Zero Database Exposure:** The PostgreSQL container maps zero host ports in production, communicating strictly over an internal Docker bridge (`backend_net: internal=true`).

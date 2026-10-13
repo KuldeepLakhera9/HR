@@ -117,11 +117,14 @@ export function DevelopmentPlansView({ employeeId, onNotify }: DevelopmentPlansV
 
   const [submitting, setSubmitting] = useState(false);
 
-  const notify = (msg: string, type: 'success' | 'error') => {
-    if (onNotify) {
-      onNotify(msg, type);
-    }
-  };
+  const notify = useCallback(
+    (msg: string, type: 'success' | 'error') => {
+      if (onNotify) {
+        onNotify(msg, type);
+      }
+    },
+    [onNotify],
+  );
 
   // Fetch development overview
   const fetchData = useCallback(
@@ -147,7 +150,7 @@ export function DevelopmentPlansView({ employeeId, onNotify }: DevelopmentPlansV
         setRefreshing(false);
       }
     },
-    [employeeId],
+    [employeeId, notify],
   );
 
   useEffect(() => {

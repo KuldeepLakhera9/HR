@@ -95,10 +95,13 @@ export default function PayrollRunsPage() {
       setRuns(runsRes?.data || []);
 
       // Default runForm periodId to first open period if not set
-      if (!runForm.periodId && periodList.length > 0) {
-        const firstOpen = periodList.find((p: any) => p.status !== 'CLOSED') || periodList[0];
-        setRunForm((prev) => ({ ...prev, periodId: firstOpen.id }));
-      }
+      setRunForm((prev) => {
+        if (!prev.periodId && periodList.length > 0) {
+          const firstOpen = periodList.find((p: any) => p.status !== 'CLOSED') || periodList[0];
+          return { ...prev, periodId: firstOpen.id };
+        }
+        return prev;
+      });
     } catch (err) {
       console.error('Failed to load payroll orchestration data', err);
     } finally {

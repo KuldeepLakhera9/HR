@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { AppShell } from '../../../layouts/AppShell';
@@ -69,7 +69,7 @@ export default function SalaryStructuresPage() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const fetchStructures = async () => {
+  const fetchStructures = useCallback(async () => {
     try {
       setIsLoading(true);
       const res = await apiClient.getSalaryStructures({
@@ -89,11 +89,11 @@ export default function SalaryStructuresPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [statusFilter, searchTerm, page]);
 
   useEffect(() => {
     fetchStructures();
-  }, [statusFilter, page]);
+  }, [fetchStructures]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

@@ -247,6 +247,7 @@ export const HRLeaveAdminView: React.FC<HRLeaveAdminViewProps> = ({ currentUserI
       fetchLeaveTypes();
     } else if (activeSubTab === 'assignments') fetchAssignments();
     else if (activeSubTab === 'holidays') fetchHolidays();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeSubTab]);
 
   // Handle Export CSV

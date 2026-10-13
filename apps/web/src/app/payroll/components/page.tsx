@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { AppShell } from '../../../layouts/AppShell';
 import { ProtectedRoute } from '../../../components/auth/ProtectedRoute';
@@ -78,7 +78,7 @@ export default function SalaryComponentsPage() {
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [componentToDelete, setComponentToDelete] = useState<any>(null);
 
-  const fetchComponents = async () => {
+  const fetchComponents = useCallback(async () => {
     try {
       setIsLoading(true);
       const res = await apiClient.getSalaryComponents({
@@ -99,11 +99,11 @@ export default function SalaryComponentsPage() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [searchTerm, selectedCategory, selectedType, page]);
 
   useEffect(() => {
     fetchComponents();
-  }, [selectedCategory, selectedType, page]);
+  }, [fetchComponents]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();

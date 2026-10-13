@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { AppShell } from '../../../../layouts/AppShell';
@@ -64,23 +64,7 @@ export default function SalaryStructureDetailPage() {
   // Notifications
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
-  const fetchStructure = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const res = await apiClient.getSalaryStructure(structureId);
-      if (res?.data) {
-        setStructure(res.data);
-        runSimulation(structureId, testAnnualCtc);
-      }
-    } catch (err: any) {
-      setError(err?.message || 'Failed to load salary structure details');
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const runSimulation = async (structId: string, annualCtc: number) => {
+  const runSimulation = useCallback(async (structId: string, annualCtc: number) => {
     try {
       setSimLoading(true);
       setSimError(null);
@@ -94,13 +78,29 @@ export default function SalaryStructureDetailPage() {
     } finally {
       setSimLoading(false);
     }
-  };
+  }, []);
+
+  const fetchStructure = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const res = await apiClient.getSalaryStructure(structureId);
+      if (res?.data) {
+        setStructure(res.data);
+        runSimulation(structureId, testAnnualCtc);
+      }
+    } catch (err: any) {
+      setError(err?.message || 'Failed to load salary structure details');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [structureId, testAnnualCtc, runSimulation]);
 
   useEffect(() => {
     if (structureId) {
       fetchStructure();
     }
-  }, [structureId]);
+  }, [structureId, fetchStructure]);
 
   const handleActivate = async () => {
     if (!confirm(`Activate salary structure '${structure.name}'?`)) return;
