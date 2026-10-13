@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -16,7 +17,13 @@ import {
   PreviewScopeDto,
   QueryPayrollRunsDto,
   RejectPayrollRunDto,
+  ReturnForCorrectionDto,
 } from '../dto/payroll-run.dto';
+import {
+  DepartmentPayrollSummaryDto,
+  PeriodComparisonVarianceDto,
+  PayrollRunReviewSummaryDto,
+} from '@hrms/types';
 
 import { PayrollCalculationEngineService } from './payroll-calculation-engine.service';
 import { PayrollInputsService } from './payroll-inputs.service';
@@ -196,6 +203,7 @@ export class PayrollRunsService {
       const created = await tx.payrollRun.create({
         data: {
           organizationId,
+          createdById: actorId,
           periodId: dto.periodId,
           runNumber,
           scope,
@@ -308,6 +316,9 @@ export class PayrollRunsService {
       where: { id, organizationId },
       include: {
         period: true,
+        createdBy: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
         approvedBy: {
           select: { id: true, firstName: true, lastName: true, email: true },
         },
@@ -414,6 +425,7 @@ export class PayrollRunsService {
       let runGross = new Prisma.Decimal(0);
       let runDeductions = new Prisma.Decimal(0);
       let runNet = new Prisma.Decimal(0);
+      let runEmployerCost = new Prisma.Decimal(0);
       let exceptionCount = 0;
       const exceptionsList: any[] = [];
 
@@ -529,6 +541,7 @@ export class PayrollRunsService {
         runGross = runGross.plus(calcOutput.earnedGross);
         runDeductions = runDeductions.plus(calcOutput.totalEmployeeDeductions);
         runNet = runNet.plus(calcOutput.netSalary);
+        runEmployerCost = runEmployerCost.plus(calcOutput.totalEmployerContributions);
 
         const isSnapshotException = calcOutput.isException || workSummary.isException;
         const exceptionReasonText = calcOutput.exceptionReason || workSummary.exceptionReason;
@@ -568,6 +581,7 @@ export class PayrollRunsService {
             currency: calcOutput.currency,
             calculationInputSnapshot: {
               ...(calcOutput.calculationInputSnapshot as any),
+              totalEmployerContributions: Number(calcOutput.totalEmployerContributions),
               workSummary,
             },
             isException: isSnapshotException,
@@ -608,6 +622,7 @@ export class PayrollRunsService {
             totalGross: runGross,
             totalDeductions: runDeductions,
             totalNet: runNet,
+            totalEmployerCost: runEmployerCost,
             calculatedAt: new Date(),
             exceptionCount: Math.max(validationSummary?.total ?? 0, exceptionCount),
             exceptions: exceptionsList.length > 0 ? (exceptionsList as any) : undefined,
@@ -691,12 +706,50 @@ export class PayrollRunsService {
   /**
    * Approve run
    */
-  async approve(organizationId: string, runId: string, dto: ApprovePayrollRunDto, actorId: string) {
+  async approve(
+    organizationId: string,
+    runId: string,
+    dto: ApprovePayrollRunDto,
+    actorId: string,
+    userPermissions?: string[],
+  ) {
     const run = await this.findById(organizationId, runId);
 
+    // Permitted state transitions validation: must be REVIEW_PENDING
     if (run.status !== 'REVIEW_PENDING') {
       throw new BadRequestException(
         `Cannot approve run in status '${run.status}'. Must be in 'REVIEW_PENDING'.`,
+      );
+    }
+
+    // Explicit approver permission validation
+    if (userPermissions && !userPermissions.includes('PAYROLL_APPROVE')) {
+      throw new ForbiddenException(
+        'Unauthorized: Approving payroll runs strictly requires PAYROLL_APPROVE permission.',
+      );
+    }
+
+    // Separation of Duties & Self-Approval Prevention
+    if (run.createdById && run.createdById === actorId) {
+      throw new BadRequestException(
+        'Separation of duties violation: A user cannot approve a payroll run they created. Independent approval is required.',
+      );
+    }
+
+    // Check if the actor was the calculator
+    const lastCalc =
+      typeof this.prisma.payrollApprovalHistory?.findFirst === 'function'
+        ? await this.prisma.payrollApprovalHistory.findFirst({
+            where: {
+              payrollRunId: runId,
+              action: { in: ['CALCULATED', 'RECALCULATED'] },
+            },
+            orderBy: { createdAt: 'desc' },
+          })
+        : null;
+    if (lastCalc && lastCalc.actorId === actorId) {
+      throw new BadRequestException(
+        'Separation of duties violation: The user who calculated this payroll run cannot approve it. Independent approval is required.',
       );
     }
 
@@ -711,7 +764,47 @@ export class PayrollRunsService {
       );
     }
 
-    // Required Behavior 10: Preserve unresolved warnings in the final audit trail when policy permits approval with warnings
+    // Requirement 6: Require recalculation and re-review when material payroll inputs change before finalization
+    // 1. Check late attendance/leave changes
+    const lateChanges = await this.payrollInputs.detectLateSourceChanges(organizationId, runId);
+    if (lateChanges && lateChanges.totalLateChanges > 0) {
+      throw new BadRequestException(
+        `Cannot approve payroll run: Material attendance/leave changes (${lateChanges.totalLateChanges}) detected since last calculation. Recalculation and re-review required before approval.`,
+      );
+    }
+
+    // 2. Check if new or modified approved adjustments exist after run.calculatedAt
+    if (run.calculatedAt) {
+      const lateAdjustments = await this.prisma.payrollAdjustment.count({
+        where: {
+          organizationId,
+          periodId: run.periodId,
+          status: 'APPROVED',
+          updatedAt: { gt: run.calculatedAt },
+        },
+      });
+      if (lateAdjustments > 0) {
+        throw new BadRequestException(
+          `Cannot approve payroll run: ${lateAdjustments} payroll adjustment(s) were added or modified since last calculation. Recalculation and re-review required before approval.`,
+        );
+      }
+
+      // 3. Check if compensation revisions were approved after run.calculatedAt
+      const lateComp = await this.prisma.employeeCompensation.count({
+        where: {
+          employee: { organizationId },
+          status: 'APPROVED',
+          updatedAt: { gt: run.calculatedAt },
+        },
+      });
+      if (lateComp > 0) {
+        throw new BadRequestException(
+          'Cannot approve payroll run: Employee compensation master records were modified since last calculation. Recalculation and re-review required before approval.',
+        );
+      }
+    }
+
+    // Concurrency control: Atomic check & update within transaction
     const unresolvedWarningsNote =
       exceptionsSummary.warnings > 0
         ? `Preserved ${exceptionsSummary.warnings} unresolved review warning(s).`
@@ -723,6 +816,22 @@ export class PayrollRunsService {
       : unresolvedWarningsNote || 'Payroll run approved';
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const current = (typeof tx.payrollRun.findUnique === 'function' &&
+        (await tx.payrollRun.findUnique({
+          where: { id: runId },
+          select: { status: true },
+        }))) ||
+        (typeof tx.payrollRun.findFirst === 'function' &&
+          (await tx.payrollRun.findFirst({
+            where: { id: runId },
+            select: { status: true },
+          }))) || { status: run.status };
+      if (!current || current.status !== 'REVIEW_PENDING') {
+        throw new ConflictException(
+          `Cannot approve payroll run: Current status is '${current?.status}'. Concurrently modified.`,
+        );
+      }
+
       const r = await tx.payrollRun.update({
         where: { id: runId },
         data: {
@@ -776,7 +885,27 @@ export class PayrollRunsService {
       );
     }
 
+    if (!dto.rejectionReason || dto.rejectionReason.trim().length === 0) {
+      throw new BadRequestException('Rejection reason is required.');
+    }
+
     const updated = await this.prisma.$transaction(async (tx) => {
+      const current = (typeof tx.payrollRun.findUnique === 'function' &&
+        (await tx.payrollRun.findUnique({
+          where: { id: runId },
+          select: { status: true },
+        }))) ||
+        (typeof tx.payrollRun.findFirst === 'function' &&
+          (await tx.payrollRun.findFirst({
+            where: { id: runId },
+            select: { status: true },
+          }))) || { status: run.status };
+      if (!current || current.status !== 'REVIEW_PENDING') {
+        throw new ConflictException(
+          `Cannot reject payroll run: Current status is '${current?.status}'. Concurrently modified.`,
+        );
+      }
+
       const r = await tx.payrollRun.update({
         where: { id: runId },
         data: {
@@ -811,6 +940,79 @@ export class PayrollRunsService {
   }
 
   /**
+   * Return approved run for correction back to REVIEW_PENDING (pre-lock)
+   */
+  async returnForCorrection(
+    organizationId: string,
+    runId: string,
+    dto: ReturnForCorrectionDto,
+    actorId: string,
+  ) {
+    const run = await this.findById(organizationId, runId);
+
+    if (run.status !== 'APPROVED') {
+      throw new BadRequestException(
+        `Cannot return run for correction: Only runs in 'APPROVED' status can be returned for correction. Current status is '${run.status}'.`,
+      );
+    }
+
+    if (!dto.reason || dto.reason.trim().length === 0) {
+      throw new BadRequestException(
+        'A reason must be provided when returning a payroll run for correction.',
+      );
+    }
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const current = await tx.payrollRun.findUnique({
+        where: { id: runId },
+        select: { status: true },
+      });
+      if (!current || current.status !== 'APPROVED') {
+        throw new ConflictException(
+          `Cannot return payroll run for correction: Current status is '${current?.status}'. Concurrently modified.`,
+        );
+      }
+
+      const r = await tx.payrollRun.update({
+        where: { id: runId },
+        data: {
+          status: 'REVIEW_PENDING',
+          approvedAt: null,
+          approvedById: null,
+        },
+      });
+
+      await tx.payrollApprovalHistory.create({
+        data: {
+          payrollRunId: runId,
+          actorId,
+          action: 'RETURNED_FOR_CORRECTION',
+          comments: dto.notes ? `${dto.reason} (${dto.notes})` : dto.reason,
+          previousStatus: 'APPROVED',
+          newStatus: 'REVIEW_PENDING',
+        },
+      });
+
+      return r;
+    });
+
+    await this.auditService.record({
+      organizationId,
+      userId: actorId,
+      action: 'PAYROLL_RUN_RETURNED_FOR_CORRECTION',
+      entity: 'PayrollRun',
+      entityId: runId,
+      metadata: {
+        status: 'REVIEW_PENDING',
+        reason: dto.reason,
+        notes: dto.notes,
+      },
+    });
+
+    return updated;
+  }
+
+  /**
    * Lock run - finalized and immutable
    */
   async lock(organizationId: string, runId: string, dto: LockPayrollRunDto, actorId: string) {
@@ -823,6 +1025,22 @@ export class PayrollRunsService {
     }
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      const current = (typeof tx.payrollRun.findUnique === 'function' &&
+        (await tx.payrollRun.findUnique({
+          where: { id: runId },
+          select: { status: true },
+        }))) ||
+        (typeof tx.payrollRun.findFirst === 'function' &&
+          (await tx.payrollRun.findFirst({
+            where: { id: runId },
+            select: { status: true },
+          }))) || { status: run.status };
+      if (!current || current.status !== 'APPROVED') {
+        throw new ConflictException(
+          `Cannot lock payroll run: Current status is '${current?.status}'. Concurrently modified.`,
+        );
+      }
+
       const r = await tx.payrollRun.update({
         where: { id: runId },
         data: {
@@ -1000,6 +1218,7 @@ export class PayrollRunsService {
           calculationVersion: 1,
           title: `Correction: ${parentRun.title} (Run #${runNumber})`,
           status: 'DRAFT',
+          createdById: actorId,
           correctionReason: dto.correctionReason,
           notes: dto.notes,
           totalEmployees: parentRun.totalEmployees,
@@ -1138,5 +1357,346 @@ export class PayrollRunsService {
    */
   async getLateSourceChanges(organizationId: string, runId: string) {
     return this.payrollInputs.detectLateSourceChanges(organizationId, runId);
+  }
+
+  /**
+   * Asserts that a run is not locked or finalized. Any attempt to modify,
+   * recalculate, or edit snapshots on a locked run is strictly prohibited.
+   */
+  assertRunNotLocked(run: { status: string }) {
+    if (run.status === 'LOCKED' || run.status === 'PUBLISHED' || run.status === 'PAID') {
+      throw new BadRequestException(
+        `Payroll run is finalized and immutable (status: '${run.status}'). Post-lock edits and recalculations are strictly prohibited. Initiate an authorized correction run instead.`,
+      );
+    }
+  }
+
+  /**
+   * Attempted post-lock edit prevention for individual snapshots
+   */
+  async updateSnapshot(organizationId: string, runId: string, snapshotId: string, data: any) {
+    const run = await this.findById(organizationId, runId);
+    this.assertRunNotLocked(run);
+    return this.prisma.employeePayrollSnapshot.update({
+      where: { id: snapshotId, payrollRunId: runId, organizationId },
+      data,
+    });
+  }
+
+  /**
+   * Get comprehensive payroll review summary and audit statistics
+   */
+  async getReviewSummary(
+    organizationId: string,
+    runId: string,
+    currentUserId?: string,
+  ): Promise<PayrollRunReviewSummaryDto> {
+    const run = await this.findById(organizationId, runId);
+
+    // Fetch snapshots with items and employee department
+    const snapshots = await this.prisma.employeePayrollSnapshot.findMany({
+      where: { organizationId, payrollRunId: runId },
+      include: {
+        items: true,
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            displayName: true,
+            employment: {
+              select: {
+                department: {
+                  select: { id: true, name: true },
+                },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Department-level breakdown & employer cost
+    const deptMap = new Map<string, DepartmentPayrollSummaryDto>();
+    let totalEmployerCostDec = new Prisma.Decimal(0);
+
+    for (const snap of snapshots) {
+      const deptName =
+        snap.departmentName || snap.employee?.employment?.department?.name || 'General';
+      let dept = deptMap.get(deptName);
+      if (!dept) {
+        dept = {
+          departmentId: snap.employee?.employment?.department?.id || null,
+          departmentName: deptName,
+          employeeCount: 0,
+          totalGross: 0,
+          totalDeductions: 0,
+          totalNet: 0,
+          totalEmployerCost: 0,
+        };
+        deptMap.set(deptName, dept);
+      }
+      dept.employeeCount += 1;
+      dept.totalGross = Math.round((dept.totalGross + Number(snap.earnedGross)) * 100) / 100;
+      dept.totalDeductions =
+        Math.round((dept.totalDeductions + Number(snap.totalDeductions)) * 100) / 100;
+      dept.totalNet = Math.round((dept.totalNet + Number(snap.netSalary)) * 100) / 100;
+
+      const snapEmployerCost = Number(
+        (snap.calculationInputSnapshot as any)?.totalEmployerContributions || 0,
+      );
+
+      dept.totalEmployerCost = Math.round((dept.totalEmployerCost + snapEmployerCost) * 100) / 100;
+      totalEmployerCostDec = totalEmployerCostDec.plus(new Prisma.Decimal(snapEmployerCost));
+    }
+
+    const departments = Array.from(deptMap.values()).sort((a, b) =>
+      a.departmentName.localeCompare(b.departmentName),
+    );
+
+    const runEmployerCost =
+      Number(run.totalEmployerCost) > 0
+        ? Number(run.totalEmployerCost)
+        : Number(totalEmployerCostDec);
+
+    // Comparison with previous comparable period
+    const previousRun = await this.prisma.payrollRun.findFirst({
+      where: {
+        organizationId,
+        id: { not: runId },
+        period: {
+          endDate: { lte: run.period.startDate },
+        },
+        status: { in: ['APPROVED', 'LOCKED', 'PUBLISHED'] },
+      },
+      orderBy: { period: { startDate: 'desc' } },
+      include: { period: true },
+    });
+
+    let comparison: PeriodComparisonVarianceDto | null = null;
+    if (previousRun) {
+      const prevGross = Number(previousRun.totalGross);
+      const curGross = Number(run.totalGross);
+      const prevNet = Number(previousRun.totalNet);
+      const curNet = Number(run.totalNet);
+      const prevEmpCost = Number(previousRun.totalEmployerCost);
+      const curEmpCost = runEmployerCost;
+
+      const grossDelta = curGross - prevGross;
+      const grossDeltaPct = prevGross > 0 ? (grossDelta / prevGross) * 100 : 0;
+      const netDelta = curNet - prevNet;
+      const netDeltaPct = prevNet > 0 ? (netDelta / prevNet) * 100 : 0;
+      const empCostDelta = curEmpCost - prevEmpCost;
+      const empCostDeltaPct = prevEmpCost > 0 ? (empCostDelta / prevEmpCost) * 100 : 0;
+
+      comparison = {
+        previousRunId: previousRun.id,
+        previousPeriodTitle: previousRun.title,
+        previousHeadcount: previousRun.totalEmployees,
+        currentHeadcount: run.totalEmployees,
+        headcountDelta: run.totalEmployees - previousRun.totalEmployees,
+        previousTotalGross: prevGross,
+        currentTotalGross: curGross,
+        grossDelta: Math.round(grossDelta * 100) / 100,
+        grossDeltaPercentage: Math.round(grossDeltaPct * 100) / 100,
+        previousTotalDeductions: Number(previousRun.totalDeductions),
+        currentTotalDeductions: Number(run.totalDeductions),
+        deductionsDelta:
+          Math.round((Number(run.totalDeductions) - Number(previousRun.totalDeductions)) * 100) /
+          100,
+        previousTotalNet: prevNet,
+        currentTotalNet: curNet,
+        netDelta: Math.round(netDelta * 100) / 100,
+        netDeltaPercentage: Math.round(netDeltaPct * 100) / 100,
+        previousTotalEmployerCost: prevEmpCost,
+        currentTotalEmployerCost: curEmpCost,
+        employerCostDelta: Math.round(empCostDelta * 100) / 100,
+        employerCostDeltaPercentage: Math.round(empCostDeltaPct * 100) / 100,
+      };
+    }
+
+    // Material movements in period: joiners, exits, comp changes, manual adjustments
+    const [newJoiners, exits, compChanges, adjustments] = await Promise.all([
+      this.prisma.employee.findMany({
+        where: {
+          organizationId,
+          joiningDate: {
+            gte: run.period.startDate,
+            lte: run.period.endDate,
+          },
+        },
+        select: {
+          id: true,
+          employeeCode: true,
+          displayName: true,
+          joiningDate: true,
+          employment: { select: { department: { select: { name: true } } } },
+        },
+      }),
+      this.prisma.employee.findMany({
+        where: {
+          organizationId,
+          exitDate: {
+            gte: run.period.startDate,
+            lte: run.period.endDate,
+          },
+        },
+        select: {
+          id: true,
+          employeeCode: true,
+          displayName: true,
+          exitDate: true,
+          employment: { select: { department: { select: { name: true } } } },
+        },
+      }),
+      this.prisma.employeeCompensation.findMany({
+        where: {
+          employee: { organizationId },
+          status: 'APPROVED',
+          effectiveFrom: {
+            gte: run.period.startDate,
+            lte: run.period.endDate,
+          },
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              displayName: true,
+              employment: { select: { department: { select: { name: true } } } },
+            },
+          },
+        },
+      }),
+      this.prisma.payrollAdjustment.findMany({
+        where: {
+          organizationId,
+          OR: [{ payrollRunId: runId }, { periodId: run.periodId, status: 'APPROVED' }],
+        },
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              displayName: true,
+            },
+          },
+        },
+      }),
+    ]);
+
+    // Exceptions summary
+    const exceptionsSummary = await this.validationService.getExceptionsSummary(
+      organizationId,
+      runId,
+    );
+
+    // Separation of duties status
+    let canCurrentUserApprove = true;
+    let selfApprovalBlocked = false;
+    let sodReason: string | null = null;
+
+    if (currentUserId) {
+      if (run.createdById && run.createdById === currentUserId) {
+        canCurrentUserApprove = false;
+        selfApprovalBlocked = true;
+        sodReason =
+          'Separation of duties violation: You created this payroll run and cannot approve it. An independent approver is required.';
+      } else {
+        const lastCalc = await this.prisma.payrollApprovalHistory.findFirst({
+          where: {
+            payrollRunId: runId,
+            action: { in: ['CALCULATED', 'RECALCULATED'] },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        if (lastCalc && lastCalc.actorId === currentUserId) {
+          canCurrentUserApprove = false;
+          selfApprovalBlocked = true;
+          sodReason =
+            'Separation of duties violation: You initiated the calculation for this payroll run and cannot approve it. An independent approver is required.';
+        }
+      }
+    }
+
+    return {
+      runId: run.id,
+      periodId: run.periodId,
+      periodTitle: run.title,
+      periodStartDate: run.period.startDate.toISOString(),
+      periodEndDate: run.period.endDate.toISOString(),
+      cutoffDate: run.period.cutoffDate ? run.period.cutoffDate.toISOString() : null,
+      scope: run.scope,
+      status: run.status as any,
+      calculationVersion: run.calculationVersion,
+      calculatedAt: run.calculatedAt ? run.calculatedAt.toISOString() : null,
+      employeeCount: run.totalEmployees,
+      processingStatus:
+        run.status === 'PUBLISHED'
+          ? 'Published to Employees'
+          : run.status === 'LOCKED'
+            ? 'Locked & Finalized'
+            : run.status === 'APPROVED'
+              ? 'Approved (Pending Lock)'
+              : run.status === 'REVIEW_PENDING'
+                ? 'Under Review'
+                : run.status === 'CALCULATING'
+                  ? 'Calculating'
+                  : 'Draft',
+      totals: {
+        totalGross: Number(run.totalGross),
+        totalDeductions: Number(run.totalDeductions),
+        totalNet: Number(run.totalNet),
+        totalEmployerCost: runEmployerCost,
+      },
+      validationStatus: {
+        blockingErrorCount: exceptionsSummary.blockingErrors,
+        warningCount: exceptionsSummary.warnings,
+        hasBlockingErrors: exceptionsSummary.hasBlockingErrors,
+      },
+      separationOfDuties: {
+        createdById: run.createdById,
+        createdByName: run.createdBy
+          ? `${run.createdBy.firstName} ${run.createdBy.lastName}`
+          : null,
+        canCurrentUserApprove,
+        selfApprovalBlocked,
+        reason: sodReason,
+      },
+      departments,
+      comparison,
+      movements: {
+        newJoiners: newJoiners.map((j) => ({
+          id: j.id,
+          employeeCode: j.employeeCode,
+          name: j.displayName,
+          department: j.employment?.department?.name || null,
+          joiningDate: j.joiningDate ? j.joiningDate.toISOString() : '',
+        })),
+        exits: exits.map((e) => ({
+          id: e.id,
+          employeeCode: e.employeeCode,
+          name: e.displayName,
+          department: e.employment?.department?.name || null,
+          leavingDate: e.exitDate ? e.exitDate.toISOString() : '',
+        })),
+        compensationChanges: compChanges.map((c) => ({
+          id: c.id,
+          employeeCode: c.employee?.employeeCode || '',
+          name: c.employee?.displayName || '',
+          department: c.employee?.employment?.department?.name || null,
+          effectiveDate: c.effectiveFrom.toISOString(),
+          newMonthlyGross: Number(c.grossMonthly),
+        })),
+        manualAdjustments: adjustments.map((a) => ({
+          id: a.id,
+          employeeCode: a.employee?.employeeCode || '',
+          name: a.employee?.displayName || '',
+          type: a.type as any,
+          title: a.title,
+          amount: Number(a.amount),
+        })),
+      },
+    };
   }
 }

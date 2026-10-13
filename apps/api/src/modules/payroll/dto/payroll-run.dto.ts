@@ -96,6 +96,18 @@ export class RejectPayrollRunDto {
   rejectionReason: string;
 }
 
+export class ReturnForCorrectionDto {
+  @ApiProperty({ description: 'Detailed reason for returning approved run for correction' })
+  @IsString()
+  @IsNotEmpty()
+  reason: string;
+
+  @ApiPropertyOptional({ description: 'Optional operational notes' })
+  @IsOptional()
+  @IsString()
+  notes?: string;
+}
+
 export class LockPayrollRunDto {
   @ApiPropertyOptional({ description: 'Lock notes / finalization summary' })
   @IsOptional()

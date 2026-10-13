@@ -42,7 +42,15 @@ import {
   Search,
   Info,
   ExternalLink,
+  BarChart3,
+  Building2,
+  TrendingUp,
+  TrendingDown,
+  UserPlus,
+  UserMinus,
+  FileSpreadsheet,
 } from 'lucide-react';
+import { PayrollRunReviewSummaryDto } from '@hrms/types';
 
 export default function PayrollRunDetailPage() {
   const params = useParams();
@@ -79,14 +87,22 @@ export default function PayrollRunDetailPage() {
   const [correctionReason, setCorrectionReason] = useState('');
   const [correctionNotes, setCorrectionNotes] = useState('');
 
+  // Phase 11.8: Return for Correction Modal State
+  const [isReturnForCorrectionOpen, setIsReturnForCorrectionOpen] = useState(false);
+  const [returnReason, setReturnReason] = useState('');
+  const [returnNotes, setReturnNotes] = useState('');
+
+  // Phase 11.8: Review Summary Data
+  const [reviewSummary, setReviewSummary] = useState<PayrollRunReviewSummaryDto | null>(null);
+
   // Selected snapshot for breakdown modal
   const [selectedSnapshot, setSelectedSnapshot] = useState<any>(null);
   const [calculationDetail, setCalculationDetail] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
 
-  // Phase 11.6 & 11.7: Tabs, Attendance & Exceptions Management
-  const [activeTab, setActiveTab] = useState<'snapshots' | 'attendance' | 'exceptions'>(
-    'snapshots',
+  // Phase 11.6, 11.7 & 11.8 Tabs: Review & Analytics, Snapshots, Attendance, Exceptions
+  const [activeTab, setActiveTab] = useState<'review' | 'snapshots' | 'attendance' | 'exceptions'>(
+    'review',
   );
   const [reconciliationData, setReconciliationData] = useState<any>(null);
   const [lateReport, setLateReport] = useState<any>(null);
@@ -169,19 +185,21 @@ export default function PayrollRunDetailPage() {
   const fetchRunData = useCallback(async () => {
     try {
       setLoading(true);
-      const [runRes, snapsRes, reconRes, lateRes, exSumRes, exListRes] = await Promise.all([
-        apiClient.getPayrollRun(runId),
-        apiClient.getPayrollRunSnapshots(runId, {
-          search: search || undefined,
-          isException:
-            filterException === 'true' ? true : filterException === 'false' ? false : undefined,
-          limit: 50,
-        }),
-        apiClient.getPayrollAttendanceReconciliation(runId).catch(() => null),
-        apiClient.getPayrollLateChanges(runId).catch(() => null),
-        apiClient.getRunExceptionsSummary(runId).catch(() => null),
-        apiClient.getRunExceptions(runId, { limit: 50 }).catch(() => null),
-      ]);
+      const [runRes, snapsRes, reconRes, lateRes, exSumRes, exListRes, revSumRes] =
+        await Promise.all([
+          apiClient.getPayrollRun(runId),
+          apiClient.getPayrollRunSnapshots(runId, {
+            search: search || undefined,
+            isException:
+              filterException === 'true' ? true : filterException === 'false' ? false : undefined,
+            limit: 50,
+          }),
+          apiClient.getPayrollAttendanceReconciliation(runId).catch(() => null),
+          apiClient.getPayrollLateChanges(runId).catch(() => null),
+          apiClient.getRunExceptionsSummary(runId).catch(() => null),
+          apiClient.getRunExceptions(runId, { limit: 50 }).catch(() => null),
+          apiClient.getPayrollReviewSummary(runId).catch(() => null),
+        ]);
 
       setRun(runRes?.data || null);
       setSnapshots(snapsRes?.data || []);
@@ -190,6 +208,7 @@ export default function PayrollRunDetailPage() {
       setLateReport(lateRes?.data || null);
       setExceptionsSummary(exSumRes?.data?.data || null);
       setRunExceptions(exListRes?.data?.data || []);
+      setReviewSummary(revSumRes?.data || null);
     } catch (err) {
       console.error('Failed to load run detail', err);
     } finally {
@@ -276,6 +295,28 @@ export default function PayrollRunDetailPage() {
       fetchRunData();
     } catch (err: any) {
       alert(err.message || 'Rejection failed');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleReturnForCorrection = async () => {
+    if (!returnReason.trim()) {
+      alert('Please specify reason for returning run for correction');
+      return;
+    }
+    try {
+      setActionLoading(true);
+      await apiClient.returnPayrollRunForCorrection(runId, {
+        reason: returnReason.trim(),
+        notes: returnNotes.trim() || undefined,
+      });
+      setIsReturnForCorrectionOpen(false);
+      setReturnReason('');
+      setReturnNotes('');
+      fetchRunData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to return run for correction');
     } finally {
       setActionLoading(false);
     }
@@ -606,17 +647,29 @@ export default function PayrollRunDetailPage() {
                 </>
               )}
 
-              {/* APPROVED: Lock */}
+              {/* APPROVED: Lock & Return for Correction */}
               {run.status === 'APPROVED' && canApprove && (
-                <Button
-                  size="sm"
-                  disabled={actionLoading}
-                  onClick={() => setIsLockOpen(true)}
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-medium"
-                >
-                  <Lock className="w-3.5 h-3.5 mr-1.5" />
-                  Lock & Finalize Run
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    disabled={actionLoading}
+                    onClick={() => setIsLockOpen(true)}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-medium"
+                  >
+                    <Lock className="w-3.5 h-3.5 mr-1.5" />
+                    Lock & Finalize Run
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={actionLoading}
+                    onClick={() => setIsReturnForCorrectionOpen(true)}
+                    className="border-amber-400 text-amber-800 hover:bg-amber-50"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 mr-1.5" />
+                    Return for Correction
+                  </Button>
+                </>
               )}
 
               {/* LOCKED: Publish & Correction */}
@@ -665,8 +718,8 @@ export default function PayrollRunDetailPage() {
           </div>
 
           {/* KPI Summary Cards */}
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-            <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-1">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
+            <Card className="border border-stone-200/80 shadow-xs bg-white p-3.5 space-y-1">
               <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
                 Total Employees
               </span>
@@ -674,7 +727,7 @@ export default function PayrollRunDetailPage() {
               <div className="text-[10px] text-stone-400">Scoped workforce count</div>
             </Card>
 
-            <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-1">
+            <Card className="border border-stone-200/80 shadow-xs bg-white p-3.5 space-y-1">
               <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
                 Gross Earnings
               </span>
@@ -684,7 +737,7 @@ export default function PayrollRunDetailPage() {
               <div className="text-[10px] text-stone-400">Total earned before deductions</div>
             </Card>
 
-            <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-1">
+            <Card className="border border-stone-200/80 shadow-xs bg-white p-3.5 space-y-1">
               <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
                 Total Deductions
               </span>
@@ -694,7 +747,7 @@ export default function PayrollRunDetailPage() {
               <div className="text-[10px] text-stone-400">Tax, PF & recoveries</div>
             </Card>
 
-            <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-1">
+            <Card className="border border-stone-200/80 shadow-xs bg-white p-3.5 space-y-1">
               <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
                 Net Pay Outflow
               </span>
@@ -704,9 +757,22 @@ export default function PayrollRunDetailPage() {
               <div className="text-[10px] text-stone-400">Total net payable</div>
             </Card>
 
+            <Card className="border border-stone-200/80 shadow-xs bg-white p-3.5 space-y-1">
+              <span className="text-[11px] font-semibold text-stone-500 uppercase tracking-wider">
+                Employer Costs
+              </span>
+              <div className="text-xl font-bold font-mono text-blue-900">
+                ₹
+                {Number(
+                  run.totalEmployerCost || reviewSummary?.totals?.totalEmployerCost || 0,
+                ).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+              </div>
+              <div className="text-[10px] text-stone-400">PF, ESI & statutory share</div>
+            </Card>
+
             <Card
               onClick={() => setActiveTab('exceptions')}
-              className={`border border-stone-200/80 shadow-xs p-4 space-y-1 cursor-pointer transition-all hover:border-amber-400 ${
+              className={`border border-stone-200/80 shadow-xs p-3.5 space-y-1 cursor-pointer transition-all hover:border-amber-400 ${
                 exceptionsSummary?.hasBlockingErrors ? 'bg-red-50/40 border-red-300' : 'bg-white'
               }`}
             >
@@ -838,6 +904,31 @@ export default function PayrollRunDetailPage() {
           <div className="flex items-center gap-2 border-b border-stone-200 pb-2">
             <button
               type="button"
+              onClick={() => setActiveTab('review')}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
+                activeTab === 'review'
+                  ? 'bg-amber-800 text-white shadow-xs'
+                  : 'text-stone-600 hover:bg-stone-100'
+              }`}
+            >
+              <BarChart3 className="w-3.5 h-3.5" />
+              Review & Analytics
+              {reviewSummary?.comparison && (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] ml-1 ${
+                    activeTab === 'review'
+                      ? 'bg-amber-900 text-amber-100 border-amber-700'
+                      : 'text-stone-500'
+                  }`}
+                >
+                  Variance
+                </Badge>
+              )}
+            </button>
+
+            <button
+              type="button"
               onClick={() => setActiveTab('snapshots')}
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1.5 ${
                 activeTab === 'snapshots'
@@ -909,6 +1000,519 @@ export default function PayrollRunDetailPage() {
               )}
             </button>
           </div>
+
+          {/* TAB 0: Executive Review & Analytics (Phase 11.8) */}
+          {activeTab === 'review' && (
+            <div className="space-y-6">
+              {/* Executive Run Overview & Cutoff Info */}
+              <Card className="border border-stone-200/80 shadow-xs bg-white p-5">
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 pb-4 border-b border-stone-100">
+                  <div>
+                    <h3 className="text-base font-bold text-stone-900 flex items-center gap-2">
+                      <FileSpreadsheet className="w-5 h-5 text-amber-800" />
+                      Executive Payroll Review & Cutoff Diagnostics
+                    </h3>
+                    <p className="text-xs text-stone-500 mt-0.5">
+                      Deterministic calculation versioning, cutoff boundaries, and governance
+                      verification.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className="text-xs px-2.5 py-1 bg-stone-50 text-stone-700 border-stone-300"
+                    >
+                      Version: <strong>v{run.calculationVersion}</strong>
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="text-xs px-2.5 py-1 bg-stone-50 text-stone-700 border-stone-300"
+                    >
+                      Scope: <strong>{run.scope}</strong>
+                    </Badge>
+                    <Badge
+                      variant="outline"
+                      className="text-xs px-2.5 py-1 bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold"
+                    >
+                      {reviewSummary?.processingStatus || run.status}
+                    </Badge>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 text-xs">
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+                      Payroll Period
+                    </span>
+                    <div className="font-bold text-stone-800">
+                      {run.period ? `${run.period.month}/${run.period.year}` : 'N/A'}
+                    </div>
+                    <div className="text-[10px] text-stone-500 font-mono">
+                      {run.period
+                        ? `${new Date(run.period.startDate).toLocaleDateString()} - ${new Date(run.period.endDate).toLocaleDateString()}`
+                        : ''}
+                    </div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+                      Data Cutoff Date
+                    </span>
+                    <div className="font-bold text-stone-800">
+                      {reviewSummary?.cutoffDate
+                        ? new Date(reviewSummary.cutoffDate).toLocaleDateString()
+                        : run.period?.cutoffDate
+                          ? new Date(run.period.cutoffDate).toLocaleDateString()
+                          : 'End of Period'}
+                    </div>
+                    <div className="text-[10px] text-stone-500">Attendance & leave freeze date</div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+                      Calculation Timestamp
+                    </span>
+                    <div className="font-bold text-stone-800">
+                      {run.calculatedAt
+                        ? new Date(run.calculatedAt).toLocaleString()
+                        : 'Pending calculation'}
+                    </div>
+                    <div className="text-[10px] text-stone-500 font-mono">Run #{run.runNumber}</div>
+                  </div>
+
+                  <div className="space-y-1">
+                    <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">
+                      Initiator / Created By
+                    </span>
+                    <div className="font-bold text-stone-800">
+                      {run.createdBy
+                        ? `${run.createdBy.firstName} ${run.createdBy.lastName}`
+                        : reviewSummary?.separationOfDuties?.createdByName || 'System'}
+                    </div>
+                    <div className="text-[10px] text-stone-500">Four-eyes governance active</div>
+                  </div>
+                </div>
+              </Card>
+
+              {/* Separation of Duties Governance Notification */}
+              {reviewSummary?.separationOfDuties && (
+                <div
+                  className={`p-4 rounded-xl border flex items-start gap-3 text-xs ${
+                    reviewSummary.separationOfDuties.selfApprovalBlocked
+                      ? 'bg-amber-50/70 border-amber-300 text-amber-950'
+                      : 'bg-emerald-50/60 border-emerald-300 text-emerald-950'
+                  }`}
+                >
+                  {reviewSummary.separationOfDuties.selfApprovalBlocked ? (
+                    <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+                  )}
+                  <div className="space-y-0.5">
+                    <div className="font-bold text-sm">
+                      {reviewSummary.separationOfDuties.selfApprovalBlocked
+                        ? 'Separation of Duties Enforced'
+                        : 'Separation of Duties Verified'}
+                    </div>
+                    <p className="leading-relaxed text-[11px]">
+                      {reviewSummary.separationOfDuties.selfApprovalBlocked
+                        ? reviewSummary.separationOfDuties.reason ||
+                          'Organizational policy prohibits users from approving their own payroll runs or calculations. An independent authorized reviewer must sign off.'
+                        : 'Independent review requirements satisfied. The authorized approver is separate from run creation and computation.'}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Period-Over-Period Comparison & Variance */}
+              {reviewSummary?.comparison ? (
+                <Card className="border border-stone-200/80 shadow-xs bg-white p-5 space-y-4">
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-3">
+                    <div>
+                      <h4 className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-amber-800" />
+                        Changes from Previous Comparable Period (
+                        {reviewSummary.comparison.previousPeriodTitle || 'Prior Run'})
+                      </h4>
+                      <p className="text-xs text-stone-500">
+                        Variance tracking across headcount, gross earnings, net pay, and employer
+                        statutory costs.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {/* Headcount Variance */}
+                    <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-1">
+                      <span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider">
+                        Headcount Variance
+                      </span>
+                      <div className="text-base font-bold font-mono text-stone-900">
+                        {reviewSummary.comparison.currentHeadcount} emp
+                      </div>
+                      <div
+                        className={`text-[11px] font-semibold flex items-center gap-1 ${
+                          reviewSummary.comparison.headcountDelta > 0
+                            ? 'text-emerald-700'
+                            : reviewSummary.comparison.headcountDelta < 0
+                              ? 'text-rose-700'
+                              : 'text-stone-500'
+                        }`}
+                      >
+                        {reviewSummary.comparison.headcountDelta > 0 ? '+' : ''}
+                        {reviewSummary.comparison.headcountDelta} vs prev (
+                        {reviewSummary.comparison.previousHeadcount})
+                      </div>
+                    </div>
+
+                    {/* Gross Earnings Variance */}
+                    <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-1">
+                      <span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider">
+                        Gross Pay Variance
+                      </span>
+                      <div className="text-base font-bold font-mono text-stone-900">
+                        ₹
+                        {reviewSummary.comparison.currentTotalGross.toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div
+                        className={`text-[11px] font-semibold flex items-center gap-1 ${
+                          reviewSummary.comparison.grossDelta > 0
+                            ? 'text-amber-800'
+                            : reviewSummary.comparison.grossDelta < 0
+                              ? 'text-emerald-700'
+                              : 'text-stone-500'
+                        }`}
+                      >
+                        {reviewSummary.comparison.grossDelta >= 0 ? '+' : ''}₹
+                        {reviewSummary.comparison.grossDelta.toLocaleString('en-IN')} (
+                        {reviewSummary.comparison.grossDeltaPercentage}%)
+                      </div>
+                    </div>
+
+                    {/* Deductions Variance */}
+                    <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-1">
+                      <span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider">
+                        Deductions Variance
+                      </span>
+                      <div className="text-base font-bold font-mono text-rose-700">
+                        ₹
+                        {reviewSummary.comparison.currentTotalDeductions.toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div className="text-[11px] font-semibold text-stone-500">
+                        {reviewSummary.comparison.deductionsDelta >= 0 ? '+' : ''}₹
+                        {reviewSummary.comparison.deductionsDelta.toLocaleString('en-IN')} vs prev
+                      </div>
+                    </div>
+
+                    {/* Net Pay Variance */}
+                    <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-1">
+                      <span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider">
+                        Net Pay Variance
+                      </span>
+                      <div className="text-base font-bold font-mono text-emerald-800">
+                        ₹
+                        {reviewSummary.comparison.currentTotalNet.toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div
+                        className={`text-[11px] font-semibold flex items-center gap-1 ${
+                          reviewSummary.comparison.netDelta > 0
+                            ? 'text-emerald-700'
+                            : reviewSummary.comparison.netDelta < 0
+                              ? 'text-rose-700'
+                              : 'text-stone-500'
+                        }`}
+                      >
+                        {reviewSummary.comparison.netDelta >= 0 ? '+' : ''}₹
+                        {reviewSummary.comparison.netDelta.toLocaleString('en-IN')} (
+                        {reviewSummary.comparison.netDeltaPercentage}%)
+                      </div>
+                    </div>
+
+                    {/* Employer Cost Variance */}
+                    <div className="p-3 bg-stone-50 rounded-lg border border-stone-200 space-y-1">
+                      <span className="text-[10px] font-semibold text-stone-500 uppercase tracking-wider">
+                        Employer Cost Variance
+                      </span>
+                      <div className="text-base font-bold font-mono text-blue-900">
+                        ₹
+                        {reviewSummary.comparison.currentTotalEmployerCost.toLocaleString('en-IN', {
+                          minimumFractionDigits: 2,
+                        })}
+                      </div>
+                      <div
+                        className={`text-[11px] font-semibold flex items-center gap-1 ${
+                          reviewSummary.comparison.employerCostDelta > 0
+                            ? 'text-blue-700'
+                            : reviewSummary.comparison.employerCostDelta < 0
+                              ? 'text-stone-600'
+                              : 'text-stone-500'
+                        }`}
+                      >
+                        {reviewSummary.comparison.employerCostDelta >= 0 ? '+' : ''}₹
+                        {reviewSummary.comparison.employerCostDelta.toLocaleString('en-IN')} (
+                        {reviewSummary.comparison.employerCostDeltaPercentage}%)
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+              ) : (
+                <Card className="border border-stone-200/80 shadow-xs bg-stone-50/50 p-4 text-xs text-stone-500 flex items-center gap-2">
+                  <Info className="w-4 h-4 text-stone-400" />
+                  <span>
+                    No prior finalized payroll run found for comparable variance analysis. First
+                    period baseline established.
+                  </span>
+                </Card>
+              )}
+
+              {/* Department-Level Summaries */}
+              <Card className="border border-stone-200/80 shadow-xs bg-white overflow-hidden">
+                <CardHeader className="border-b border-stone-100 pb-3">
+                  <CardTitle className="text-sm font-bold text-stone-900 flex items-center gap-2">
+                    <Building2 className="w-4 h-4 text-amber-800" />
+                    Department Cost & Headcount Summaries ({reviewSummary?.departments?.length ||
+                      0}{' '}
+                    Departments)
+                  </CardTitle>
+                  <CardDescription className="text-xs text-stone-500">
+                    Aggregated department totals for gross compensation, employee deductions, net
+                    outflow, and employer contributions.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="p-0">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs text-left">
+                      <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 uppercase tracking-wider text-[11px]">
+                        <tr>
+                          <th className="py-3 px-4 font-semibold">Department</th>
+                          <th className="py-3 px-4 font-semibold text-center">Employees</th>
+                          <th className="py-3 px-4 font-semibold text-right">Gross Earnings</th>
+                          <th className="py-3 px-4 font-semibold text-right">Deductions</th>
+                          <th className="py-3 px-4 font-semibold text-right">Net Payable</th>
+                          <th className="py-3 px-4 font-semibold text-right">Employer Costs</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-stone-100">
+                        {reviewSummary?.departments && reviewSummary.departments.length > 0 ? (
+                          reviewSummary.departments.map((dept, i) => (
+                            <tr key={i} className="hover:bg-stone-50/50">
+                              <td className="py-3 px-4 font-semibold text-stone-800 flex items-center gap-2">
+                                <Building2 className="w-3.5 h-3.5 text-stone-400" />
+                                {dept.departmentName}
+                              </td>
+                              <td className="py-3 px-4 text-center font-mono font-medium text-stone-700">
+                                {dept.employeeCount}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-medium text-stone-900">
+                                ₹
+                                {dept.totalGross.toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-medium text-rose-700">
+                                ₹
+                                {dept.totalDeductions.toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-bold text-emerald-800">
+                                ₹
+                                {dept.totalNet.toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </td>
+                              <td className="py-3 px-4 text-right font-mono font-medium text-blue-900">
+                                ₹
+                                {dept.totalEmployerCost.toLocaleString('en-IN', {
+                                  minimumFractionDigits: 2,
+                                })}
+                              </td>
+                            </tr>
+                          ))
+                        ) : (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-stone-400 text-xs">
+                              No department breakdown data available yet. Calculate payroll to
+                              generate department summaries.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Material Movements in Period */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* New Joiners */}
+                <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+                    <h5 className="font-bold text-xs text-stone-900 flex items-center gap-1.5">
+                      <UserPlus className="w-4 h-4 text-emerald-600" />
+                      New Joiners ({reviewSummary?.movements?.newJoiners?.length || 0})
+                    </h5>
+                    <span className="text-[10px] text-stone-400">Joined in payroll period</span>
+                  </div>
+                  {reviewSummary?.movements?.newJoiners &&
+                  reviewSummary.movements.newJoiners.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {reviewSummary.movements.newJoiners.map((j) => (
+                        <div
+                          key={j.id}
+                          className="p-2 bg-stone-50 rounded-lg text-xs flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="font-semibold text-stone-800">{j.name}</div>
+                            <div className="text-[10px] text-stone-400">
+                              {j.employeeCode} • {j.department || 'N/A'}
+                            </div>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-emerald-50 text-emerald-700 border-emerald-200"
+                          >
+                            {new Date(j.joiningDate).toLocaleDateString()}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-stone-400 py-3 text-center">
+                      No new joiners in this period.
+                    </p>
+                  )}
+                </Card>
+
+                {/* Exits */}
+                <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+                    <h5 className="font-bold text-xs text-stone-900 flex items-center gap-1.5">
+                      <UserMinus className="w-4 h-4 text-rose-600" />
+                      Exits / Relieved ({reviewSummary?.movements?.exits?.length || 0})
+                    </h5>
+                    <span className="text-[10px] text-stone-400">Left in payroll period</span>
+                  </div>
+                  {reviewSummary?.movements?.exits && reviewSummary.movements.exits.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {reviewSummary.movements.exits.map((e) => (
+                        <div
+                          key={e.id}
+                          className="p-2 bg-stone-50 rounded-lg text-xs flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="font-semibold text-stone-800">{e.name}</div>
+                            <div className="text-[10px] text-stone-400">
+                              {e.employeeCode} • {e.department || 'N/A'}
+                            </div>
+                          </div>
+                          <Badge
+                            variant="outline"
+                            className="text-[10px] bg-rose-50 text-rose-700 border-rose-200"
+                          >
+                            {new Date(e.leavingDate).toLocaleDateString()}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-stone-400 py-3 text-center">
+                      No exits in this period.
+                    </p>
+                  )}
+                </Card>
+
+                {/* Compensation Changes */}
+                <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+                    <h5 className="font-bold text-xs text-stone-900 flex items-center gap-1.5">
+                      <TrendingUp className="w-4 h-4 text-amber-700" />
+                      Compensation Revisions (
+                      {reviewSummary?.movements?.compensationChanges?.length || 0})
+                    </h5>
+                    <span className="text-[10px] text-stone-400">Effective in period</span>
+                  </div>
+                  {reviewSummary?.movements?.compensationChanges &&
+                  reviewSummary.movements.compensationChanges.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {reviewSummary.movements.compensationChanges.map((c, i) => (
+                        <div
+                          key={i}
+                          className="p-2 bg-stone-50 rounded-lg text-xs flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="font-semibold text-stone-800">{c.name}</div>
+                            <div className="text-[10px] text-stone-400">
+                              {c.employeeCode} • {c.department || 'N/A'}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <div className="font-bold text-stone-900 font-mono">
+                              ₹{c.newMonthlyGross.toLocaleString('en-IN')}/mo
+                            </div>
+                            <div className="text-[10px] text-stone-400">
+                              {new Date(c.effectiveDate).toLocaleDateString()}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-stone-400 py-3 text-center">
+                      No compensation revisions in this period.
+                    </p>
+                  )}
+                </Card>
+
+                {/* Manual Adjustments */}
+                <Card className="border border-stone-200/80 shadow-xs bg-white p-4 space-y-3">
+                  <div className="flex items-center justify-between border-b border-stone-100 pb-2">
+                    <h5 className="font-bold text-xs text-stone-900 flex items-center gap-1.5">
+                      <Banknote className="w-4 h-4 text-blue-700" />
+                      Manual Adjustments ({reviewSummary?.movements?.manualAdjustments?.length || 0}
+                      )
+                    </h5>
+                    <span className="text-[10px] text-stone-400">Bonus, arrears & recoveries</span>
+                  </div>
+                  {reviewSummary?.movements?.manualAdjustments &&
+                  reviewSummary.movements.manualAdjustments.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                      {reviewSummary.movements.manualAdjustments.map((a) => (
+                        <div
+                          key={a.id}
+                          className="p-2 bg-stone-50 rounded-lg text-xs flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="font-semibold text-stone-800">
+                              {a.name} ({a.employeeCode})
+                            </div>
+                            <div className="text-[10px] text-stone-500">
+                              {a.title} ({a.type})
+                            </div>
+                          </div>
+                          <div
+                            className={`font-mono font-bold ${a.amount >= 0 ? 'text-emerald-800' : 'text-rose-700'}`}
+                          >
+                            {a.amount >= 0 ? '+' : ''}₹{a.amount.toLocaleString('en-IN')}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-stone-400 py-3 text-center">
+                      No manual adjustments recorded for this run.
+                    </p>
+                  )}
+                </Card>
+              </div>
+            </div>
+          )}
 
           {/* TAB 1: Financial Snapshots Table */}
           {activeTab === 'snapshots' && (
@@ -1730,6 +2334,9 @@ export default function PayrollRunDetailPage() {
           {/* ------------------------------------------------------------------ */}
           {/* Modal: Approve Run */}
           {/* ------------------------------------------------------------------ */}
+          {/* ------------------------------------------------------------------ */}
+          {/* Modal: Approve Run */}
+          {/* ------------------------------------------------------------------ */}
           <Dialog
             isOpen={isApproveOpen}
             onClose={() => setIsApproveOpen(false)}
@@ -1738,12 +2345,86 @@ export default function PayrollRunDetailPage() {
           >
             <div className="space-y-4 pt-2 text-xs">
               <p className="text-stone-600">
-                You are approving payroll run <strong>{run.title}</strong> with total net payable of{' '}
-                <strong className="text-emerald-800">
-                  ₹{Number(run.totalNet).toLocaleString('en-IN', { minimumFractionDigits: 2 })}
-                </strong>{' '}
-                across <strong>{run.totalEmployees}</strong> employees.
+                You are approving payroll run <strong>{run.title}</strong> across{' '}
+                <strong>{run.totalEmployees}</strong> employees.
               </p>
+
+              {/* Separately Labeled Totals */}
+              <div className="grid grid-cols-2 gap-2 p-3 bg-stone-50 border border-stone-200 rounded-lg">
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-stone-500 block">
+                    Gross Earnings
+                  </span>
+                  <span className="font-semibold text-stone-900 text-sm">
+                    ₹
+                    {Number(run.totalGross || 0).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-stone-500 block">
+                    Total Deductions
+                  </span>
+                  <span className="font-semibold text-stone-900 text-sm">
+                    ₹
+                    {Number(run.totalDeductions || 0).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-emerald-700 block">
+                    Net Pay
+                  </span>
+                  <span className="font-bold text-emerald-800 text-sm">
+                    ₹
+                    {Number(run.totalNet || 0).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-[10px] uppercase font-bold text-indigo-700 block">
+                    Employer Costs
+                  </span>
+                  <span className="font-bold text-indigo-800 text-sm">
+                    ₹
+                    {Number(run.totalEmployerCost || 0).toLocaleString('en-IN', {
+                      minimumFractionDigits: 2,
+                    })}
+                  </span>
+                </div>
+              </div>
+
+              {/* Separation of Duties Restriction */}
+              {reviewSummary?.separationOfDuties.selfApprovalBlocked && (
+                <div className="p-3 bg-rose-50 border border-rose-300 rounded-lg text-rose-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <ShieldAlert className="w-4 h-4 text-rose-600" />
+                    <span>Separation of Duties Violation</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    {reviewSummary.separationOfDuties.reason ||
+                      'You cannot approve this payroll run because you initiated or executed the calculation. Organizational policy requires an independent approver.'}
+                  </p>
+                </div>
+              )}
+
+              {/* Material Changes Warning */}
+              {lateReport?.requiresRecalculation && (
+                <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg text-amber-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    <span>Recalculation Required</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    Material input changes ({lateReport.totalLateChanges} late attendance records or
+                    modifications) were detected since the last calculation. This run must be
+                    recalculated before approval.
+                  </p>
+                </div>
+              )}
 
               {exceptionsSummary?.hasBlockingErrors && (
                 <div className="p-3 bg-red-50 border border-red-300 rounded-lg text-red-900 space-y-1">
@@ -1765,7 +2446,7 @@ export default function PayrollRunDetailPage() {
                   <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 space-y-1">
                     <div className="flex items-center gap-1.5 font-bold">
                       <AlertTriangle className="w-4 h-4 text-amber-600" />
-                      <span>Audit Preservation Notice (Phase 11.7)</span>
+                      <span>Audit Preservation Notice</span>
                     </div>
                     <p className="text-[11px] leading-relaxed">
                       This run contains {exceptionsSummary.warnings} unresolved review warning(s).
@@ -1794,15 +2475,97 @@ export default function PayrollRunDetailPage() {
                 </Button>
                 <Button
                   size="sm"
-                  disabled={actionLoading || exceptionsSummary?.hasBlockingErrors}
+                  disabled={
+                    actionLoading ||
+                    exceptionsSummary?.hasBlockingErrors ||
+                    reviewSummary?.separationOfDuties.selfApprovalBlocked ||
+                    lateReport?.requiresRecalculation
+                  }
                   onClick={handleApprove}
                   className={
-                    exceptionsSummary?.hasBlockingErrors
+                    exceptionsSummary?.hasBlockingErrors ||
+                    reviewSummary?.separationOfDuties.selfApprovalBlocked ||
+                    lateReport?.requiresRecalculation
                       ? 'bg-stone-300 text-stone-500 cursor-not-allowed'
                       : 'bg-emerald-600 hover:bg-emerald-700 text-white'
                   }
                 >
-                  {exceptionsSummary?.hasBlockingErrors ? 'Approval Blocked' : 'Confirm Approval'}
+                  {reviewSummary?.separationOfDuties.selfApprovalBlocked
+                    ? 'Self-Approval Restricted'
+                    : lateReport?.requiresRecalculation
+                      ? 'Recalculation Required'
+                      : exceptionsSummary?.hasBlockingErrors
+                        ? 'Approval Blocked'
+                        : 'Confirm Approval'}
+                </Button>
+              </div>
+            </div>
+          </Dialog>
+
+          {/* ------------------------------------------------------------------ */}
+          {/* Modal: Return for Correction */}
+          {/* ------------------------------------------------------------------ */}
+          <Dialog
+            isOpen={isReturnForCorrectionOpen}
+            onClose={() => setIsReturnForCorrectionOpen(false)}
+            title="Return Payroll Run for Correction"
+            description="Reverts APPROVED status back to REVIEW_PENDING for corrections or adjustments."
+          >
+            <div className="space-y-4 pt-2 text-xs">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-900 space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <RotateCcw className="w-4 h-4 text-amber-700" />
+                  <span>Controlled Correction Workflow</span>
+                </div>
+                <p className="text-[11px] leading-relaxed">
+                  Returning this run will unlock it for recalculation and revision before final
+                  locking. This action and its justification will be recorded in the immutable audit
+                  history.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Correction Reason *
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  placeholder="Specify mandatory reason (e.g. Revision needed for newly approved sales incentives)..."
+                  value={returnReason}
+                  onChange={(e) => setReturnReason(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Operational Notes (Optional)
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Additional notes for payroll team..."
+                  value={returnNotes}
+                  onChange={(e) => setReturnNotes(e.target.value)}
+                  className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-stone-200">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setIsReturnForCorrectionOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={actionLoading || !returnReason.trim()}
+                  onClick={handleReturnForCorrection}
+                  className="bg-amber-600 hover:bg-amber-700 text-white font-medium"
+                >
+                  Confirm Return for Correction
                 </Button>
               </div>
             </div>

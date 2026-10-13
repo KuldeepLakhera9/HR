@@ -3623,6 +3623,19 @@ export const payrollApi = {
     return res;
   },
 
+  async getPayrollReviewSummary(id: string) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/review-summary`);
+    return res;
+  },
+
+  async returnPayrollRunForCorrection(id: string, data: { reason: string; notes?: string }) {
+    const res = await fetchWithAuth<any>(`/payroll/runs/${id}/return-for-correction`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+    return res;
+  },
+
   async getSnapshotCalculationDetail(runId: string, snapshotId: string) {
     const res = await fetchWithAuth<any>(
       `/payroll/runs/${runId}/snapshots/${snapshotId}/calculation-detail`,

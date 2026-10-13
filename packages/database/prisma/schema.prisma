@@ -247,6 +247,7 @@ model User {
   performedLeaveTransactions   LeaveBalanceTransaction[]      @relation("LeaveTransactionActor")
   reviewedProfileChanges       ProfileChangeRequest[]         @relation("ProfileChangeReviewer")
   savedReports                 SavedReportDefinition[]
+  createdPayrollRuns           PayrollRun[]                   @relation("PayrollCreator")
   approvedPayrollRuns          PayrollRun[]                   @relation("PayrollApprover")
   lockedPayrollRuns            PayrollRun[]                   @relation("PayrollLocker")
   payrollApprovalHistories     PayrollApprovalHistory[]       @relation("PayrollApprovalActor")
@@ -2348,11 +2349,14 @@ model PayrollRun {
   title              String
   status             PayrollRunStatus @default(DRAFT)
 
-  totalEmployees  Int     @default(0)
-  totalGross      Decimal @default(0.0) @db.Decimal(14, 2)
-  totalDeductions Decimal @default(0.0) @db.Decimal(14, 2)
-  totalNet        Decimal @default(0.0) @db.Decimal(14, 2)
+  totalEmployees     Int     @default(0)
+  totalGross         Decimal @default(0.0) @db.Decimal(14, 2)
+  totalDeductions    Decimal @default(0.0) @db.Decimal(14, 2)
+  totalNet           Decimal @default(0.0) @db.Decimal(14, 2)
+  totalEmployerCost  Decimal @default(0.0) @db.Decimal(14, 2)
 
+  createdById  String?
+  createdBy    User?     @relation("PayrollCreator", fields: [createdById], references: [id], onDelete: SetNull)
   calculatedAt DateTime?
   approvedAt   DateTime?
   approvedById String?
@@ -2388,6 +2392,7 @@ model PayrollRun {
   @@index([organizationId, status])
   @@index([periodId])
   @@index([parentRunId])
+  @@index([createdById])
   @@index([publishedById])
   @@map("payroll_runs")
 }

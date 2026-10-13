@@ -14,6 +14,7 @@ import {
   PreviewScopeDto,
   QueryPayrollRunsDto,
   RejectPayrollRunDto,
+  ReturnForCorrectionDto,
 } from '../dto/payroll-run.dto';
 import { PayrollRunsService } from '../services/payroll-runs.service';
 
@@ -134,6 +135,18 @@ export class PayrollRunsController {
     };
   }
 
+  @Get(':id/review-summary')
+  @RequirePermissions('PAYROLL_VIEW')
+  @ApiOperation({ summary: 'Get comprehensive payroll review summary and audit statistics' })
+  async getReviewSummary(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    const data = await this.runsService.getReviewSummary(user.organizationId, id, user.id);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Payroll review summary retrieved successfully',
+      data,
+    };
+  }
+
   @Post(':id/approve')
   @RequirePermissions('PAYROLL_APPROVE')
   @ApiOperation({ summary: 'Approve payroll run (transitions REVIEW_PENDING -> APPROVED)' })
@@ -142,7 +155,13 @@ export class PayrollRunsController {
     @Param('id') id: string,
     @Body() dto: ApprovePayrollRunDto,
   ) {
-    const data = await this.runsService.approve(user.organizationId, id, dto, user.id);
+    const data = await this.runsService.approve(
+      user.organizationId,
+      id,
+      dto,
+      user.id,
+      user.permissions,
+    );
     return {
       statusCode: HttpStatus.OK,
       message: 'Payroll run approved successfully',
@@ -162,6 +181,22 @@ export class PayrollRunsController {
     return {
       statusCode: HttpStatus.OK,
       message: 'Payroll run sent back to DRAFT',
+      data,
+    };
+  }
+
+  @Post(':id/return-for-correction')
+  @RequirePermissions('PAYROLL_APPROVE')
+  @ApiOperation({ summary: 'Return approved run for correction back to REVIEW_PENDING (pre-lock)' })
+  async returnForCorrection(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id') id: string,
+    @Body() dto: ReturnForCorrectionDto,
+  ) {
+    const data = await this.runsService.returnForCorrection(user.organizationId, id, dto, user.id);
+    return {
+      statusCode: HttpStatus.OK,
+      message: 'Payroll run returned for correction successfully',
       data,
     };
   }

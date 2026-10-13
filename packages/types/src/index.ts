@@ -3371,6 +3371,9 @@ export interface PayrollRunDto {
   totalGross: number;
   totalDeductions: number;
   totalNet: number;
+  totalEmployerCost: number;
+  createdById?: string | null;
+  createdBy?: { id: string; email: string; firstName: string; lastName: string } | null;
   calculatedAt?: string | null;
   approvedAt?: string | null;
   approvedById?: string | null;
@@ -3389,6 +3392,122 @@ export interface PayrollRunDto {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface DepartmentPayrollSummaryDto {
+  departmentId?: string | null;
+  departmentName: string;
+  employeeCount: number;
+  totalGross: number;
+  totalDeductions: number;
+  totalNet: number;
+  totalEmployerCost: number;
+}
+
+export interface PeriodComparisonVarianceDto {
+  previousRunId?: string | null;
+  previousPeriodTitle?: string | null;
+  previousHeadcount: number;
+  currentHeadcount: number;
+  headcountDelta: number;
+
+  previousTotalGross: number;
+  currentTotalGross: number;
+  grossDelta: number;
+  grossDeltaPercentage: number;
+
+  previousTotalDeductions: number;
+  currentTotalDeductions: number;
+  deductionsDelta: number;
+
+  previousTotalNet: number;
+  currentTotalNet: number;
+  netDelta: number;
+  netDeltaPercentage: number;
+
+  previousTotalEmployerCost: number;
+  currentTotalEmployerCost: number;
+  employerCostDelta: number;
+  employerCostDeltaPercentage: number;
+}
+
+export interface PayrollVarianceMovementDto {
+  newJoiners: Array<{
+    id: string;
+    employeeCode: string;
+    name: string;
+    department?: string | null;
+    joiningDate: string;
+  }>;
+  exits: Array<{
+    id: string;
+    employeeCode: string;
+    name: string;
+    department?: string | null;
+    leavingDate: string;
+  }>;
+  compensationChanges: Array<{
+    id: string;
+    employeeCode: string;
+    name: string;
+    department?: string | null;
+    effectiveDate: string;
+    newMonthlyGross: number;
+  }>;
+  manualAdjustments: Array<{
+    id: string;
+    employeeCode: string;
+    name: string;
+    type: AdjustmentType;
+    title: string;
+    amount: number;
+  }>;
+}
+
+export interface PayrollRunReviewSummaryDto {
+  runId: string;
+  periodId: string;
+  periodTitle: string;
+  periodStartDate: string;
+  periodEndDate: string;
+  cutoffDate?: string | null;
+  scope: string;
+  status: PayrollRunStatus;
+  calculationVersion: number;
+  calculatedAt?: string | null;
+
+  employeeCount: number;
+  processingStatus: string;
+
+  totals: {
+    totalGross: number;
+    totalDeductions: number;
+    totalNet: number;
+    totalEmployerCost: number;
+  };
+
+  validationStatus: {
+    blockingErrorCount: number;
+    warningCount: number;
+    hasBlockingErrors: boolean;
+  };
+
+  separationOfDuties: {
+    createdById?: string | null;
+    createdByName?: string | null;
+    canCurrentUserApprove: boolean;
+    selfApprovalBlocked: boolean;
+    reason?: string | null;
+  };
+
+  departments: DepartmentPayrollSummaryDto[];
+  comparison?: PeriodComparisonVarianceDto | null;
+  movements: PayrollVarianceMovementDto;
+}
+
+export interface ReturnForCorrectionDto {
+  reason: string;
+  notes?: string;
 }
 
 export interface PayrollAdjustmentDto {
