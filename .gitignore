@@ -49,3 +49,6 @@ scratch/
 apps/api/storage/*
 !apps/api/storage/.gitkeep
 
+# Database backups and dumps
+*.sql
+
