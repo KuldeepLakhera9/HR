@@ -7,11 +7,17 @@ import {
   ChevronRight,
   Calendar as CalendarIcon,
   Inbox,
+  X,
 } from 'lucide-react';
 
 export const Table = React.forwardRef<HTMLTableElement, React.HTMLAttributes<HTMLTableElement>>(
   ({ className, ...props }, ref) => (
-    <div className="relative w-full overflow-auto">
+    <div
+      className="relative w-full overflow-x-auto rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/20"
+      tabIndex={0}
+      role="region"
+      aria-label="Scrollable table"
+    >
       <table ref={ref} className={cn('w-full caption-bottom text-sm', className)} {...props} />
     </div>
   ),
@@ -53,9 +59,10 @@ TableRow.displayName = 'TableRow';
 export const TableHead = React.forwardRef<
   HTMLTableCellElement,
   React.ThHTMLAttributes<HTMLTableCellElement>
->(({ className, ...props }, ref) => (
+>(({ className, scope = 'col', ...props }, ref) => (
   <th
     ref={ref}
+    scope={scope}
     className={cn(
       'h-11 px-4 text-left align-middle font-semibold text-xs text-stone-600 uppercase tracking-wider',
       className,
@@ -165,6 +172,7 @@ export interface SearchProps {
   onChange: (val: string) => void;
   placeholder?: string;
   className?: string;
+  'aria-label'?: string;
 }
 
 export const Search: React.FC<SearchProps> = ({
@@ -172,17 +180,32 @@ export const Search: React.FC<SearchProps> = ({
   onChange,
   placeholder = 'Search...',
   className,
+  'aria-label': ariaLabel,
 }) => {
   return (
     <div className={cn('relative w-full max-w-sm', className)}>
-      <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 pointer-events-none" />
+      <SearchIcon
+        className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-stone-400 pointer-events-none"
+        aria-hidden="true"
+      />
       <input
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full h-9 pl-9 pr-3 rounded-lg border border-stone-200 bg-white text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 transition-all"
+        aria-label={ariaLabel || placeholder || 'Search records'}
+        className="w-full h-9 pl-9 pr-8 rounded-lg border border-stone-200 bg-white text-xs text-stone-900 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 focus-visible:ring-2 focus-visible:ring-amber-500/20 focus-visible:border-amber-600 transition-all"
       />
+      {value && (
+        <button
+          type="button"
+          onClick={() => onChange('')}
+          aria-label="Clear search query"
+          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-0.5 rounded focus:outline-none focus:ring-1 focus:ring-amber-500"
+        >
+          <X className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      )}
     </div>
   );
 };
@@ -193,19 +216,25 @@ export interface FilterProps {
   selectedValue: string;
   onChange: (value: string) => void;
   label?: string;
+  id?: string;
 }
 
-export const Filter: React.FC<FilterProps> = ({ options, selectedValue, onChange, label }) => {
+export const Filter: React.FC<FilterProps> = ({ options, selectedValue, onChange, label, id }) => {
+  const generatedId = React.useId();
+  const filterId = id || generatedId;
+
   return (
     <div className="flex items-center gap-2">
       <div className="flex items-center gap-1.5 text-xs text-stone-500 font-medium">
-        <FilterIcon className="h-3.5 w-3.5" />
-        {label && <span>{label}:</span>}
+        <FilterIcon className="h-3.5 w-3.5 text-stone-400" aria-hidden="true" />
+        {label && <label htmlFor={filterId}>{label}:</label>}
       </div>
       <select
+        id={filterId}
         value={selectedValue}
         onChange={(e) => onChange(e.target.value)}
-        className="h-8 px-2.5 rounded-lg border border-stone-200 bg-white text-xs font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600"
+        aria-label={label || 'Filter'}
+        className="h-8 px-2.5 rounded-lg border border-stone-200 bg-white text-xs font-medium text-stone-700 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 focus-visible:ring-2 focus-visible:ring-amber-500/20 focus-visible:border-amber-600"
       >
         {options.map((opt) => (
           <option key={opt.value} value={opt.value}>
@@ -223,19 +252,38 @@ export interface DatePickerProps {
   onChange: (date: string) => void;
   label?: string;
   className?: string;
+  id?: string;
 }
 
-export const DatePicker: React.FC<DatePickerProps> = ({ value, onChange, label, className }) => {
+export const DatePicker: React.FC<DatePickerProps> = ({
+  value,
+  onChange,
+  label,
+  className,
+  id,
+}) => {
+  const generatedId = React.useId();
+  const dateId = id || generatedId;
+
   return (
     <div className={cn('flex items-center gap-2', className)}>
-      {label && <label className="text-xs font-medium text-stone-600">{label}</label>}
+      {label && (
+        <label htmlFor={dateId} className="text-xs font-medium text-stone-600">
+          {label}
+        </label>
+      )}
       <div className="relative">
-        <CalendarIcon className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 pointer-events-none" />
+        <CalendarIcon
+          className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-stone-400 pointer-events-none"
+          aria-hidden="true"
+        />
         <input
+          id={dateId}
           type="date"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="h-8 pl-8 pr-2.5 rounded-lg border border-stone-200 bg-white text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 cursor-pointer"
+          aria-label={label || 'Select date'}
+          className="h-8 pl-8 pr-2.5 rounded-lg border border-stone-200 bg-white text-xs text-stone-800 focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-600 focus-visible:ring-2 focus-visible:ring-amber-500/20 focus-visible:border-amber-600 cursor-pointer"
         />
       </div>
     </div>
@@ -255,8 +303,8 @@ export const Pagination: React.FC<PaginationProps> = ({
   onPageChange,
 }) => {
   return (
-    <div className="flex items-center justify-between px-2 py-3">
-      <p className="text-xs text-stone-500">
+    <nav aria-label="Pagination Navigation" className="flex items-center justify-between px-2 py-3">
+      <p className="text-xs text-stone-500" aria-live="polite">
         Page <span className="font-semibold text-stone-800">{currentPage}</span> of{' '}
         <span className="font-semibold text-stone-800">{totalPages}</span>
       </p>
@@ -265,19 +313,19 @@ export const Pagination: React.FC<PaginationProps> = ({
           onClick={() => onPageChange(currentPage - 1)}
           disabled={currentPage <= 1}
           aria-label="Previous page"
-          className="p-1.5 rounded-md border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-md border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30"
         >
-          <ChevronLeft className="h-3.5 w-3.5" />
+          <ChevronLeft className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
         <button
           onClick={() => onPageChange(currentPage + 1)}
           disabled={currentPage >= totalPages}
           aria-label="Next page"
-          className="p-1.5 rounded-md border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          className="p-1.5 rounded-md border border-stone-200 bg-white text-stone-600 hover:bg-stone-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30"
         >
-          <ChevronRight className="h-3.5 w-3.5" />
+          <ChevronRight className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </div>
-    </div>
+    </nav>
   );
 };

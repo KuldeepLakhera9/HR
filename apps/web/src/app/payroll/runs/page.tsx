@@ -7,6 +7,7 @@ import { AppShell } from '../../../layouts/AppShell';
 import { ProtectedRoute } from '../../../components/auth/ProtectedRoute';
 import { useAuth } from '../../../context/AuthContext';
 import { apiClient } from '../../../lib/api-client';
+import { formatCurrency } from '../../../lib/formatters';
 import {
   Card,
   CardHeader,
@@ -458,10 +459,13 @@ export default function PayrollRunsPage() {
                               {r.totalEmployees}
                             </td>
                             <td className="py-3 px-4 text-right font-mono font-bold text-emerald-800">
-                              ₹
-                              {Number(r.totalNet).toLocaleString('en-IN', {
-                                minimumFractionDigits: 2,
-                              })}
+                              {r.totalNet != null ? (
+                                formatCurrency(r.totalNet)
+                              ) : (
+                                <span className="text-stone-400 font-sans font-normal text-xs">
+                                  Pending calc
+                                </span>
+                              )}
                             </td>
                             <td className="py-3 px-4 text-center">{getStatusBadge(r.status)}</td>
                             <td className="py-3 px-4 text-right">

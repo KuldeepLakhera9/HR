@@ -118,8 +118,9 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({
               key={item.id}
               href={item.href}
               onClick={onClose}
+              aria-current={isActive ? 'page' : undefined}
               className={cn(
-                'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all group',
+                'flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-medium transition-all group focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30',
                 isActive
                   ? 'bg-amber-500/10 text-amber-900 font-semibold shadow-2xs'
                   : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900',
@@ -131,11 +132,13 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({
                     'h-4 w-4 transition-colors',
                     isActive ? 'text-amber-700' : 'text-stone-400 group-hover:text-stone-700',
                   )}
+                  aria-hidden="true"
                 />
                 <span>{item.label}</span>
               </div>
               {item.badge && (
                 <span
+                  aria-label={`${item.badge} pending items`}
                   className={cn(
                     'text-[10px] font-semibold px-1.5 py-0.5 rounded-full',
                     isActive ? 'bg-amber-600 text-white' : 'bg-stone-100 text-stone-600',

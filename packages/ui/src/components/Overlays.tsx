@@ -21,6 +21,11 @@ export const Dialog: React.FC<DialogProps> = ({
   footer,
   maxWidth = 'md',
 }) => {
+  const generatedTitleId = React.useId();
+  const generatedDescId = React.useId();
+  const titleId = title ? generatedTitleId : undefined;
+  const descId = description ? generatedDescId : undefined;
+
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -45,9 +50,11 @@ export const Dialog: React.FC<DialogProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4"
       role="dialog"
       aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
     >
       {/* Backdrop */}
       <div
@@ -58,26 +65,34 @@ export const Dialog: React.FC<DialogProps> = ({
       {/* Modal Dialog */}
       <div
         className={cn(
-          'relative w-full bg-white rounded-xl shadow-2xl border border-stone-200 z-10 overflow-hidden transform transition-all',
+          'relative w-full max-w-[calc(100vw-1.5rem)] bg-white rounded-xl shadow-2xl border border-stone-200 z-10 overflow-hidden transform transition-all',
           maxWidths[maxWidth],
         )}
       >
-        <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
+        <div className="flex items-center justify-between px-5 sm:px-6 py-4 border-b border-stone-100">
           <div>
-            {title && <h3 className="text-base font-semibold text-stone-900">{title}</h3>}
-            {description && <p className="text-xs text-stone-500 mt-0.5">{description}</p>}
+            {title && (
+              <h3 id={titleId} className="text-base font-semibold text-stone-900">
+                {title}
+              </h3>
+            )}
+            {description && (
+              <p id={descId} className="text-xs text-stone-500 mt-0.5">
+                {description}
+              </p>
+            )}
           </div>
           <button
             onClick={onClose}
             aria-label="Close dialog"
-            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
-        <div className="px-6 py-5 max-h-[75vh] overflow-y-auto">{children}</div>
+        <div className="px-5 sm:px-6 py-5 max-h-[75vh] overflow-y-auto">{children}</div>
         {footer && (
-          <div className="flex items-center justify-end gap-3 px-6 py-3.5 bg-stone-50/70 border-t border-stone-100">
+          <div className="flex items-center justify-end gap-3 px-5 sm:px-6 py-3.5 bg-stone-50/70 border-t border-stone-100">
             {footer}
           </div>
         )}
@@ -90,6 +105,7 @@ export interface DrawerProps {
   isOpen: boolean;
   onClose: () => void;
   title?: string;
+  description?: string;
   children: React.ReactNode;
   footer?: React.ReactNode;
   side?: 'left' | 'right';
@@ -99,10 +115,16 @@ export const Drawer: React.FC<DrawerProps> = ({
   isOpen,
   onClose,
   title,
+  description,
   children,
   footer,
   side = 'right',
 }) => {
+  const generatedTitleId = React.useId();
+  const generatedDescId = React.useId();
+  const titleId = title ? generatedTitleId : undefined;
+  const descId = description ? generatedDescId : undefined;
+
   React.useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
@@ -121,7 +143,13 @@ export const Drawer: React.FC<DrawerProps> = ({
     side === 'right' ? 'right-0 top-0 bottom-0 max-w-md' : 'left-0 top-0 bottom-0 max-w-md';
 
   return (
-    <div className="fixed inset-0 z-50 flex" role="dialog" aria-modal="true">
+    <div
+      className="fixed inset-0 z-50 flex"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby={titleId}
+      aria-describedby={descId}
+    >
       <div
         className="fixed inset-0 bg-stone-900/40 backdrop-blur-xs transition-opacity"
         onClick={onClose}
@@ -129,19 +157,30 @@ export const Drawer: React.FC<DrawerProps> = ({
       />
       <div
         className={cn(
-          'fixed w-full h-full bg-white shadow-2xl z-10 flex flex-col border-stone-200',
+          'fixed w-full max-w-[calc(100vw-2rem)] h-full bg-white shadow-2xl z-10 flex flex-col border-stone-200',
           side === 'right' ? 'border-l' : 'border-r',
           sideClasses,
         )}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100">
-          {title && <h3 className="text-base font-semibold text-stone-900">{title}</h3>}
+          <div>
+            {title && (
+              <h3 id={titleId} className="text-base font-semibold text-stone-900">
+                {title}
+              </h3>
+            )}
+            {description && (
+              <p id={descId} className="text-xs text-stone-500 mt-0.5">
+                {description}
+              </p>
+            )}
+          </div>
           <button
             onClick={onClose}
             aria-label="Close drawer"
-            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+            className="text-stone-400 hover:text-stone-600 rounded-lg p-1 hover:bg-stone-100 transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-500/30"
           >
-            <X className="h-4 w-4" />
+            <X className="h-4 w-4" aria-hidden="true" />
           </button>
         </div>
         <div className="flex-1 px-6 py-5 overflow-y-auto">{children}</div>
