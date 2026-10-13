@@ -3577,6 +3577,89 @@ export interface EmployeePayrollSnapshotDto {
   updatedAt: string;
 }
 
+export interface PayslipListItemDto {
+  id: string;
+  payslipNumber: string;
+  payrollRunId: string;
+  runTitle: string;
+  runNumber: number;
+  periodId: string;
+  periodYear: number;
+  periodMonth: number;
+  periodStartDate: string;
+  periodEndDate: string;
+  payoutDate?: string | null;
+  grossPay: number;
+  totalDeductions: number;
+  netPay: number;
+  currency: string;
+  paidDays: number;
+  workingDays: number;
+  payslipStatus: PayslipStatus;
+  paymentStatus: PaymentStatus;
+  publishedAt?: string | null;
+  isCorrection: boolean;
+  correctionReason?: string | null;
+  version: number;
+}
+
+export interface PayslipCorrectionVersionDto {
+  snapshotId: string;
+  payslipNumber: string;
+  runNumber: number;
+  runTitle: string;
+  version: number;
+  isCurrent: boolean;
+  publishedAt?: string | null;
+  correctionReason?: string | null;
+  netSalary: number;
+  earnedGross: number;
+  totalDeductions: number;
+}
+
+export interface PayslipDetailDto {
+  snapshot: EmployeePayrollSnapshotDto;
+  period: {
+    id: string;
+    year: number;
+    month: number;
+    startDate: string;
+    endDate: string;
+    cutoffDate?: string | null;
+    payoutDate?: string | null;
+  };
+  run: {
+    id: string;
+    title: string;
+    runNumber: number;
+    calculationVersion: number;
+    status: string;
+    parentRunId?: string | null;
+    correctionReason?: string | null;
+  };
+  earnings: Array<{
+    componentCode: string;
+    componentName: string;
+    standardAmount: number;
+    earnedAmount: number;
+  }>;
+  deductions: Array<{
+    componentCode: string;
+    componentName: string;
+    standardAmount: number;
+    earnedAmount: number;
+  }>;
+  employerContributions: Array<{
+    componentCode: string;
+    componentName: string;
+    amount: number;
+  }>;
+  totalEmployerContributions: number;
+  totalCtc: number;
+  versions: PayslipCorrectionVersionDto[];
+  canDownloadPdf: boolean;
+}
+
 export interface CreatePayrollPeriodDto {
   year: number;
   month: number;

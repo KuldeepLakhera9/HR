@@ -462,6 +462,13 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       requiredPermission: 'DOCUMENT_VIEW',
     },
     {
+      id: 'emp-payslips',
+      label: 'My Payslips',
+      href: '/payroll/payslips',
+      icon: 'Banknote',
+      allowedRoles: ['EMPLOYEE'],
+    },
+    {
       id: 'emp-profile',
       label: 'Profile',
       href: '/profile',

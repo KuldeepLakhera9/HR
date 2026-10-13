@@ -66,6 +66,8 @@ import {
   SavedReportDefinitionDto,
   CreateSavedReportDto,
   ExecuteSavedReportResultDto,
+  PayslipListItemDto,
+  PayslipDetailDto,
 } from '@hrms/types';
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api/v1';
@@ -3705,6 +3707,64 @@ export const payrollApi = {
       method: 'POST',
     });
     return res;
+  },
+
+  // ---------------------------------------------------------------------------
+  // Phase 11.9: Payslips & ESS Endpoints
+  // ---------------------------------------------------------------------------
+  async getMyPayslips(
+    query: { year?: number; month?: number; page?: number; limit?: number } = {},
+  ) {
+    const params = new URLSearchParams();
+    if (query.year) params.append('year', String(query.year));
+    if (query.month) params.append('month', String(query.month));
+    if (query.page) params.append('page', String(query.page));
+    if (query.limit) params.append('limit', String(query.limit));
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetchWithAuth<PayslipListItemDto[]>(`/payroll/payslips/my-payslips${qs}`);
+    return res;
+  },
+
+  async getPayslipDetail(id: string) {
+    const res = await fetchWithAuth<PayslipDetailDto>(`/payroll/payslips/${id}`);
+    return res;
+  },
+
+  async downloadPayslipPdf(id: string, customFilename?: string) {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/payroll/payslips/${id}/pdf`, {
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ message: 'Download failed' }));
+      throw new Error(err.message || 'Payslip PDF download failed');
+    }
+
+    const blob = await response.blob();
+    const disposition = response.headers.get('content-disposition');
+    let filename = customFilename || `payslip_${id}.pdf`;
+    if (disposition && disposition.indexOf('filename=') !== -1) {
+      const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+      if (matches != null && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+      }
+    }
+
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
   },
 };
 

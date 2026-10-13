@@ -23,6 +23,7 @@ import {
   Send,
   User,
   ExternalLink,
+  Banknote,
 } from 'lucide-react';
 import { Button, Badge, Card, Skeleton, EmptyState } from '@hrms/ui';
 import { employeesApi } from '../../../lib/api-client';
@@ -342,7 +343,7 @@ export const EmployeeDashboard: React.FC = () => {
       </div>
 
       {/* 3. Quick Actions Hub */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
         <Link href="/attendance" className="block">
           <div className="p-3 rounded-xl border border-stone-200/90 bg-white hover:border-amber-400 hover:bg-amber-50/30 transition-all text-center group cursor-pointer shadow-2xs">
             <Clock className="h-5 w-5 mx-auto text-amber-700 group-hover:scale-110 transition-transform mb-1.5" />
@@ -355,6 +356,13 @@ export const EmployeeDashboard: React.FC = () => {
             <Calendar className="h-5 w-5 mx-auto text-emerald-700 group-hover:scale-110 transition-transform mb-1.5" />
             <span className="text-xs font-semibold text-stone-800 block">Apply Leave</span>
             <span className="text-[10px] text-stone-400">Time-off</span>
+          </div>
+        </Link>
+        <Link href="/payroll/payslips" className="block">
+          <div className="p-3 rounded-xl border border-stone-200/90 bg-white hover:border-amber-400 hover:bg-amber-50/30 transition-all text-center group cursor-pointer shadow-2xs">
+            <Banknote className="h-5 w-5 mx-auto text-emerald-600 group-hover:scale-110 transition-transform mb-1.5" />
+            <span className="text-xs font-semibold text-stone-800 block">Payslips</span>
+            <span className="text-[10px] text-stone-400">Salary & Tax</span>
           </div>
         </Link>
         <Link href="/wfh" className="block">

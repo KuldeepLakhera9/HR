@@ -7,6 +7,7 @@ import { EmployeeCompensationController } from './controllers/employee-compensat
 import { PayrollPeriodsController } from './controllers/payroll-periods.controller';
 import { PayrollRunsController } from './controllers/payroll-runs.controller';
 import { PayrollExceptionsController } from './controllers/payroll-exceptions.controller';
+import { PayslipsController } from './controllers/payslips.controller';
 import { SalaryComponentsService } from './services/salary-components.service';
 import { SalaryStructuresService } from './services/salary-structures.service';
 import { EmployeeCompensationService } from './services/employee-compensation.service';
@@ -15,6 +16,8 @@ import { PayrollRunsService } from './services/payroll-runs.service';
 import { PayrollCalculationEngineService } from './services/payroll-calculation-engine.service';
 import { PayrollInputsService } from './services/payroll-inputs.service';
 import { PayrollValidationService } from './services/payroll-validation.service';
+import { PayslipsService } from './services/payslips.service';
+import { PayslipPdfService } from './services/payslip-pdf.service';
 
 @Module({
   imports: [PrismaModule, AuditModule],
@@ -25,6 +28,7 @@ import { PayrollValidationService } from './services/payroll-validation.service'
     PayrollPeriodsController,
     PayrollRunsController,
     PayrollExceptionsController,
+    PayslipsController,
   ],
   providers: [
     SalaryComponentsService,
@@ -35,6 +39,8 @@ import { PayrollValidationService } from './services/payroll-validation.service'
     PayrollCalculationEngineService,
     PayrollInputsService,
     PayrollValidationService,
+    PayslipsService,
+    PayslipPdfService,
   ],
   exports: [
     SalaryComponentsService,
@@ -45,6 +51,8 @@ import { PayrollValidationService } from './services/payroll-validation.service'
     PayrollCalculationEngineService,
     PayrollInputsService,
     PayrollValidationService,
+    PayslipsService,
+    PayslipPdfService,
   ],
 })
 export class PayrollModule {}
