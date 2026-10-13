@@ -15,46 +15,8 @@ import {
   ArrowRight,
   Info,
   CheckCircle2,
-  Sparkles,
-  ChevronDown,
-  ChevronUp,
-  HelpCircle,
 } from 'lucide-react';
-import { Button, Input, Card, Badge, Dialog } from '@hrms/ui';
-
-interface DemoPersona {
-  role: 'ADMIN' | 'HR' | 'MANAGER' | 'EMPLOYEE';
-  label: string;
-  email: string;
-  title: string;
-}
-
-const DEMO_PERSONAS: DemoPersona[] = [
-  {
-    role: 'ADMIN',
-    label: 'Admin',
-    email: 'admin@peopleos.local',
-    title: 'Super Administrator',
-  },
-  {
-    role: 'HR',
-    label: 'HR',
-    email: 'hr@peopleos.local',
-    title: 'People Operations',
-  },
-  {
-    role: 'MANAGER',
-    label: 'Manager',
-    email: 'manager@peopleos.local',
-    title: 'Engineering Director',
-  },
-  {
-    role: 'EMPLOYEE',
-    label: 'Employee',
-    email: 'employee@peopleos.local',
-    title: 'Software Engineer',
-  },
-];
+import { Button, Input, Card, Dialog } from '@hrms/ui';
 
 type AuthErrorType =
   | 'INVALID_CREDENTIALS'
@@ -74,8 +36,8 @@ function LoginFormContent() {
   const { login, isAuthenticated, isLoading: authLoading, clearError } = useAuth();
 
   // Form State
-  const [email, setEmail] = useState('admin@peopleos.local');
-  const [password, setPassword] = useState('Password@123');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -91,7 +53,6 @@ function LoginFormContent() {
   const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
   const [forgotPasswordSubmitted, setForgotPasswordSubmitted] = useState(false);
-  const [showDevPersonas, setShowDevPersonas] = useState(true);
 
   // Unique IDs for accessibility
   const emailHelpId = useId();
@@ -176,16 +137,6 @@ function LoginFormContent() {
     } finally {
       setIsSubmitting(false);
     }
-  };
-
-  const handleSelectPersona = (persona: DemoPersona) => {
-    setEmail(persona.email);
-    setPassword('Password@123');
-    setEmailTouched(false);
-    setPasswordTouched(false);
-    setErrorType(null);
-    setErrorMessage(null);
-    clearError();
   };
 
   const handleForgotPasswordSubmit = (e: React.FormEvent) => {
@@ -366,63 +317,6 @@ function LoginFormContent() {
             {isSubmitting ? 'Signing in...' : 'Sign In'}
           </Button>
         </form>
-
-        {/* Development Quick-Fill Personas (Collapsible) */}
-        <div className="mt-6 pt-5 border-t border-stone-150">
-          <button
-            type="button"
-            onClick={() => setShowDevPersonas((prev) => !prev)}
-            className="w-full flex items-center justify-between text-left text-[11px] font-semibold text-stone-600 hover:text-stone-900 focus:outline-hidden"
-            aria-expanded={showDevPersonas}
-          >
-            <span className="flex items-center gap-1.5">
-              <Sparkles className="h-3.5 w-3.5 text-amber-600" aria-hidden="true" />
-              Quick-Fill Test Personas
-            </span>
-            <span className="flex items-center gap-1 text-[10px] text-stone-400">
-              <Badge variant="outline" size="sm">
-                Dev Seed
-              </Badge>
-              {showDevPersonas ? (
-                <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
-              ) : (
-                <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-            </span>
-          </button>
-
-          {showDevPersonas && (
-            <div className="mt-3 space-y-2 animate-in fade-in duration-200">
-              <div className="grid grid-cols-2 gap-2">
-                {DEMO_PERSONAS.map((p) => {
-                  const isSelected = email === p.email;
-                  return (
-                    <button
-                      key={p.role}
-                      type="button"
-                      onClick={() => handleSelectPersona(p)}
-                      className={`p-2.5 rounded-xl border text-left transition-all ${
-                        isSelected
-                          ? 'border-amber-500 bg-amber-50/70 shadow-2xs'
-                          : 'border-stone-200 bg-stone-50/50 hover:bg-white hover:border-stone-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-semibold text-stone-800">{p.label}</span>
-                        <span className="text-[10px] font-mono text-stone-400">{p.role}</span>
-                      </div>
-                      <div className="text-[11px] text-stone-500 truncate mt-0.5">{p.email}</div>
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="text-[10px] text-stone-400 text-center pt-1">
-                Password for all seeded personas:{' '}
-                <code className="font-mono text-stone-600">Password@123</code>
-              </p>
-            </div>
-          )}
-        </div>
       </Card>
 
       {/* Forgot Password Modal Dialog */}

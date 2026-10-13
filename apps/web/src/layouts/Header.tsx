@@ -1,60 +1,37 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useRole } from '../context/RoleContext';
 import { useAuth } from '../context/AuthContext';
 import { RoleType } from '@hrms/types';
-import { Search, Menu, Command, LogIn } from 'lucide-react';
-import { UserMenu, NotificationMenu, Button } from '@hrms/ui';
+import { Search, Menu, LogIn, Shield } from 'lucide-react';
+import { UserMenu, NotificationMenu, Button, Badge } from '@hrms/ui';
 import { GlobalSearch } from './GlobalSearch';
-
 import { notificationsApi } from '../lib/api-client';
-
-const INITIAL_NOTIFICATIONS = [
-  {
-    id: '1',
-    title: 'Dussehra Holiday Notice',
-    message: 'All office hubs remain closed on Oct 12.',
-    time: '2h ago',
-    isRead: false,
-  },
-  {
-    id: '2',
-    title: 'Attendance Policy Updated',
-    message: 'Grace period set to 15 mins across branches.',
-    time: '5h ago',
-    isRead: false,
-  },
-  {
-    id: '3',
-    title: 'Database Backup Completed',
-    message: 'Automated snapshot generated at 04:00 AM.',
-    time: '7h ago',
-    isRead: true,
-  },
-];
 
 export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleMobileMenu }) => {
   const router = useRouter();
-  const { role, setRole, currentUser } = useRole();
-  const { isAuthenticated, logout } = useAuth();
+  const { role, setRole, currentUser, availableRoles } = useRole();
+  const { isAuthenticated, logout, user } = useAuth();
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [notifications, setNotifications] = useState(INITIAL_NOTIFICATIONS);
+  const [notifications, setNotifications] = useState<any[]>([]);
 
   useEffect(() => {
     if (isAuthenticated) {
       notificationsApi
-        .getNotifications()
+        .getNotifications({ limit: 10 })
         .then((items) => {
-          if (Array.isArray(items) && items.length > 0) {
+          if (Array.isArray(items)) {
             setNotifications(items);
           }
         })
         .catch(() => {
-          // Non-fatal fallback
+          setNotifications([]);
         });
+    } else {
+      setNotifications([]);
     }
   }, [isAuthenticated]);
 
@@ -70,27 +47,25 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = useCallback(() => {
     setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
-    notificationsApi.markAllRead().catch(() => {
-      // Fallback per item
-      notifications.forEach((n) => {
-        if (!n.isRead) {
-          notificationsApi.markRead(n.id).catch(() => {});
-        }
-      });
-    });
-  };
+    notificationsApi.markAllRead().catch(() => {});
+  }, []);
 
-  const handleSelectNotification = (item: any) => {
-    if (!item.isRead) {
-      notificationsApi.markRead(item.id).catch(() => {});
-      setNotifications((prev) => prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)));
-    }
-    if (item.link) {
-      router.push(item.link);
-    }
-  };
+  const handleSelectNotification = useCallback(
+    (item: any) => {
+      if (!item.isRead) {
+        notificationsApi.markRead(item.id).catch(() => {});
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === item.id ? { ...n, isRead: true } : n)),
+        );
+      }
+      if (item.link) {
+        router.push(item.link);
+      }
+    },
+    [router],
+  );
 
   return (
     <>
@@ -130,89 +105,66 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
           </button>
         </div>
 
-        {/* Right: Role Switcher + Notifications + User Menu */}
+        {/* Right: Authenticated Role Indicator + Notifications + User Menu */}
         <div className="flex items-center gap-2 sm:gap-3">
-          {/* Mobile Compact Role Selector */}
-          <div className="sm:hidden flex items-center">
-            <label htmlFor="mobile-header-role" className="sr-only">
-              Active Persona Role
-            </label>
-            <select
-              id="mobile-header-role"
-              value={role}
-              onChange={(e) => setRole(e.target.value as RoleType)}
-              className="h-8 px-2 text-[11px] font-bold bg-amber-50 text-amber-900 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-            >
-              {(['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'] as RoleType[]).map((r) => (
-                <option key={r} value={r}>
-                  {r}
-                </option>
-              ))}
-            </select>
-          </div>
+          {isAuthenticated && (
+            <>
+              {/* If user possesses multiple verified roles (e.g. Employee & Manager), allow switching between their own roles only */}
+              {availableRoles && availableRoles.length > 1 ? (
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="user-role-select" className="sr-only">
+                    Select Active Role
+                  </label>
+                  <select
+                    id="user-role-select"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as RoleType)}
+                    className="h-8 px-2 text-xs font-semibold bg-amber-50/90 text-amber-900 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20"
+                  >
+                    {availableRoles.map((r) => (
+                      <option key={r} value={r}>
+                        Role: {r}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-stone-200 bg-stone-50 text-stone-700 text-xs font-semibold">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                  <span className="text-[10px] uppercase tracking-wider text-stone-400">Role:</span>
+                  <span>{role}</span>
+                </div>
+              )}
 
-          {/* Desktop/Tablet Segmented Role Pills */}
-          <div className="hidden sm:flex items-center gap-1 bg-stone-100/90 p-1 rounded-xl border border-stone-200">
-            <span className="text-[10px] font-semibold text-stone-500 px-1 hidden lg:inline">
-              ROLE:
-            </span>
-            {(['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'] as RoleType[]).map((r) => (
-              <button
-                key={r}
-                onClick={() => setRole(r)}
-                aria-pressed={role === r}
-                className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-all shrink-0 ${
-                  role === r
-                    ? 'bg-amber-600 text-white shadow-xs'
-                    : 'text-stone-600 hover:text-stone-900 hover:bg-white/60'
-                }`}
-              >
-                {r}
-              </button>
-            ))}
-          </div>
+              {/* Notification Menu */}
+              <NotificationMenu
+                notifications={notifications}
+                onMarkAllRead={handleMarkAllRead}
+                onSelectNotification={handleSelectNotification}
+              />
 
-          {/* Notification Menu */}
-          <NotificationMenu
-            notifications={notifications}
-            onMarkAllRead={handleMarkAllRead}
-            onSelectNotification={handleSelectNotification}
-          />
-
-          {/* User Menu or Sign In Button */}
-          {isAuthenticated ? (
-            <UserMenu
-              name={currentUser.name}
-              email={currentUser.email}
-              role={role}
-              avatarUrl={null}
-              onProfileClick={() => {
-                window.location.href = '/profile';
-              }}
-              onLogout={() => {
-                logout();
-              }}
-            />
-          ) : (
-            <div className="flex items-center gap-2">
+              {/* User Menu */}
               <UserMenu
                 name={currentUser.name}
                 email={currentUser.email}
                 role={role}
                 avatarUrl={null}
                 onProfileClick={() => {
-                  window.location.href = '/profile';
+                  router.push('/profile');
                 }}
                 onLogout={() => {
-                  window.location.href = '/login';
+                  logout();
                 }}
               />
-              <Link href="/login" className="hidden sm:inline-flex">
-                <Button variant="outline" size="sm" leftIcon={<LogIn className="h-3.5 w-3.5" />}>
-                  Sign In
-                </Button>
-              </Link>
-            </div>
+            </>
+          )}
+
+          {!isAuthenticated && (
+            <Link href="/login">
+              <Button variant="primary" size="sm" leftIcon={<LogIn className="h-3.5 w-3.5" />}>
+                Sign In
+              </Button>
+            </Link>
           )}
         </div>
       </header>

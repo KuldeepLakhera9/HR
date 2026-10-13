@@ -223,7 +223,7 @@ export const HRDashboard: React.FC = () => {
           title="Employee Progress & Enablement"
           subtitle="Mandatory training modules and onboarding milestones"
         >
-          <EmployeeProgressChart />
+          <EmployeeProgressChart data={data?.enablementTracks ?? []} />
         </ChartCard>
       </div>
 

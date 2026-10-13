@@ -280,7 +280,6 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'CalendarCheck',
       allowedRoles: ['HR'],
       requiredPermission: 'LEAVE_VIEW',
-      badge: '3',
     },
     {
       id: 'hr-visits',
@@ -289,7 +288,6 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'MapPin',
       allowedRoles: ['HR'],
       requiredPermission: 'ATTENDANCE_VIEW',
-      badge: '2',
     },
     {
       id: 'hr-wfh',
@@ -371,7 +369,6 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'CheckSquare',
       allowedRoles: ['MANAGER'],
       requiredPermission: 'LEAVE_VIEW',
-      badge: '2',
     },
     {
       id: 'mgr-visits',
@@ -380,7 +377,6 @@ export const NAVIGATION_CONFIG: Record<RoleType, NavigationItem[]> = {
       icon: 'MapPin',
       allowedRoles: ['MANAGER'],
       requiredPermission: 'VISIT_VIEW',
-      badge: '1',
     },
     {
       id: 'mgr-wfh',

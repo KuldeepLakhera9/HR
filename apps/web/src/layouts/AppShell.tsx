@@ -14,7 +14,7 @@ export interface AppShellProps {
   requireAuth?: boolean;
 }
 
-export const AppShell: React.FC<AppShellProps> = ({ children, requireAuth = false }) => {
+export const AppShell: React.FC<AppShellProps> = ({ children, requireAuth = true }) => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const pathname = usePathname();
   const { role } = useRole();
@@ -94,17 +94,13 @@ export const AppShell: React.FC<AppShellProps> = ({ children, requireAuth = fals
           <div className="pb-1 flex flex-wrap items-center justify-between gap-2">
             <Breadcrumb items={breadcrumbs} />
             <div className="flex items-center gap-2">
-              {isAuthenticated ? (
+              {isAuthenticated && (
                 <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200">
                   <span
                     className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"
                     aria-hidden="true"
                   />
                   {user?.firstName} ({role})
-                </span>
-              ) : (
-                <span className="text-[11px] font-medium text-stone-500">
-                  Active Persona: <strong className="text-amber-700">{role}</strong>
                 </span>
               )}
             </div>

@@ -1,91 +1,69 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 import { RoleType } from '@hrms/types';
 import { useAuth } from './AuthContext';
 
-interface RoleUser {
+export interface RoleUser {
   name: string;
   email: string;
   role: RoleType;
   title: string;
 }
 
-const ROLE_PRESETS: Record<RoleType, RoleUser> = {
-  ADMIN: {
-    name: 'Vikram Aditya',
-    email: 'admin@peopleos.local',
-    role: 'ADMIN',
-    title: 'Super Administrator',
-  },
-  HR: {
-    name: 'Ananya Sharma',
-    email: 'hr@peopleos.local',
-    role: 'HR',
-    title: 'Head of People Operations',
-  },
-  MANAGER: {
-    name: 'Rajesh Kumar',
-    email: 'manager@peopleos.local',
-    role: 'MANAGER',
-    title: 'Engineering Director',
-  },
-  EMPLOYEE: {
-    name: 'Priya Nair',
-    email: 'employee@peopleos.local',
-    role: 'EMPLOYEE',
-    title: 'Senior Frontend Engineer',
-  },
-};
-
 interface RoleContextType {
   role: RoleType;
   setRole: (role: RoleType) => void;
   currentUser: RoleUser;
+  availableRoles: RoleType[];
 }
 
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, primaryRole, isAuthenticated } = useAuth();
-  const [roleOverride, setRoleOverride] = useState<RoleType | null>(null);
+  const { user, primaryRole, isAuthenticated, roles } = useAuth();
+  const [selectedRole, setSelectedRole] = useState<RoleType | null>(null);
 
   // Sync role with authenticated user's primary role upon login
   useEffect(() => {
     if (isAuthenticated && primaryRole) {
-      setRoleOverride(primaryRole);
-    }
-  }, [isAuthenticated, primaryRole]);
-
-  // Load preview role from localStorage if in preview mode
-  useEffect(() => {
-    if (!isAuthenticated) {
-      const saved = localStorage.getItem('hrms_preview_role') as RoleType;
-      if (saved && ['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'].includes(saved)) {
-        setRoleOverride(saved);
+      // If currently selected role is not among user's genuine assigned roles, reset to primary
+      if (!selectedRole || !roles.includes(selectedRole)) {
+        setSelectedRole(primaryRole);
       }
+    } else {
+      setSelectedRole(null);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, primaryRole, roles, selectedRole]);
 
-  const activeRole: RoleType = roleOverride || primaryRole || 'ADMIN';
+  // Strictly bound to user's assigned roles: user CANNOT assume an ungranted role
+  const activeRole: RoleType =
+    selectedRole && roles.includes(selectedRole) ? selectedRole : primaryRole || 'EMPLOYEE';
 
   const setRole = (newRole: RoleType) => {
-    setRoleOverride(newRole);
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('hrms_preview_role', newRole);
+    // Only allow switching to a role that the authenticated user actually possesses
+    if (roles.includes(newRole)) {
+      setSelectedRole(newRole);
+    } else {
+      console.warn(`[RoleSecurity] Rejected unauthorized role elevation attempt to ${newRole}`);
     }
   };
 
-  const currentUser: RoleUser = React.useMemo(() => {
+  const currentUser: RoleUser = useMemo(() => {
     if (user && isAuthenticated) {
       return {
-        name: `${user.firstName} ${user.lastName}`.trim(),
+        name: `${user.firstName || ''} ${user.lastName || ''}`.trim() || user.email,
         email: user.email,
         role: activeRole,
         title: user.employeeCode ? `Emp ID: ${user.employeeCode}` : 'Team Member',
       };
     }
-    return ROLE_PRESETS[activeRole] || ROLE_PRESETS.ADMIN;
+    return {
+      name: 'Unauthenticated User',
+      email: '',
+      role: 'EMPLOYEE',
+      title: 'Guest',
+    };
   }, [user, isAuthenticated, activeRole]);
 
   return (
@@ -94,6 +72,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: activeRole,
         setRole,
         currentUser,
+        availableRoles: roles,
       }}
     >
       {children}

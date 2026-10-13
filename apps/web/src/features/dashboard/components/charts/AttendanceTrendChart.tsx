@@ -11,15 +11,7 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
-
-const mockData = [
-  { day: 'Mon', present: 64, leave: 5, absent: 3 },
-  { day: 'Tue', present: 67, leave: 3, absent: 2 },
-  { day: 'Wed', present: 65, leave: 5, absent: 2 },
-  { day: 'Thu', present: 68, leave: 2, absent: 2 },
-  { day: 'Fri', present: 62, leave: 7, absent: 3 },
-  { day: 'Sat', present: 22, leave: 2, absent: 1 },
-];
+import { CalendarDays } from 'lucide-react';
 
 export interface AttendanceTrendDataPoint {
   day: string;
@@ -29,12 +21,25 @@ export interface AttendanceTrendDataPoint {
 }
 
 export const AttendanceTrendChart: React.FC<{ data?: AttendanceTrendDataPoint[] }> = ({
-  data = mockData,
+  data = [],
 }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="w-full h-64 flex flex-col items-center justify-center bg-stone-50/50 rounded-xl border border-dashed border-stone-200 p-6 text-center">
+        <CalendarDays className="h-8 w-8 text-stone-300 mb-2" aria-hidden="true" />
+        <p className="text-xs font-semibold text-stone-700">No Attendance Records Yet</p>
+        <p className="text-[11px] text-stone-400 mt-1 max-w-xs">
+          Daily attendance trend will appear dynamically as employee clock-in punches are recorded
+          in the system.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-64">
       <ResponsiveContainer width="100%" height="100%">
-        <AreaChart data={mockData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <AreaChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <defs>
             <linearGradient id="colorPresent" x1="0" y1="0" x2="0" y2="1">
               <stop offset="5%" stopColor="#D97706" stopOpacity={0.25} />

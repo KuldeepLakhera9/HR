@@ -11,20 +11,33 @@ import {
   Tooltip,
   Legend,
 } from 'recharts';
+import { CalendarDays } from 'lucide-react';
 
-const mockData = [
-  { month: 'Jun', casual: 12, sick: 4, privilege: 6 },
-  { month: 'Jul', casual: 14, sick: 5, privilege: 8 },
-  { month: 'Aug', casual: 10, sick: 6, privilege: 12 },
-  { month: 'Sep', casual: 15, sick: 3, privilege: 9 },
-  { month: 'Oct', casual: 8, sick: 2, privilege: 5 },
-];
+export interface LeaveTrendDataPoint {
+  month: string;
+  casual: number;
+  sick: number;
+  privilege: number;
+}
 
-export const LeaveTrendChart: React.FC = () => {
+export const LeaveTrendChart: React.FC<{ data?: LeaveTrendDataPoint[] }> = ({ data = [] }) => {
+  if (!data || data.length === 0) {
+    return (
+      <div className="w-full h-64 flex flex-col items-center justify-center bg-stone-50/50 rounded-xl border border-dashed border-stone-200 p-6 text-center">
+        <CalendarDays className="h-8 w-8 text-stone-300 mb-2" aria-hidden="true" />
+        <p className="text-xs font-semibold text-stone-700">No Monthly Leave Trend Data</p>
+        <p className="text-[11px] text-stone-400 mt-1 max-w-xs">
+          Leave utilization patterns across Casual, Sick, and Privilege balances will render as
+          approvals are processed.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="w-full h-64">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={mockData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+        <LineChart data={data} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0ECE4" />
           <XAxis
             dataKey="month"
