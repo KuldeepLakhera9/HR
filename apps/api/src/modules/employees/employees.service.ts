@@ -1726,11 +1726,50 @@ export class EmployeesService {
       throw new ConflictException(`Work email '${dto.workEmail}' is already registered`);
     }
 
-    // 3. Verify Branch, Dept, Designation
+    // 3. Resolve and Verify Designation
+    let resolvedDesignationId = dto.designationId;
+
+    if (dto.customDesignation && dto.customDesignation.trim()) {
+      const customTitle = dto.customDesignation.trim();
+      const customCode =
+        customTitle
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, '_')
+          .replace(/_+/g, '_')
+          .slice(0, 20) || `DESIG_${Date.now().toString().slice(-6)}`;
+
+      let customDesig = await this.prisma.designation.findFirst({
+        where: {
+          organizationId: orgId,
+          OR: [{ title: { equals: customTitle, mode: 'insensitive' } }, { code: customCode }],
+        },
+      });
+
+      if (!customDesig) {
+        customDesig = await this.prisma.designation.create({
+          data: {
+            organizationId: orgId,
+            departmentId: dto.departmentId,
+            code: customCode,
+            title: customTitle,
+            name: customTitle,
+            level: 1,
+            description: `Custom designation: ${customTitle}`,
+          },
+        });
+      }
+      resolvedDesignationId = customDesig.id;
+    }
+
+    if (!resolvedDesignationId) {
+      throw new BadRequestException('Designation or custom designation title is required');
+    }
+
+    // Verify Branch, Dept, Designation
     const [branch, dept, desig] = await Promise.all([
       this.prisma.branch.findUnique({ where: { id: dto.branchId } }),
       this.prisma.department.findUnique({ where: { id: dto.departmentId } }),
-      this.prisma.designation.findUnique({ where: { id: dto.designationId } }),
+      this.prisma.designation.findUnique({ where: { id: resolvedDesignationId } }),
     ]);
 
     if (!branch || branch.organizationId !== orgId) {
@@ -1756,8 +1795,12 @@ export class EmployeesService {
 
       // Provision User login account if requested
       if (dto.createLoginAccount !== false) {
-        const initialPassword = dto.initialPassword || 'Welcome@123';
+        const initialPassword = dto.initialPassword || 'Password@123';
         const passwordHash = await argon2.hash(initialPassword);
+
+        // Determine target role from dto or default to EMPLOYEE
+        const targetRoleCode =
+          dto.role && Object.values(RoleCode).includes(dto.role) ? dto.role : RoleCode.EMPLOYEE;
 
         const existingUser = await tx.user.findFirst({
           where: { organizationId: orgId, email: dto.workEmail },
@@ -1769,7 +1812,7 @@ export class EmployeesService {
               organizationId: orgId,
               branchId: dto.branchId,
               departmentId: dto.departmentId,
-              designationId: dto.designationId,
+              designationId: resolvedDesignationId,
               employeeCode: dto.employeeCode,
               email: dto.workEmail,
               passwordHash,
@@ -1777,25 +1820,50 @@ export class EmployeesService {
               lastName: dto.lastName,
               phone: dto.phone || null,
               status: UserStatus.ACTIVE,
+              isActive: true,
             },
           });
           createdUserId = newUser.id;
 
-          // Default role assignment: EMPLOYEE
-          const empRole = await tx.role.findFirst({
-            where: { organizationId: orgId, code: RoleCode.EMPLOYEE },
+          // Assign specified system access role
+          const targetRole = await tx.role.findFirst({
+            where: { organizationId: orgId, code: targetRoleCode },
           });
-          if (empRole) {
+          if (targetRole) {
             await tx.userRole.create({
               data: {
                 userId: newUser.id,
-                roleId: empRole.id,
+                roleId: targetRole.id,
                 assignedBy: user.id,
               },
             });
           }
         } else {
           createdUserId = existingUser.id;
+
+          // Wire assigned role to existing user if not present
+          const targetRole = await tx.role.findFirst({
+            where: { organizationId: orgId, code: targetRoleCode },
+          });
+          if (targetRole) {
+            const hasRole = await tx.userRole.findUnique({
+              where: {
+                userId_roleId: {
+                  userId: existingUser.id,
+                  roleId: targetRole.id,
+                },
+              },
+            });
+            if (!hasRole) {
+              await tx.userRole.create({
+                data: {
+                  userId: existingUser.id,
+                  roleId: targetRole.id,
+                  assignedBy: user.id,
+                },
+              });
+            }
+          }
         }
       }
 
@@ -1824,7 +1892,7 @@ export class EmployeesService {
           employeeId: emp.id,
           branchId: dto.branchId,
           departmentId: dto.departmentId,
-          designationId: dto.designationId,
+          designationId: resolvedDesignationId,
           managerId: dto.managerId || null,
           employmentType: dto.employmentType || EmploymentType.FULL_TIME,
           employmentStatus: dto.employmentStatus || EmploymentStatus.PROBATION,

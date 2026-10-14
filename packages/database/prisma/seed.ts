@@ -7,23 +7,69 @@ import {
   WorkMode,
   Gender,
   EmployeeHistoryEventType,
-  ReviewCycleType,
-  ReviewCycleStatus,
-  GoalCategory,
-  GoalMeasurementType,
-  GoalStatus,
-  PerformanceReviewStatus,
-  CompetencyCategory,
-  DevelopmentPlanStatus,
-  FeedbackVisibility,
-  ParticipantStatus,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Seeding foundational Phase 3 HRMS data...');
+  console.log('Resetting and seeding clean HRMS data...');
+
+  // 0. Clean all existing operational, employee, and user data
+  console.log('Truncating existing operational, employee, and authentication data...');
+  await prisma.$executeRawUnsafe(`
+    TRUNCATE TABLE 
+      "sessions",
+      "password_reset_tokens",
+      "audit_logs",
+      "attendance_events",
+      "attendance_sessions",
+      "attendance_daily_summaries",
+      "attendance_correction_requests",
+      "attendance_correction_decisions",
+      "attendance_exceptions",
+      "official_visits",
+      "visit_approvals",
+      "visit_location_verifications",
+      "wfh_requests",
+      "wfh_approvals",
+      "leave_balance_transactions",
+      "leave_balance_accounts",
+      "leave_requests",
+      "leave_approvals",
+      "employee_leave_policy_assignments",
+      "profile_change_requests",
+      "employee_history",
+      "employee_documents_metadata",
+      "emergency_contacts",
+      "employee_contacts",
+      "employee_employments",
+      "performance_review_items",
+      "performance_reviews",
+      "performance_feedbacks",
+      "development_plans",
+      "review_cycle_participants",
+      "performance_goals",
+      "goal_progress_updates",
+      "goal_histories",
+      "performance_competencies",
+      "review_cycles",
+      "employee_payroll_snapshots",
+      "payroll_exceptions",
+      "payroll_items",
+      "payroll_periods",
+      "payroll_adjustments",
+      "payroll_approval_histories",
+      "payroll_runs",
+      "employee_compensation_items",
+      "employee_compensations",
+      "shift_assignments",
+      "employees",
+      "user_roles",
+      "users",
+      "branches"
+    CASCADE;
+  `);
 
   // 1. Create Organization
   const org = await prisma.organization.upsert({
@@ -59,94 +105,43 @@ async function main() {
     },
   });
 
-  // 2. Create Branches
-  const hqBranch = await prisma.branch.upsert({
+  // 2. Create Single Official Branch: ADT-AI Training Foundation
+  const adtBranch = await prisma.branch.upsert({
     where: {
       organizationId_code: {
         organizationId: org.id,
-        code: 'BLR-HQ',
+        code: 'ADT-AITF',
       },
     },
     update: {
-      latitude: 12.9716,
-      longitude: 77.5946,
-      geofenceLat: 12.9716,
-      geofenceLng: 77.5946,
-    },
-    create: {
-      organizationId: org.id,
-      code: 'BLR-HQ',
-      name: 'Bengaluru Headquarters',
-      addressLine1: 'Prestige Tech Cloud, Tower 3',
-      city: 'Bengaluru',
-      state: 'Karnataka',
-      country: 'India',
-      postalCode: '560001',
-      latitude: 12.9716,
-      longitude: 77.5946,
-      geofenceLat: 12.9716,
-      geofenceLng: 77.5946,
-      geofenceRadiusMeters: 150,
-    },
-  });
-
-  const mumBranch = await prisma.branch.upsert({
-    where: {
-      organizationId_code: {
-        organizationId: org.id,
-        code: 'MUM-01',
-      },
-    },
-    update: {
-      latitude: 19.076,
-      longitude: 72.8777,
-      geofenceLat: 19.076,
-      geofenceLng: 72.8777,
-    },
-    create: {
-      organizationId: org.id,
-      code: 'MUM-01',
-      name: 'Mumbai Tech Park',
-      addressLine1: 'Nesco IT Park, Western Express Hwy',
-      city: 'Mumbai',
+      name: 'ADT-AI Training Foundation',
+      addressLine1: 'Atal Incubation Centre, Agricultural Development Trust, Sharadanagar',
+      city: 'Baramati',
       state: 'Maharashtra',
       country: 'India',
-      postalCode: '400063',
-      latitude: 19.076,
-      longitude: 72.8777,
-      geofenceLat: 19.076,
-      geofenceLng: 72.8777,
-      geofenceRadiusMeters: 100,
-    },
-  });
-
-  const delBranch = await prisma.branch.upsert({
-    where: {
-      organizationId_code: {
-        organizationId: org.id,
-        code: 'DEL-01',
-      },
-    },
-    update: {
-      latitude: 28.4595,
-      longitude: 77.0266,
-      geofenceLat: 28.4595,
-      geofenceLng: 77.0266,
+      postalCode: '413115',
+      latitude: 18.1531,
+      longitude: 74.5786,
+      geofenceLat: 18.1531,
+      geofenceLng: 74.5786,
+      geofenceRadiusMeters: 150,
+      isActive: true,
     },
     create: {
       organizationId: org.id,
-      code: 'DEL-01',
-      name: 'Delhi NCR Hub',
-      addressLine1: 'Cyber City, DLF Phase 2',
-      city: 'Gurugram',
-      state: 'Haryana',
+      code: 'ADT-AITF',
+      name: 'ADT-AI Training Foundation',
+      addressLine1: 'Atal Incubation Centre, Agricultural Development Trust, Sharadanagar',
+      city: 'Baramati',
+      state: 'Maharashtra',
       country: 'India',
-      postalCode: '122002',
-      latitude: 28.4595,
-      longitude: 77.0266,
-      geofenceLat: 28.4595,
-      geofenceLng: 77.0266,
-      geofenceRadiusMeters: 120,
+      postalCode: '413115',
+      latitude: 18.1531,
+      longitude: 74.5786,
+      geofenceLat: 18.1531,
+      geofenceLng: 74.5786,
+      geofenceRadiusMeters: 150,
+      isActive: true,
     },
   });
 
@@ -295,134 +290,177 @@ async function main() {
     });
   }
 
-  // 6. Seed Granular Permissions (Phase 3 Expanded)
+  // 6. Seed Granular Permissions
   const permissionsToSeed = [
     // User Management
-    { code: 'USER_VIEW', name: 'View System Users', module: 'USER' },
-    { code: 'USER_CREATE', name: 'Create System Users', module: 'USER' },
-    { code: 'USER_UPDATE', name: 'Update System Users', module: 'USER' },
-    { code: 'USER_DELETE', name: 'Delete System Users', module: 'USER' },
+    { code: 'USER_VIEW', name: 'View Users', module: 'Users' },
+    { code: 'USER_CREATE', name: 'Create Users', module: 'Users' },
+    { code: 'USER_UPDATE', name: 'Update Users', module: 'Users' },
+    { code: 'USER_DELETE', name: 'Delete Users', module: 'Users' },
 
-    // Role & Permission Management
-    { code: 'ROLE_VIEW', name: 'View Roles & Permissions', module: 'ROLE' },
-    { code: 'ROLE_UPDATE', name: 'Modify Roles & Permissions', module: 'ROLE' },
+    // Role Management
+    { code: 'ROLE_VIEW', name: 'View Roles', module: 'Roles' },
+    { code: 'ROLE_UPDATE', name: 'Update Roles', module: 'Roles' },
+
+    // Employee Management
+    { code: 'EMPLOYEE_VIEW', name: 'View Employees', module: 'Employees' },
+    { code: 'EMPLOYEE_CREATE', name: 'Create Employee', module: 'Employees' },
+    { code: 'EMPLOYEE_UPDATE', name: 'Update Employee', module: 'Employees' },
+    { code: 'EMPLOYEE_DELETE', name: 'Delete Employee', module: 'Employees' },
+    { code: 'EMPLOYEE_IMPORT', name: 'Bulk Import Employees', module: 'Employees' },
+    { code: 'EMPLOYEE_EXPORT', name: 'Export Employees', module: 'Employees' },
+    { code: 'EMPLOYEE_HISTORY_VIEW', name: 'View Employee History', module: 'Employees' },
+    { code: 'EMPLOYEE_MANAGE', name: 'Manage Employees', module: 'Employees' },
+    { code: 'ORG_CHART_VIEW', name: 'View Org Chart', module: 'Employees' },
 
     // Organization Structure
-    { code: 'ORGANIZATION_VIEW', name: 'View Organization Structure', module: 'ORGANIZATION' },
-    { code: 'ORGANIZATION_UPDATE', name: 'Update Organization Details', module: 'ORGANIZATION' },
-    { code: 'BRANCH_VIEW', name: 'View Branches', module: 'BRANCH' },
-    { code: 'BRANCH_CREATE', name: 'Create Branch', module: 'BRANCH' },
-    { code: 'BRANCH_UPDATE', name: 'Update Branch', module: 'BRANCH' },
-    { code: 'BRANCH_DELETE', name: 'Deactivate Branch', module: 'BRANCH' },
-    { code: 'DEPARTMENT_VIEW', name: 'View Departments', module: 'DEPARTMENT' },
-    { code: 'DEPARTMENT_CREATE', name: 'Create Department', module: 'DEPARTMENT' },
-    { code: 'DEPARTMENT_UPDATE', name: 'Update Department', module: 'DEPARTMENT' },
-    { code: 'DEPARTMENT_DELETE', name: 'Deactivate Department', module: 'DEPARTMENT' },
-    { code: 'DESIGNATION_VIEW', name: 'View Designations', module: 'DESIGNATION' },
-    { code: 'DESIGNATION_CREATE', name: 'Create Designation', module: 'DESIGNATION' },
-    { code: 'DESIGNATION_UPDATE', name: 'Update Designation', module: 'DESIGNATION' },
-    { code: 'DESIGNATION_DELETE', name: 'Deactivate Designation', module: 'DESIGNATION' },
-
-    // Employee Master
-    { code: 'EMPLOYEE_VIEW', name: 'View Employee Directory', module: 'EMPLOYEE' },
-    { code: 'EMPLOYEE_CREATE', name: 'Create Employee Records', module: 'EMPLOYEE' },
-    { code: 'EMPLOYEE_UPDATE', name: 'Update Employee Records', module: 'EMPLOYEE' },
-    { code: 'EMPLOYEE_DELETE', name: 'Deactivate Employee Records', module: 'EMPLOYEE' },
-    { code: 'EMPLOYEE_IMPORT', name: 'Bulk Import Employees', module: 'EMPLOYEE' },
-    { code: 'EMPLOYEE_EXPORT', name: 'Export Employee Directory', module: 'EMPLOYEE' },
-    { code: 'EMPLOYEE_HISTORY_VIEW', name: 'View Employee History', module: 'EMPLOYEE' },
-    { code: 'ORG_CHART_VIEW', name: 'View Organization Chart', module: 'EMPLOYEE' },
+    { code: 'ORGANIZATION_VIEW', name: 'View Org Hierarchy', module: 'Organization' },
+    { code: 'ORGANIZATION_UPDATE', name: 'Update Org Hierarchy', module: 'Organization' },
+    { code: 'ORGANIZATION_MANAGE', name: 'Manage Org Structure', module: 'Organization' },
+    { code: 'BRANCH_VIEW', name: 'View Branches', module: 'Organization' },
+    { code: 'BRANCH_CREATE', name: 'Create Branch', module: 'Organization' },
+    { code: 'BRANCH_UPDATE', name: 'Update Branch', module: 'Organization' },
+    { code: 'BRANCH_DELETE', name: 'Delete Branch', module: 'Organization' },
+    { code: 'DEPARTMENT_VIEW', name: 'View Departments', module: 'Organization' },
+    { code: 'DEPARTMENT_CREATE', name: 'Create Department', module: 'Organization' },
+    { code: 'DEPARTMENT_UPDATE', name: 'Update Department', module: 'Organization' },
+    { code: 'DEPARTMENT_DELETE', name: 'Delete Department', module: 'Organization' },
+    { code: 'DESIGNATION_VIEW', name: 'View Designations', module: 'Organization' },
+    { code: 'DESIGNATION_CREATE', name: 'Create Designation', module: 'Organization' },
+    { code: 'DESIGNATION_UPDATE', name: 'Update Designation', module: 'Organization' },
+    { code: 'DESIGNATION_DELETE', name: 'Delete Designation', module: 'Organization' },
 
     // Attendance Management
-    { code: 'ATTENDANCE_VIEW', name: 'View Attendance Records', module: 'ATTENDANCE' },
-    { code: 'ATTENDANCE_MARK', name: 'Mark Attendance Punch', module: 'ATTENDANCE' },
-    { code: 'ATTENDANCE_UPDATE', name: 'Modify Attendance Logs', module: 'ATTENDANCE' },
-    { code: 'ATTENDANCE_APPROVE', name: 'Approve Attendance Adjustments', module: 'ATTENDANCE' },
+    { code: 'ATTENDANCE_VIEW', name: 'View Attendance Records', module: 'Attendance' },
+    { code: 'ATTENDANCE_MARK', name: 'Mark Daily Attendance', module: 'Attendance' },
+    {
+      code: 'ATTENDANCE_UPDATE',
+      name: 'Update Attendance & Geofence Perimeters',
+      module: 'Attendance',
+    },
+    { code: 'ATTENDANCE_CORRECT', name: 'Request Attendance Correction', module: 'Attendance' },
+    { code: 'ATTENDANCE_APPROVE', name: 'Approve Attendance Corrections', module: 'Attendance' },
+    { code: 'ATTENDANCE_POLICY_MANAGE', name: 'Manage Shift Policies', module: 'Attendance' },
 
     // Leave Management
-    { code: 'LEAVE_VIEW', name: 'View Leave Requests & Balances', module: 'LEAVE' },
-    { code: 'LEAVE_APPLY', name: 'Apply For Leave', module: 'LEAVE' },
-    { code: 'LEAVE_APPROVE', name: 'Approve Leave Requests', module: 'LEAVE' },
-    { code: 'LEAVE_REJECT', name: 'Reject Leave Requests', module: 'LEAVE' },
+    { code: 'LEAVE_VIEW', name: 'View Leave Records', module: 'Leave' },
+    { code: 'LEAVE_APPLY', name: 'Apply For Leave', module: 'Leave' },
+    { code: 'LEAVE_APPROVE', name: 'Approve Leave Applications', module: 'Leave' },
+    { code: 'LEAVE_REJECT', name: 'Reject Leave Applications', module: 'Leave' },
+    { code: 'LEAVE_POLICY_MANAGE', name: 'Configure Leave Types & Rules', module: 'Leave' },
 
-    // Official Visits
-    { code: 'VISIT_VIEW', name: 'View Official Visits', module: 'VISIT' },
-    { code: 'VISIT_APPLY', name: 'Apply For Official Visit', module: 'VISIT' },
-    { code: 'VISIT_APPROVE', name: 'Approve Official Visits', module: 'VISIT' },
+    // Performance Management
+    { code: 'PERFORMANCE_VIEW', name: 'View Performance Records', module: 'Performance' },
+    { code: 'GOAL_MANAGE', name: 'Manage Performance Goals', module: 'Performance' },
+    { code: 'REVIEW_CYCLE_MANAGE', name: 'Manage Appraisal Cycles', module: 'Performance' },
+    { code: 'APPRAISAL_EXECUTE', name: 'Execute Appraisals', module: 'Performance' },
 
-    // Documents
-    { code: 'DOCUMENT_VIEW', name: 'View Documents', module: 'DOCUMENT' },
-    { code: 'DOCUMENT_UPLOAD', name: 'Upload Documents', module: 'DOCUMENT' },
-    { code: 'DOCUMENT_DELETE', name: 'Delete Documents', module: 'DOCUMENT' },
+    // Payroll Management
+    { code: 'PAYROLL_VIEW', name: 'View Payroll Records', module: 'Payroll' },
+    { code: 'PAYROLL_MANAGE', name: 'Manage Payroll Structures & Settings', module: 'Payroll' },
+    { code: 'PAYROLL_COMPENSATION', name: 'Manage Employee Compensations', module: 'Payroll' },
+    { code: 'PAYROLL_EXECUTE', name: 'Execute Monthly Payroll Runs', module: 'Payroll' },
+    { code: 'PAYROLL_APPROVE', name: 'Approve Monthly Payroll', module: 'Payroll' },
+    { code: 'PAYROLL_PUBLISH', name: 'Publish Payslips & Disburse', module: 'Payroll' },
+    { code: 'PAYSLIP_VIEW_SELF', name: 'View Personal Payslips', module: 'Payroll' },
+    { code: 'PAYROLL_EXPORT', name: 'Export Bank Advice & Summaries', module: 'Payroll' },
 
-    // Reports & Analytics
-    { code: 'REPORT_VIEW', name: 'View Analytics & MIS Reports', module: 'REPORT' },
-    { code: 'REPORT_EXPORT', name: 'Export MIS Reports', module: 'REPORT' },
+    // Visits & WFH
+    { code: 'VISIT_VIEW', name: 'View Official Visits', module: 'Visits' },
+    { code: 'VISIT_APPLY', name: 'Apply Official Visit', module: 'Visits' },
+    { code: 'VISIT_APPROVE', name: 'Approve Official Visit', module: 'Visits' },
+    { code: 'WFH_VIEW', name: 'View WFH Requests', module: 'WFH' },
+    { code: 'WFH_APPLY', name: 'Apply WFH Request', module: 'WFH' },
+    { code: 'WFH_APPROVE', name: 'Approve WFH Request', module: 'WFH' },
 
-    // Audit Log
-    { code: 'AUDIT_VIEW', name: 'View Audit Trail', module: 'AUDIT' },
+    // Reports & Documents
+    { code: 'DOCUMENT_VIEW', name: 'View Employee Documents', module: 'Documents' },
+    { code: 'DOCUMENT_MANAGE', name: 'Upload & Verify Documents', module: 'Documents' },
+    { code: 'REPORT_VIEW', name: 'View Standard Reports', module: 'Reports' },
+    { code: 'REPORT_EXPORT', name: 'Export Operational Reports', module: 'Reports' },
+    { code: 'AUDIT_VIEW', name: 'View Security Audit Logs', module: 'Audit' },
 
-    // System Settings
-    { code: 'SETTING_VIEW', name: 'View System Settings', module: 'SETTING' },
-    { code: 'SETTING_UPDATE', name: 'Update System Settings', module: 'SETTING' },
-
-    // Payroll & Compensation Management (Phase 11)
-    { code: 'PAYROLL_VIEW', name: 'View Payroll & Salary Structures', module: 'PAYROLL' },
-    { code: 'PAYROLL_MANAGE', name: 'Manage Salary Components & Structures', module: 'PAYROLL' },
-    {
-      code: 'PAYROLL_COMPENSATION',
-      name: 'Manage Employee Compensation Master',
-      module: 'PAYROLL',
-    },
-    { code: 'PAYROLL_PROCESS', name: 'Execute Payroll Calculation & Review', module: 'PAYROLL' },
-    { code: 'PAYROLL_APPROVE', name: 'Approve Calculated Payroll Runs', module: 'PAYROLL' },
-    { code: 'PAYROLL_LOCK', name: 'Lock or Finalize Payroll Runs', module: 'PAYROLL' },
-    { code: 'PAYROLL_PUBLISH', name: 'Publish Payslips to Staff', module: 'PAYROLL' },
-    { code: 'PAYSLIP_VIEW_SELF', name: 'View Own Payslips', module: 'PAYROLL' },
-    { code: 'PAYROLL_EXPORT', name: 'Export Payroll Registers & Bank Files', module: 'PAYROLL' },
+    // System Settings & Profile
+    { code: 'SETTING_VIEW', name: 'View System Settings', module: 'System' },
+    { code: 'SETTING_UPDATE', name: 'Update System Settings', module: 'System' },
+    { code: 'SYSTEM_SETTINGS', name: 'Manage System Settings', module: 'System' },
+    { code: 'PROFILE_CHANGE_REVIEW', name: 'Review Profile Change Requests', module: 'Profile' },
   ];
 
   const permissionRecords: Record<string, string> = {};
   for (const perm of permissionsToSeed) {
-    const record = await prisma.permission.upsert({
+    const p = await prisma.permission.upsert({
       where: { code: perm.code },
       update: { name: perm.name, module: perm.module },
       create: perm,
     });
-    permissionRecords[perm.code] = record.id;
+    permissionRecords[perm.code] = p.id;
   }
 
-  // 7. Map Permissions to the Exactly Four Application Roles
-  const allPermissionCodes = permissionsToSeed.map((p) => p.code);
-
+  // 7. Role-Permission Mappings
   const rolePermissionsMap: Record<RoleCode, string[]> = {
-    // ADMIN receives full access to all operations
-    [RoleCode.ADMIN]: allPermissionCodes,
+    // ADMIN receives ALL permissions
+    [RoleCode.ADMIN]: permissionsToSeed.map((p) => p.code),
 
-    // HR receives complete employee and organization operational management
+    // HR receives workforce, leave, payroll, organization and settings capabilities
     [RoleCode.HR]: [
-      'USER_VIEW',
-      'ROLE_VIEW',
       'ORGANIZATION_VIEW',
-      'ORGANIZATION_UPDATE',
       'BRANCH_VIEW',
-      'BRANCH_CREATE',
-      'BRANCH_UPDATE',
-      'BRANCH_DELETE',
       'DEPARTMENT_VIEW',
-      'DEPARTMENT_CREATE',
-      'DEPARTMENT_UPDATE',
-      'DEPARTMENT_DELETE',
       'DESIGNATION_VIEW',
-      'DESIGNATION_CREATE',
-      'DESIGNATION_UPDATE',
-      'DESIGNATION_DELETE',
       'EMPLOYEE_VIEW',
       'EMPLOYEE_CREATE',
       'EMPLOYEE_UPDATE',
       'EMPLOYEE_DELETE',
       'EMPLOYEE_IMPORT',
       'EMPLOYEE_EXPORT',
+      'EMPLOYEE_HISTORY_VIEW',
+      'EMPLOYEE_MANAGE',
+      'ORG_CHART_VIEW',
+      'ATTENDANCE_VIEW',
+      'ATTENDANCE_MARK',
+      'ATTENDANCE_UPDATE',
+      'ATTENDANCE_CORRECT',
+      'ATTENDANCE_APPROVE',
+      'ATTENDANCE_POLICY_MANAGE',
+      'LEAVE_VIEW',
+      'LEAVE_APPLY',
+      'LEAVE_APPROVE',
+      'LEAVE_REJECT',
+      'LEAVE_POLICY_MANAGE',
+      'VISIT_VIEW',
+      'VISIT_APPLY',
+      'VISIT_APPROVE',
+      'WFH_VIEW',
+      'WFH_APPLY',
+      'WFH_APPROVE',
+      'DOCUMENT_VIEW',
+      'DOCUMENT_MANAGE',
+      'REPORT_VIEW',
+      'REPORT_EXPORT',
+      'PROFILE_CHANGE_REVIEW',
+      'PAYROLL_VIEW',
+      'PAYROLL_MANAGE',
+      'PAYROLL_COMPENSATION',
+      'PAYROLL_EXECUTE',
+      'PAYROLL_APPROVE',
+      'PAYROLL_PUBLISH',
+      'PAYSLIP_VIEW_SELF',
+      'PAYROLL_EXPORT',
+      'PERFORMANCE_VIEW',
+      'GOAL_MANAGE',
+      'REVIEW_CYCLE_MANAGE',
+      'APPRAISAL_EXECUTE',
+      'SETTING_VIEW',
+    ],
+
+    // MANAGER receives team visibility, approval rights, org view and performance
+    [RoleCode.MANAGER]: [
+      'ORGANIZATION_VIEW',
+      'BRANCH_VIEW',
+      'DEPARTMENT_VIEW',
+      'DESIGNATION_VIEW',
+      'EMPLOYEE_VIEW',
       'EMPLOYEE_HISTORY_VIEW',
       'ORG_CHART_VIEW',
       'ATTENDANCE_VIEW',
@@ -436,52 +474,33 @@ async function main() {
       'VISIT_VIEW',
       'VISIT_APPLY',
       'VISIT_APPROVE',
-      'DOCUMENT_VIEW',
-      'DOCUMENT_UPLOAD',
-      'DOCUMENT_DELETE',
-      'REPORT_VIEW',
-      'REPORT_EXPORT',
-      'AUDIT_VIEW',
-      'SETTING_VIEW',
-      'PAYROLL_VIEW',
-      'PAYROLL_MANAGE',
-      'PAYROLL_COMPENSATION',
-      'PAYROLL_PROCESS',
-      'PAYROLL_PUBLISH',
-      'PAYSLIP_VIEW_SELF',
-      'PAYROLL_EXPORT',
-    ],
-
-    // MANAGER receives team visibility, approval rights, and org chart
-    [RoleCode.MANAGER]: [
-      'EMPLOYEE_VIEW',
-      'EMPLOYEE_HISTORY_VIEW',
-      'ORG_CHART_VIEW',
-      'ATTENDANCE_VIEW',
-      'ATTENDANCE_MARK',
-      'ATTENDANCE_APPROVE',
-      'LEAVE_VIEW',
-      'LEAVE_APPLY',
-      'LEAVE_APPROVE',
-      'LEAVE_REJECT',
-      'VISIT_VIEW',
-      'VISIT_APPLY',
-      'VISIT_APPROVE',
+      'WFH_VIEW',
+      'WFH_APPLY',
+      'WFH_APPROVE',
       'DOCUMENT_VIEW',
       'REPORT_VIEW',
       'PAYSLIP_VIEW_SELF',
+      'PERFORMANCE_VIEW',
+      'GOAL_MANAGE',
     ],
 
     // EMPLOYEE receives self-service and org chart visibility
     [RoleCode.EMPLOYEE]: [
+      'ORGANIZATION_VIEW',
+      'BRANCH_VIEW',
+      'DEPARTMENT_VIEW',
+      'DESIGNATION_VIEW',
       'EMPLOYEE_VIEW',
       'ORG_CHART_VIEW',
       'ATTENDANCE_VIEW',
       'ATTENDANCE_MARK',
+      'ATTENDANCE_CORRECT',
       'LEAVE_VIEW',
       'LEAVE_APPLY',
       'VISIT_VIEW',
       'VISIT_APPLY',
+      'WFH_VIEW',
+      'WFH_APPLY',
       'DOCUMENT_VIEW',
       'PAYSLIP_VIEW_SELF',
     ],
@@ -517,17 +536,17 @@ async function main() {
     }
   }
 
-  // 8. Seed Employees & Users with Normalized Hierarchy (Director -> Manager -> Employees)
+  // 8. Exactly 3 Foundational Accounts: 1 Admin, 1 HR, 1 Manager
   const seedPeople = [
     {
       code: 'EMP001',
       email: 'admin@peopleos.local',
-      firstName: 'Vikram',
-      lastName: 'Aditya',
+      firstName: 'Admin',
+      lastName: 'User',
       role: RoleCode.ADMIN,
       deptCode: 'EXEC',
       desigCode: 'CTO',
-      branchCode: 'BLR-HQ',
+      branchCode: 'ADT-AITF',
       managerCode: null,
       gender: Gender.MALE,
       status: EmploymentStatus.ACTIVE,
@@ -535,19 +554,19 @@ async function main() {
       employmentType: EmploymentType.FULL_TIME,
       joiningDate: new Date('2022-01-10'),
       phone: '+91 98765 00001',
-      dob: new Date('1984-06-15'),
-      city: 'Bengaluru',
-      state: 'Karnataka',
+      dob: new Date('1985-01-01'),
+      city: 'Baramati',
+      state: 'Maharashtra',
     },
     {
       code: 'EMP002',
       email: 'hr@peopleos.local',
-      firstName: 'Ananya',
-      lastName: 'Sharma',
+      firstName: 'HR',
+      lastName: 'Manager',
       role: RoleCode.HR,
       deptCode: 'HR',
       desigCode: 'HR-LEAD',
-      branchCode: 'BLR-HQ',
+      branchCode: 'ADT-AITF',
       managerCode: 'EMP001',
       gender: Gender.FEMALE,
       status: EmploymentStatus.ACTIVE,
@@ -555,19 +574,19 @@ async function main() {
       employmentType: EmploymentType.FULL_TIME,
       joiningDate: new Date('2022-03-01'),
       phone: '+91 98765 00002',
-      dob: new Date('1990-09-22'),
-      city: 'Bengaluru',
-      state: 'Karnataka',
+      dob: new Date('1990-05-15'),
+      city: 'Baramati',
+      state: 'Maharashtra',
     },
     {
       code: 'EMP003',
       email: 'manager@peopleos.local',
-      firstName: 'Rajesh',
-      lastName: 'Kumar',
+      firstName: 'Team',
+      lastName: 'Manager',
       role: RoleCode.MANAGER,
       deptCode: 'ENG',
       desigCode: 'EM',
-      branchCode: 'BLR-HQ',
+      branchCode: 'ADT-AITF',
       managerCode: 'EMP001',
       gender: Gender.MALE,
       status: EmploymentStatus.ACTIVE,
@@ -575,120 +594,18 @@ async function main() {
       employmentType: EmploymentType.FULL_TIME,
       joiningDate: new Date('2022-04-15'),
       phone: '+91 98765 00003',
-      dob: new Date('1987-11-05'),
-      city: 'Bengaluru',
-      state: 'Karnataka',
-    },
-    {
-      code: 'EMP004',
-      email: 'employee@peopleos.local',
-      firstName: 'Priya',
-      lastName: 'Nair',
-      role: RoleCode.EMPLOYEE,
-      deptCode: 'ENG',
-      desigCode: 'SR-SWE',
-      branchCode: 'BLR-HQ',
-      managerCode: 'EMP003',
-      gender: Gender.FEMALE,
-      status: EmploymentStatus.ACTIVE,
-      workMode: WorkMode.HYBRID,
-      employmentType: EmploymentType.FULL_TIME,
-      joiningDate: new Date('2023-01-10'),
-      phone: '+91 98765 00004',
-      dob: new Date('1994-03-18'),
-      city: 'Bengaluru',
-      state: 'Karnataka',
-    },
-    {
-      code: 'EMP005',
-      email: 'amitabh.roy@peopleos.local',
-      firstName: 'Amitabh',
-      lastName: 'Roy',
-      role: RoleCode.EMPLOYEE,
-      deptCode: 'ENG',
-      desigCode: 'SWE',
-      branchCode: 'MUM-01',
-      managerCode: 'EMP003',
-      gender: Gender.MALE,
-      status: EmploymentStatus.ACTIVE,
-      workMode: WorkMode.REMOTE,
-      employmentType: EmploymentType.FULL_TIME,
-      joiningDate: new Date('2023-05-15'),
-      phone: '+91 98765 00005',
-      dob: new Date('1996-08-30'),
-      city: 'Mumbai',
+      dob: new Date('1988-08-20'),
+      city: 'Baramati',
       state: 'Maharashtra',
-    },
-    {
-      code: 'EMP006',
-      email: 'neha.gupta@peopleos.local',
-      firstName: 'Neha',
-      lastName: 'Gupta',
-      role: RoleCode.EMPLOYEE,
-      deptCode: 'ENG',
-      desigCode: 'SWE',
-      branchCode: 'BLR-HQ',
-      managerCode: 'EMP003',
-      gender: Gender.FEMALE,
-      status: EmploymentStatus.PROBATION,
-      workMode: WorkMode.OFFICE,
-      employmentType: EmploymentType.FULL_TIME,
-      joiningDate: new Date('2024-01-15'),
-      phone: '+91 98765 00006',
-      dob: new Date('1997-12-10'),
-      city: 'Bengaluru',
-      state: 'Karnataka',
-    },
-    {
-      code: 'EMP007',
-      email: 'karan.m@peopleos.local',
-      firstName: 'Karan',
-      lastName: 'Mehra',
-      role: RoleCode.MANAGER,
-      deptCode: 'OPS',
-      desigCode: 'OPS-LEAD',
-      branchCode: 'DEL-01',
-      managerCode: 'EMP001',
-      gender: Gender.MALE,
-      status: EmploymentStatus.ACTIVE,
-      workMode: WorkMode.OFFICE,
-      employmentType: EmploymentType.FULL_TIME,
-      joiningDate: new Date('2022-08-01'),
-      phone: '+91 98765 00007',
-      dob: new Date('1989-02-14'),
-      city: 'Gurugram',
-      state: 'Haryana',
-    },
-    {
-      code: 'EMP008',
-      email: 'sneha.patel@peopleos.local',
-      firstName: 'Sneha',
-      lastName: 'Patel',
-      role: RoleCode.EMPLOYEE,
-      deptCode: 'OPS',
-      desigCode: 'OPS-LEAD',
-      branchCode: 'DEL-01',
-      managerCode: 'EMP007',
-      gender: Gender.FEMALE,
-      status: EmploymentStatus.ACTIVE,
-      workMode: WorkMode.OFFICE,
-      employmentType: EmploymentType.FULL_TIME,
-      joiningDate: new Date('2023-09-01'),
-      phone: '+91 98765 00008',
-      dob: new Date('1995-07-04'),
-      city: 'Gurugram',
-      state: 'Haryana',
     },
   ];
 
-  // Hash: Password@123 (matching documentation and login page quick-fill)
+  // Argon2id hash for Password@123
   const passwordHash = await argon2.hash('Password@123');
 
   const employeeRecordMap: Record<string, string> = {};
   const branchMap: Record<string, string> = {
-    'BLR-HQ': hqBranch.id,
-    'MUM-01': mumBranch.id,
-    'DEL-01': delBranch.id,
+    'ADT-AITF': adtBranch.id,
   };
 
   // Step 8a: Create Users and Base Employees
@@ -698,22 +615,8 @@ async function main() {
     const desigId = desigMap[person.desigCode];
 
     // 1. User Account
-    const user = await prisma.user.upsert({
-      where: {
-        organizationId_email: {
-          organizationId: org.id,
-          email: person.email,
-        },
-      },
-      update: {
-        passwordHash,
-        firstName: person.firstName,
-        lastName: person.lastName,
-        branchId,
-        departmentId: deptId,
-        designationId: desigId,
-      },
-      create: {
+    const user = await prisma.user.create({
+      data: {
         organizationId: org.id,
         branchId,
         departmentId: deptId,
@@ -730,20 +633,13 @@ async function main() {
       },
     });
 
-    // 2. Role assignment
+    // 2. Strict single role assignment (Admin has ADMIN only, HR has HR only, Manager has MANAGER only)
     const role = await prisma.role.findFirst({
       where: { organizationId: org.id, code: person.role },
     });
     if (role) {
-      await prisma.userRole.upsert({
-        where: {
-          userId_roleId: {
-            userId: user.id,
-            roleId: role.id,
-          },
-        },
-        update: {},
-        create: {
+      await prisma.userRole.create({
+        data: {
           userId: user.id,
           roleId: role.id,
           assignedBy: 'SYSTEM_SEED',
@@ -752,23 +648,8 @@ async function main() {
     }
 
     // 3. Employee Normalized Record
-    const employee = await prisma.employee.upsert({
-      where: {
-        organizationId_employeeCode: {
-          organizationId: org.id,
-          employeeCode: person.code,
-        },
-      },
-      update: {
-        userId: user.id,
-        firstName: person.firstName,
-        lastName: person.lastName,
-        displayName: `${person.firstName} ${person.lastName}`,
-        gender: person.gender,
-        status: person.status,
-        joiningDate: person.joiningDate,
-      },
-      create: {
+    const employee = await prisma.employee.create({
+      data: {
         userId: user.id,
         organizationId: org.id,
         employeeCode: person.code,
@@ -786,15 +667,8 @@ async function main() {
     employeeRecordMap[person.code] = employee.id;
 
     // 4. Employee Contact
-    await prisma.employeeContact.upsert({
-      where: { employeeId: employee.id },
-      update: {
-        workEmail: person.email,
-        phone: person.phone,
-        city: person.city,
-        state: person.state,
-      },
-      create: {
+    await prisma.employeeContact.create({
+      data: {
         employeeId: employee.id,
         workEmail: person.email,
         personalEmail: `${person.firstName.toLowerCase()}.${person.lastName.toLowerCase()}@personal.example.com`,
@@ -807,41 +681,31 @@ async function main() {
     });
 
     // 5. Emergency Contact
-    const existingEmergency = await prisma.emergencyContact.findFirst({
-      where: { employeeId: employee.id, isPrimary: true },
+    await prisma.emergencyContact.create({
+      data: {
+        employeeId: employee.id,
+        name: `${person.firstName} Family Contact`,
+        relationship: 'Spouse / Parent',
+        phone: '+91 98765 99999',
+        isPrimary: true,
+        address: `${person.city}, ${person.state}`,
+      },
     });
-    if (!existingEmergency) {
-      await prisma.emergencyContact.create({
-        data: {
-          employeeId: employee.id,
-          name: `${person.firstName} Family Contact`,
-          relationship: 'Spouse / Parent',
-          phone: '+91 98765 99999',
-          isPrimary: true,
-          address: `${person.city}, ${person.state}`,
-        },
-      });
-    }
 
     // 6. Documents Metadata
-    const existingDoc = await prisma.employeeDocumentMetadata.findFirst({
-      where: { employeeId: employee.id, documentType: 'GOVT_ID' },
+    await prisma.employeeDocumentMetadata.create({
+      data: {
+        employeeId: employee.id,
+        documentType: 'GOVT_ID',
+        documentName: 'Aadhaar / National ID Card',
+        documentNumber: `XXXX-XXXX-${person.code.slice(-4)}`,
+        isVerified: true,
+        verifiedAt: new Date(),
+      },
     });
-    if (!existingDoc) {
-      await prisma.employeeDocumentMetadata.create({
-        data: {
-          employeeId: employee.id,
-          documentType: 'GOVT_ID',
-          documentName: 'Aadhaar / National ID Card',
-          documentNumber: `XXXX-XXXX-${person.code.slice(-4)}`,
-          isVerified: true,
-          verifiedAt: new Date(),
-        },
-      });
-    }
   }
 
-  // Step 8b: Wire Manager Relationships & Employments in Second Pass
+  // Step 8b: Wire Manager Relationships & Employments
   for (const person of seedPeople) {
     const employeeId = employeeRecordMap[person.code];
     const branchId = branchMap[person.branchCode];
@@ -849,18 +713,16 @@ async function main() {
     const desigId = desigMap[person.desigCode];
     const managerId = person.managerCode ? employeeRecordMap[person.managerCode] : null;
 
-    await prisma.employeeEmployment.upsert({
-      where: { employeeId },
-      update: {
-        branchId,
-        departmentId: deptId,
-        designationId: desigId,
-        managerId,
-        employmentType: person.employmentType,
-        employmentStatus: person.status,
-        workMode: person.workMode,
-      },
-      create: {
+    // Update managerId on Employee table
+    if (managerId) {
+      await prisma.employee.update({
+        where: { id: employeeId },
+        data: { managerId },
+      });
+    }
+
+    await prisma.employeeEmployment.create({
+      data: {
         employeeId,
         branchId,
         departmentId: deptId,
@@ -875,39 +737,40 @@ async function main() {
     });
 
     // Initial Join History Record
-    const existingHistory = await prisma.employeeHistory.findFirst({
-      where: { employeeId, eventType: EmployeeHistoryEventType.JOINED },
-    });
-    if (!existingHistory) {
-      await prisma.employeeHistory.create({
-        data: {
-          employeeId,
-          eventType: EmployeeHistoryEventType.JOINED,
-          previousValue: null,
-          newValue: person.status,
-          metadata: {
-            department: person.deptCode,
-            designation: person.desigCode,
-            branch: person.branchCode,
-          },
+    await prisma.employeeHistory.create({
+      data: {
+        employeeId,
+        eventType: EmployeeHistoryEventType.JOINED,
+        previousValue: null,
+        newValue: person.status,
+        metadata: {
+          department: person.deptCode,
+          designation: person.desigCode,
+          branch: person.branchCode,
         },
-      });
-    }
+      },
+    });
   }
 
   // Set Department Heads
-  await prisma.department.update({
-    where: { id: deptMap['ENG'] },
-    data: { departmentHeadId: employeeRecordMap['EMP003'] }, // Rajesh Kumar
-  });
-  await prisma.department.update({
-    where: { id: deptMap['HR'] },
-    data: { departmentHeadId: employeeRecordMap['EMP002'] }, // Ananya Sharma
-  });
-  await prisma.department.update({
-    where: { id: deptMap['OPS'] },
-    data: { departmentHeadId: employeeRecordMap['EMP007'] }, // Karan Mehra
-  });
+  if (deptMap['ENG'] && employeeRecordMap['EMP003']) {
+    await prisma.department.update({
+      where: { id: deptMap['ENG'] },
+      data: { departmentHeadId: employeeRecordMap['EMP003'] }, // Team Manager
+    });
+  }
+  if (deptMap['HR'] && employeeRecordMap['EMP002']) {
+    await prisma.department.update({
+      where: { id: deptMap['HR'] },
+      data: { departmentHeadId: employeeRecordMap['EMP002'] }, // HR Manager
+    });
+  }
+  if (deptMap['EXEC'] && employeeRecordMap['EMP001']) {
+    await prisma.department.update({
+      where: { id: deptMap['EXEC'] },
+      data: { departmentHeadId: employeeRecordMap['EMP001'] }, // Admin User
+    });
+  }
 
   // 9. System Settings
   await prisma.systemSetting.upsert({
@@ -927,7 +790,7 @@ async function main() {
     },
   });
 
-  // 10. Default Primary Office Location (Development & Staging Test Geofence)
+  // 10. Default Primary Office Location
   await prisma.officeLocation.upsert({
     where: {
       organizationId_name: {
@@ -957,17 +820,15 @@ async function main() {
     },
   });
 
-  // 11. Phase 6: Development-Only Sample Leave Management Fixtures
-  // [DEV-ONLY / SAMPLE] Configures sample leave types, policies, holidays, and opening balances
+  // 11. Standard Leave Types & Policies
   const clType = await prisma.leaveType.upsert({
     where: { organizationId_code: { organizationId: org.id, code: 'CL' } },
-    update: { name: 'Casual Leave (Sample)', color: '#d97706', allowHalfDay: true },
+    update: { name: 'Casual Leave', color: '#d97706', allowHalfDay: true },
     create: {
       organizationId: org.id,
       code: 'CL',
-      name: 'Casual Leave (Sample)',
-      description:
-        'Sample casual leave policy for personal appointments and short unplanned absences',
+      name: 'Casual Leave',
+      description: 'Casual leave for personal appointments and short unplanned absences',
       color: '#d97706',
       isPaid: true,
       allowHalfDay: true,
@@ -979,12 +840,12 @@ async function main() {
 
   const slType = await prisma.leaveType.upsert({
     where: { organizationId_code: { organizationId: org.id, code: 'SL' } },
-    update: { name: 'Sick Leave (Sample)', color: '#dc2626', allowHalfDay: true },
+    update: { name: 'Sick Leave', color: '#dc2626', allowHalfDay: true },
     create: {
       organizationId: org.id,
       code: 'SL',
-      name: 'Sick Leave (Sample)',
-      description: 'Sample sick leave policy for illness, recovery, and medical care',
+      name: 'Sick Leave',
+      description: 'Sick leave for medical care, recovery, and illness',
       color: '#dc2626',
       isPaid: true,
       allowHalfDay: true,
@@ -996,12 +857,12 @@ async function main() {
 
   const plType = await prisma.leaveType.upsert({
     where: { organizationId_code: { organizationId: org.id, code: 'PL' } },
-    update: { name: 'Privilege / Earned Leave (Sample)', color: '#2563eb', allowHalfDay: false },
+    update: { name: 'Privilege / Earned Leave', color: '#2563eb', allowHalfDay: false },
     create: {
       organizationId: org.id,
       code: 'PL',
-      name: 'Privilege / Earned Leave (Sample)',
-      description: 'Sample earned leave policy for planned vacations and extended time off',
+      name: 'Privilege / Earned Leave',
+      description: 'Earned leave policy for planned vacations and time off',
       color: '#2563eb',
       isPaid: true,
       allowHalfDay: false,
@@ -1012,13 +873,13 @@ async function main() {
   });
 
   const clPolicy = await prisma.leavePolicy.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'POL-CL-DEV' } },
+    where: { organizationId_code: { organizationId: org.id, code: 'POL-CL' } },
     update: { annualEntitlement: 12.0 },
     create: {
       organizationId: org.id,
       leaveTypeId: clType.id,
-      code: 'POL-CL-DEV',
-      name: 'Standard Casual Leave (12 Days Sample)',
+      code: 'POL-CL',
+      name: 'Standard Casual Leave (12 Days)',
       description: '12 days annual entitlement granted at start of leave year',
       annualEntitlement: 12.0,
       accrualFrequency: 'ANNUAL',
@@ -1033,13 +894,13 @@ async function main() {
   });
 
   const slPolicy = await prisma.leavePolicy.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'POL-SL-DEV' } },
+    where: { organizationId_code: { organizationId: org.id, code: 'POL-SL' } },
     update: { annualEntitlement: 10.0 },
     create: {
       organizationId: org.id,
       leaveTypeId: slType.id,
-      code: 'POL-SL-DEV',
-      name: 'Standard Sick Leave (10 Days Sample)',
+      code: 'POL-SL',
+      name: 'Standard Sick Leave (10 Days)',
       description: '10 days annual entitlement for medical recovery',
       annualEntitlement: 10.0,
       accrualFrequency: 'ANNUAL',
@@ -1054,13 +915,13 @@ async function main() {
   });
 
   const plPolicy = await prisma.leavePolicy.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'POL-PL-DEV' } },
+    where: { organizationId_code: { organizationId: org.id, code: 'POL-PL' } },
     update: { annualEntitlement: 15.0 },
     create: {
       organizationId: org.id,
       leaveTypeId: plType.id,
-      code: 'POL-PL-DEV',
-      name: 'Standard Earned Leave (15 Days Sample)',
+      code: 'POL-PL',
+      name: 'Standard Earned Leave (15 Days)',
       description: '15 days annual entitlement with 3-day advance notice',
       annualEntitlement: 15.0,
       accrualFrequency: 'ANNUAL',
@@ -1074,59 +935,14 @@ async function main() {
     },
   });
 
-  // Sample Gazetted Holidays for 2026
-  const sampleHolidays = [
-    { name: 'Republic Day', date: '2026-01-26' },
-    { name: 'Independence Day', date: '2026-08-15' },
-    { name: 'Gandhi Jayanti', date: '2026-10-02' },
-    { name: 'Diwali (Deepavali)', date: '2026-10-20' },
-  ];
-
-  for (const h of sampleHolidays) {
-    const d = new Date(`${h.date}T00:00:00.000Z`);
-    const existing = await prisma.holiday.findFirst({
-      where: {
-        organizationId: org.id,
-        branchId: null,
-        date: d,
-      },
-    });
-
-    if (existing) {
-      await prisma.holiday.update({
-        where: { id: existing.id },
-        data: { name: h.name },
-      });
-    } else {
-      await prisma.holiday.create({
-        data: {
-          organizationId: org.id,
-          branchId: null,
-          name: h.name,
-          date: d,
-          year: 2026,
-          isOptional: false,
-        },
-      });
-    }
-  }
-
-  // Assign policies to all active seed employees and initialize balance ledger
+  // Assign policies to all 3 foundational employees and initialize opening ledger
   const allEmployees = await prisma.employee.findMany({ where: { organizationId: org.id } });
   const samplePolicies = [clPolicy, slPolicy, plPolicy];
 
   for (const emp of allEmployees) {
     for (const pol of samplePolicies) {
-      await prisma.employeeLeavePolicyAssignment.upsert({
-        where: {
-          employeeId_leavePolicyId_effectiveFrom: {
-            employeeId: emp.id,
-            leavePolicyId: pol.id,
-            effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
-          },
-        },
-        update: {},
-        create: {
+      await prisma.employeeLeavePolicyAssignment.create({
+        data: {
           organizationId: org.id,
           employeeId: emp.id,
           leavePolicyId: pol.id,
@@ -1135,17 +951,8 @@ async function main() {
       });
 
       const entitlement = Number(pol.annualEntitlement);
-      const acc = await prisma.leaveBalanceAccount.upsert({
-        where: {
-          organizationId_employeeId_leaveTypeId_leaveYear: {
-            organizationId: org.id,
-            employeeId: emp.id,
-            leaveTypeId: pol.leaveTypeId,
-            leaveYear: 2026,
-          },
-        },
-        update: {},
-        create: {
+      const acc = await prisma.leaveBalanceAccount.create({
+        data: {
           organizationId: org.id,
           employeeId: emp.id,
           leaveTypeId: pol.leaveTypeId,
@@ -1161,10 +968,8 @@ async function main() {
       });
 
       const idempotencyKey = `grant:seed:${acc.id}:2026`;
-      await prisma.leaveBalanceTransaction.upsert({
-        where: { idempotencyKey },
-        update: {},
-        create: {
+      await prisma.leaveBalanceTransaction.create({
+        data: {
           accountId: acc.id,
           transactionType: 'OPENING_GRANT',
           amount: entitlement,
@@ -1176,271 +981,21 @@ async function main() {
     }
   }
 
-  // 12. Phase 9: Development-Only Sample Performance Management Fixtures
-  // Configures a sample review cycle, competencies, participant enrollments, goals, self-assessment, and development plan
-  const sampleCycle = await prisma.reviewCycle.upsert({
-    where: {
-      organizationId_code: {
-        organizationId: org.id,
-        code: 'CYC-2026-H2',
-      },
-    },
-    update: {
-      name: 'H2 2026 Enterprise Engineering Review',
-      status: ReviewCycleStatus.SELF_ASSESSMENT,
-    },
-    create: {
-      organizationId: org.id,
-      code: 'CYC-2026-H2',
-      name: 'H2 2026 Enterprise Engineering Review',
-      description:
-        'Semi-annual performance appraisal cycle covering all active engineering personnel',
-      type: ReviewCycleType.SEMI_ANNUAL,
-      status: ReviewCycleStatus.SELF_ASSESSMENT,
-      startDate: new Date('2026-07-01T00:00:00.000Z'),
-      endDate: new Date('2026-12-31T23:59:59.000Z'),
-      goalSettingDeadline: new Date('2026-08-15T18:30:00.000Z'),
-      selfAssessmentDeadline: new Date('2026-11-15T18:30:00.000Z'),
-      managerReviewDeadline: new Date('2026-12-05T18:30:00.000Z'),
-      finalizationDeadline: new Date('2026-12-20T18:30:00.000Z'),
-      goalsWeightPercentage: 70.0,
-      competenciesWeightPercentage: 30.0,
-      allowEmployeeGoalCreation: true,
-      requireGoalApproval: true,
-      ratingScaleMax: 5,
-      templateVersion: 1,
-      instructions:
-        'Please complete all self-assessment sections including achievements and growth goals before the cutoff date.',
-    },
-  });
-
-  // Cycle Competencies
-  const comp1 = await prisma.performanceCompetency.create({
-    data: {
-      cycleId: sampleCycle.id,
-      category: CompetencyCategory.FUNCTIONAL_EXPERTISE,
-      name: 'Technical Architecture & Code Quality',
-      description:
-        'Designs maintainable, high-throughput backend services and clean frontend components.',
-      weight: 15.0,
-    },
-  });
-
-  const comp2 = await prisma.performanceCompetency.create({
-    data: {
-      cycleId: sampleCycle.id,
-      category: CompetencyCategory.COMMUNICATION,
-      name: 'Cross-functional Collaboration & Velocity',
-      description:
-        'Actively pairs with colleagues, communicates blockers early, and drives milestones.',
-      weight: 15.0,
-    },
-  });
-
-  // Participants (Priya Nair EMP004 and Amitabh Roy EMP005 under Rajesh Kumar EMP003)
-  const empPriya = employeeRecordMap['EMP004'];
-  const empAmitabh = employeeRecordMap['EMP005'];
-  const mgrRajesh = employeeRecordMap['EMP003'];
-
-  const priyaParticipant = await prisma.reviewCycleParticipant.upsert({
-    where: {
-      cycleId_employeeId: {
-        cycleId: sampleCycle.id,
-        employeeId: empPriya,
-      },
-    },
-    update: {},
-    create: {
-      cycleId: sampleCycle.id,
-      employeeId: empPriya,
-      managerId: mgrRajesh,
-      departmentId: deptMap['ENG'],
-      branchId: branchMap['BLR-HQ'],
-      designationId: desigMap['SR-SWE'],
-      status: ParticipantStatus.ENROLLED,
-    },
-  });
-
-  await prisma.reviewCycleParticipant.upsert({
-    where: {
-      cycleId_employeeId: {
-        cycleId: sampleCycle.id,
-        employeeId: empAmitabh,
-      },
-    },
-    update: {},
-    create: {
-      cycleId: sampleCycle.id,
-      employeeId: empAmitabh,
-      managerId: mgrRajesh,
-      departmentId: deptMap['ENG'],
-      branchId: branchMap['MUM-01'],
-      designationId: desigMap['SWE'],
-      status: ParticipantStatus.ENROLLED,
-    },
-  });
-
-  // Sample Goals for Priya Nair
-  const goal1 = await prisma.performanceGoal.create({
-    data: {
-      organizationId: org.id,
-      cycleId: sampleCycle.id,
-      employeeId: empPriya,
-      assignedById: mgrRajesh,
-      title: 'Deliver Enterprise Performance Management Subsystem',
-      description:
-        'Implement Goals, Cycles, Appraisals, Calculations, Dashboards and Notifications.',
-      businessRationale: 'Unlocks self-hosted performance reviews across all departments.',
-      category: GoalCategory.QUANTITATIVE,
-      measurementType: GoalMeasurementType.PERCENTAGE,
-      unit: '%',
-      baselineValue: 0.0,
-      targetValue: 100.0,
-      currentValue: 95.0,
-      weight: 40.0,
-      status: GoalStatus.APPROVED,
-      progressPercentage: 95.0,
-      startDate: new Date('2026-07-01'),
-      dueDate: new Date('2026-11-01'),
-      approvedById: mgrRajesh,
-      approvedAt: new Date('2026-07-15'),
-    },
-  });
-
-  const goal2 = await prisma.performanceGoal.create({
-    data: {
-      organizationId: org.id,
-      cycleId: sampleCycle.id,
-      employeeId: empPriya,
-      assignedById: mgrRajesh,
-      title: 'Optimize API P99 Latency under 120ms',
-      description: 'Tune database queries, compound indexing, and nest interceptor overhead.',
-      businessRationale: 'Ensures sub-150ms responsiveness at peak shift punch-in times.',
-      category: GoalCategory.QUANTITATIVE,
-      measurementType: GoalMeasurementType.NUMERIC,
-      unit: 'ms',
-      baselineValue: 250.0,
-      targetValue: 120.0,
-      currentValue: 140.0,
-      weight: 30.0,
-      status: GoalStatus.APPROVED,
-      progressPercentage: 85.0,
-      startDate: new Date('2026-07-01'),
-      dueDate: new Date('2026-12-01'),
-      approvedById: mgrRajesh,
-      approvedAt: new Date('2026-07-15'),
-    },
-  });
-
-  // Sample Review Record for Priya Nair
-  const priyaReview = await prisma.performanceReview.upsert({
-    where: {
-      cycleId_employeeId: {
-        cycleId: sampleCycle.id,
-        employeeId: empPriya,
-      },
-    },
-    update: {},
-    create: {
-      organizationId: org.id,
-      cycleId: sampleCycle.id,
-      employeeId: empPriya,
-      managerId: mgrRajesh,
-      participantId: priyaParticipant.id,
-      templateVersion: 1,
-      status: PerformanceReviewStatus.SELF_ASSESSMENT_SUBMITTED,
-      selfSummary:
-        'Successfully delivered the enterprise performance architecture on time with comprehensive regression testing.',
-      selfAchievements:
-        'Designed deterministic score calculations, RBAC security guards, and in-app reminder scanning.',
-      selfChallenges:
-        'Navigating complex audit requirements while maintaining strict sub-150ms API SLAs.',
-      skillsDeveloped:
-        'Deep PostgreSQL indexing strategies, NestJS guard composition, and monorepo type pipelines.',
-      developmentInterests: 'Staff-level system architecture and reliability engineering.',
-      selfSubmittedAt: new Date('2026-10-10T14:30:00.000Z'),
-    },
-  });
-
-  // Review Items for Goals & Competencies
-  await prisma.performanceReviewItem.create({
-    data: {
-      reviewId: priyaReview.id,
-      goalId: goal1.id,
-      selfRating: 4.8,
-      selfComments: 'Delivered all 9 sub-phases with zero test regressions and full type safety.',
-    },
-  });
-
-  await prisma.performanceReviewItem.create({
-    data: {
-      reviewId: priyaReview.id,
-      goalId: goal2.id,
-      selfRating: 4.5,
-      selfComments: 'Reduced P99 latency significantly, further profiling planned for next sprint.',
-    },
-  });
-
-  await prisma.performanceReviewItem.create({
-    data: {
-      reviewId: priyaReview.id,
-      competencyId: comp1.id,
-      selfRating: 5.0,
-      selfComments:
-        'Consistently maintained highest standard of clean code and architectural rigor.',
-    },
-  });
-
-  await prisma.performanceReviewItem.create({
-    data: {
-      reviewId: priyaReview.id,
-      competencyId: comp2.id,
-      selfRating: 4.5,
-      selfComments: 'Collaborated closely with Product and HR teams to finalize policies.',
-    },
-  });
-
-  // Sample Feedback Notes
-  await prisma.performanceFeedback.create({
-    data: {
-      reviewId: priyaReview.id,
-      authorId: mgrRajesh,
-      visibility: FeedbackVisibility.EMPLOYEE_VISIBLE,
-      title: 'Outstanding Technical Rigor',
-      content:
-        'Priya demonstrated exceptional ownership and engineering craftsmanship across Phase 9 delivery.',
-    },
-  });
-
-  await prisma.performanceFeedback.create({
-    data: {
-      reviewId: priyaReview.id,
-      authorId: mgrRajesh,
-      visibility: FeedbackVisibility.MANAGER_ONLY,
-      title: 'Promotional Readiness Candidate',
-      content:
-        'Ready to take on tech lead responsibilities for upcoming distributed systems initiatives.',
-    },
-  });
-
-  // Sample Development Plan
-  await prisma.developmentPlan.create({
-    data: {
-      reviewId: priyaReview.id,
-      employeeId: empPriya,
-      objective: 'Staff Engineer Technical Leadership',
-      actionSteps: 'Lead cross-team architectural reviews and establish engineering standards.',
-      successCriteria:
-        'Successful rollout of micro-benchmarks and mentorship of two junior engineers.',
-      targetDate: new Date('2026-12-31T00:00:00.000Z'),
-      status: DevelopmentPlanStatus.IN_PROGRESS,
-      responsiblePerson: 'Priya Nair & Rajesh Kumar',
-    },
-  });
-
-  console.log(
-    'Phase 3 foundational seeding, Phase 6 leave sample fixtures, and Phase 9 performance fixtures completed successfully!',
-  );
+  console.log('------------------------------------------------------------');
+  console.log('CLEAN HRMS SEED COMPLETED SUCCESSFULLY:');
+  console.log('1. Admin Account:');
+  console.log('   - Email: admin@peopleos.local');
+  console.log('   - Password: Password@123');
+  console.log('   - Role: ADMIN (EMP001)');
+  console.log('2. HR Account:');
+  console.log('   - Email: hr@peopleos.local');
+  console.log('   - Password: Password@123');
+  console.log('   - Role: HR (EMP002)');
+  console.log('3. Manager Account:');
+  console.log('   - Email: manager@peopleos.local');
+  console.log('   - Password: Password@123');
+  console.log('   - Role: MANAGER (EMP003)');
+  console.log('------------------------------------------------------------');
 }
 
 main()

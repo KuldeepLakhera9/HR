@@ -15,8 +15,13 @@ import {
   ArrowLeft,
   Save,
   AlertCircle,
+  ShieldCheck,
+  Eye,
+  EyeOff,
+  KeyRound,
 } from 'lucide-react';
 import { employeesApi, organizationApi } from '../../../lib/api-client';
+import { RoleType } from '@hrms/types';
 
 const STEPS = [
   { id: 1, title: 'Basic Information', icon: User },
@@ -31,6 +36,7 @@ export default function AddEmployeePage() {
   const [currentStep, setCurrentStep] = useState(1);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [showInitialPassword, setShowInitialPassword] = useState(false);
 
   // Lookups
   const [branches, setBranches] = useState<any[]>([]);
@@ -54,6 +60,7 @@ export default function AddEmployeePage() {
     branchId: '',
     departmentId: '',
     designationId: '',
+    customDesignation: '',
     managerId: '',
     employmentType: 'FULL_TIME',
     employmentStatus: 'PROBATION',
@@ -77,9 +84,10 @@ export default function AddEmployeePage() {
     emergencyPhone: '',
     emergencyAddress: '',
 
-    // Login account
+    // Login account & credentials
     createLoginAccount: true,
-    initialPassword: 'Welcome@123',
+    initialPassword: 'Password@123',
+    role: 'EMPLOYEE' as RoleType,
   });
 
   useEffect(() => {
@@ -91,14 +99,24 @@ export default function AddEmployeePage() {
           organizationApi.getDesignations({ status: 'active' }),
           employeesApi.findAll({ limit: 100 }),
         ]);
-        setBranches(brs || []);
+
+        // Prioritize and display ADT-AI Training Foundation branch
+        const adtBranches = (brs || []).filter(
+          (b: any) =>
+            b.name.toLowerCase().includes('adt') ||
+            b.code.toLowerCase().includes('adt') ||
+            b.name.toLowerCase().includes('training foundation'),
+        );
+        const resolvedBranches = adtBranches.length > 0 ? adtBranches : brs || [];
+
+        setBranches(resolvedBranches);
         setDepartments(depts || []);
         setDesignations(desigs || []);
         setManagers(emps.items || []);
 
         // Pre-select defaults
-        if (brs && brs.length > 0)
-          setFormData((prev) => ({ ...prev, branchId: prev.branchId || brs[0].id }));
+        if (resolvedBranches.length > 0)
+          setFormData((prev) => ({ ...prev, branchId: prev.branchId || resolvedBranches[0].id }));
         if (depts && depts.length > 0)
           setFormData((prev) => ({ ...prev, departmentId: prev.departmentId || depts[0].id }));
         if (desigs && desigs.length > 0)
@@ -125,6 +143,10 @@ export default function AddEmployeePage() {
     if (step === 2) {
       if (!formData.branchId || !formData.departmentId || !formData.designationId) {
         setErrorMessage('Branch, Department, and Designation are all mandatory.');
+        return false;
+      }
+      if (formData.designationId === 'OTHER' && !formData.customDesignation.trim()) {
+        setErrorMessage('Please enter the manual designation answer.');
         return false;
       }
     }
@@ -162,6 +184,38 @@ export default function AddEmployeePage() {
     setSubmitting(true);
     setErrorMessage(null);
     try {
+      let resolvedDesignationId = formData.designationId;
+
+      if (formData.designationId === 'OTHER' && formData.customDesignation.trim()) {
+        const customTitle = formData.customDesignation.trim();
+        const existing = designations.find(
+          (d) => d.title.toLowerCase() === customTitle.toLowerCase(),
+        );
+        if (existing) {
+          resolvedDesignationId = existing.id;
+        } else {
+          try {
+            const newDesig = await organizationApi.createDesignation({
+              departmentId: formData.departmentId,
+              title: customTitle,
+              code:
+                customTitle
+                  .toUpperCase()
+                  .replace(/[^A-Z0-9]/g, '_')
+                  .replace(/_+/g, '_')
+                  .slice(0, 20) || `DESIG_${Date.now().toString().slice(-6)}`,
+              level: 1,
+              description: `Custom designation: ${customTitle}`,
+            });
+            if (newDesig?.id) {
+              resolvedDesignationId = newDesig.id;
+            }
+          } catch (e) {
+            console.warn('Frontend designation creation fallback to backend:', e);
+          }
+        }
+      }
+
       const payload: any = {
         employeeCode: formData.employeeCode.trim().toUpperCase(),
         firstName: formData.firstName.trim(),
@@ -180,7 +234,9 @@ export default function AddEmployeePage() {
 
         branchId: formData.branchId,
         departmentId: formData.departmentId,
-        designationId: formData.designationId,
+        designationId: resolvedDesignationId !== 'OTHER' ? resolvedDesignationId : undefined,
+        customDesignation:
+          formData.designationId === 'OTHER' ? formData.customDesignation.trim() : undefined,
         managerId: formData.managerId || undefined,
         employmentType: formData.employmentType,
         employmentStatus: formData.employmentStatus,
@@ -209,6 +265,7 @@ export default function AddEmployeePage() {
 
         createLoginAccount: formData.createLoginAccount,
         initialPassword: formData.initialPassword,
+        role: formData.role,
       };
 
       const result = await employeesApi.create(payload);
@@ -425,7 +482,14 @@ export default function AddEmployeePage() {
                     </label>
                     <select
                       value={formData.designationId}
-                      onChange={(e) => setFormData({ ...formData, designationId: e.target.value })}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData({
+                          ...formData,
+                          designationId: val,
+                          customDesignation: val === 'OTHER' ? formData.customDesignation : '',
+                        });
+                      }}
                       className="w-full text-xs px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
                     >
                       {designations.map((d) => (
@@ -433,7 +497,31 @@ export default function AddEmployeePage() {
                           {d.title} (Level {d.level || 1})
                         </option>
                       ))}
+                      <option value="OTHER">Other (Enter manual designation...)</option>
                     </select>
+
+                    {formData.designationId === 'OTHER' && (
+                      <div className="mt-2.5 p-2.5 bg-amber-50/70 border border-amber-200 rounded-lg space-y-1.5 transition-all">
+                        <label className="block text-xs font-bold text-amber-900">
+                          Manual Designation Answer *
+                        </label>
+                        <input
+                          type="text"
+                          required
+                          value={formData.customDesignation}
+                          onChange={(e) =>
+                            setFormData({ ...formData, customDesignation: e.target.value })
+                          }
+                          placeholder="e.g. AI Research Scientist, Technical Trainer, etc."
+                          className="w-full text-xs px-3 py-2 border border-amber-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white text-stone-900 font-medium"
+                          autoFocus
+                        />
+                        <p className="text-[11px] text-amber-800">
+                          Enter your custom designation. It will be registered and linked to this
+                          employee.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -686,20 +774,118 @@ export default function AddEmployeePage() {
                   />
                 </div>
 
-                <div className="pt-4 border-t border-stone-200">
-                  <label className="flex items-center gap-2 cursor-pointer">
+                <div className="pt-4 border-t border-stone-200 space-y-3">
+                  <div className="flex items-start gap-2.5">
                     <input
                       type="checkbox"
+                      id="createLoginAccount"
                       checked={formData.createLoginAccount}
                       onChange={(e) =>
                         setFormData({ ...formData, createLoginAccount: e.target.checked })
                       }
-                      className="rounded border-stone-300 text-amber-800 focus:ring-amber-700"
+                      className="mt-0.5 rounded border-stone-300 text-amber-800 focus:ring-amber-700"
                     />
-                    <span className="text-xs font-semibold text-stone-800">
-                      Create system login credentials for this employee with default role 'EMPLOYEE'
-                    </span>
-                  </label>
+                    <label htmlFor="createLoginAccount" className="cursor-pointer">
+                      <span className="block text-xs font-bold text-stone-900">
+                        Create System Login Credentials for this Employee
+                      </span>
+                      <span className="block text-[11px] text-stone-500">
+                        Generates a secure user authentication account allowing this employee to log
+                        in and access their role.
+                      </span>
+                    </label>
+                  </div>
+
+                  {formData.createLoginAccount && (
+                    <div className="p-4 bg-amber-50/70 border border-amber-200/90 rounded-xl space-y-3.5 mt-2">
+                      <div className="flex items-center gap-2 text-xs font-bold text-amber-950 pb-2 border-b border-amber-200/60">
+                        <KeyRound className="h-4 w-4 text-amber-700" />
+                        <span>System Login & Role Access Setup</span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                        <div>
+                          <label className="block text-xs font-semibold text-stone-700 mb-1">
+                            Login ID / Work Email
+                          </label>
+                          <input
+                            type="text"
+                            readOnly
+                            disabled
+                            value={formData.workEmail || '(Provide Work Email in Step 3)'}
+                            className="w-full text-xs px-3 py-2 border border-stone-200 rounded-md bg-stone-100/80 text-stone-700 font-mono"
+                          />
+                          <p className="text-[10px] text-stone-500 mt-1">
+                            Official work email acts as their unique sign-in username.
+                          </p>
+                        </div>
+
+                        <div>
+                          <label className="block text-xs font-semibold text-stone-700 mb-1">
+                            Assigned System Role *
+                          </label>
+                          <select
+                            value={formData.role}
+                            onChange={(e) =>
+                              setFormData({ ...formData, role: e.target.value as RoleType })
+                            }
+                            className="w-full text-xs px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white font-semibold text-stone-800"
+                          >
+                            <option value="EMPLOYEE">
+                              EMPLOYEE (Self-Service Portal & Requests)
+                            </option>
+                            <option value="MANAGER">
+                              MANAGER (Team Oversight, Approvals & Reviews)
+                            </option>
+                            <option value="HR">HR (Workforce Management & Operations)</option>
+                            <option value="ADMIN">
+                              ADMIN (Full System Administration & Security)
+                            </option>
+                          </select>
+                          <p className="text-[10px] text-stone-500 mt-1">
+                            Determines access rights and navigation throughout their session.
+                          </p>
+                        </div>
+
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-semibold text-stone-700 mb-1">
+                            Initial Login Password *
+                          </label>
+                          <div className="relative max-w-sm">
+                            <input
+                              type={showInitialPassword ? 'text' : 'password'}
+                              required={formData.createLoginAccount}
+                              value={formData.initialPassword}
+                              onChange={(e) =>
+                                setFormData({ ...formData, initialPassword: e.target.value })
+                              }
+                              placeholder="e.g. Password@123"
+                              className="w-full text-xs px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-700 pr-10 font-mono"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setShowInitialPassword(!showInitialPassword)}
+                              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-stone-400 hover:text-stone-600 p-1"
+                              aria-label={showInitialPassword ? 'Hide password' : 'Show password'}
+                            >
+                              {showInitialPassword ? (
+                                <EyeOff className="h-3.5 w-3.5" />
+                              ) : (
+                                <Eye className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                          </div>
+                          <p className="text-[10px] text-stone-500 mt-1">
+                            Default initial password:{' '}
+                            <code className="font-mono font-semibold text-amber-900 bg-amber-100/60 px-1 py-0.5 rounded">
+                              Password@123
+                            </code>
+                            . The employee can use this immediately at sign in.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -741,7 +927,10 @@ export default function AddEmployeePage() {
                     </div>
                     <div>
                       <strong>Designation:</strong>{' '}
-                      {designations.find((d) => d.id === formData.designationId)?.title || 'Staff'}
+                      {formData.designationId === 'OTHER'
+                        ? `${formData.customDesignation || 'Custom Designation'} (Custom)`
+                        : designations.find((d) => d.id === formData.designationId)?.title ||
+                          'Staff'}
                     </div>
                     <div>
                       <strong>Work Mode:</strong> {formData.workMode}
@@ -778,9 +967,52 @@ export default function AddEmployeePage() {
                     <div>
                       <strong>Phone:</strong> {formData.emergencyPhone}
                     </div>
-                    <div className="pt-2">
-                      <Badge variant="success">LOGIN ACCOUNT PROVISIONED</Badge>
+                  </div>
+
+                  {/* Account Credentials Card */}
+                  <div className="sm:col-span-2 p-3.5 bg-amber-50/50 rounded-xl space-y-2 border border-amber-200/90">
+                    <div className="font-bold text-stone-900 border-b border-amber-200/60 pb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5 text-amber-950">
+                        <KeyRound className="h-3.5 w-3.5 text-amber-700" />
+                        Login Credentials & Access Role
+                      </span>
+                      {formData.createLoginAccount ? (
+                        <Badge variant="success">CREDENTIALS READY</Badge>
+                      ) : (
+                        <Badge variant="warning">NO LOGIN ACCOUNT</Badge>
+                      )}
                     </div>
+                    {formData.createLoginAccount ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                        <div>
+                          <span className="text-stone-500 block text-[11px]">
+                            Sign-in Work Email:
+                          </span>
+                          <span className="font-mono font-semibold text-stone-800">
+                            {formData.workEmail}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-stone-500 block text-[11px]">Allocated Role:</span>
+                          <span className="inline-block mt-0.5 px-2 py-0.5 rounded text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                            {formData.role}
+                          </span>
+                        </div>
+                        <div>
+                          <span className="text-stone-500 block text-[11px]">
+                            Initial Password:
+                          </span>
+                          <span className="font-mono font-semibold text-stone-800">
+                            {formData.initialPassword}
+                          </span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-stone-500 text-xs italic">
+                        No login credentials requested. This record is managed administratively
+                        only.
+                      </p>
+                    )}
                   </div>
                 </div>
               </div>

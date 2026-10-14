@@ -14,7 +14,7 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { EmploymentType, EmploymentStatus, WorkMode, Gender } from '@prisma/client';
+import { EmploymentType, EmploymentStatus, WorkMode, Gender, RoleCode } from '@prisma/client';
 
 export class EmergencyContactDto {
   @ApiProperty({ example: 'Rohit Sharma' })
@@ -106,10 +106,15 @@ export class CreateEmployeeDto {
   @IsString()
   departmentId!: string;
 
-  @ApiProperty({ example: 'uuid-desig' })
-  @IsNotEmpty()
+  @ApiPropertyOptional({ example: 'uuid-desig' })
+  @IsOptional()
   @IsString()
-  designationId!: string;
+  designationId?: string;
+
+  @ApiPropertyOptional({ example: 'AI Research Scientist' })
+  @IsOptional()
+  @IsString()
+  customDesignation?: string;
 
   @ApiPropertyOptional({ example: 'uuid-manager-employee' })
   @IsOptional()
@@ -208,6 +213,16 @@ export class CreateEmployeeDto {
   @IsOptional()
   @IsString()
   initialPassword?: string;
+
+  @ApiPropertyOptional({
+    enum: RoleCode,
+    default: RoleCode.EMPLOYEE,
+    description:
+      'System access role assigned to the created login user (ADMIN, HR, MANAGER, EMPLOYEE)',
+  })
+  @IsOptional()
+  @IsEnum(RoleCode)
+  role?: RoleCode;
 }
 
 export class UpdateEmployeeDto {

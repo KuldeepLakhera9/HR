@@ -84,7 +84,7 @@ export default function AttendancePoliciesPage() {
     workingDayStartHour: 5,
     timezone: 'Asia/Kolkata',
     geofenceEnforcement: true,
-    maxGpsAccuracyMeters: 100,
+    maxGpsAccuracyMeters: 50000,
     isActive: true,
   });
 
@@ -357,7 +357,7 @@ export default function AttendancePoliciesPage() {
                     workingDayStartHour: 5,
                     timezone: 'Asia/Kolkata',
                     geofenceEnforcement: true,
-                    maxGpsAccuracyMeters: 100,
+                    maxGpsAccuracyMeters: 50000,
                     isActive: true,
                   });
                   setIsPolicyModalOpen(true);

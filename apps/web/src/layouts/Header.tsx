@@ -109,32 +109,12 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
         <div className="flex items-center gap-2 sm:gap-3">
           {isAuthenticated && (
             <>
-              {/* If user possesses multiple verified roles (e.g. Employee & Manager), allow switching between their own roles only */}
-              {availableRoles && availableRoles.length > 1 ? (
-                <div className="flex items-center gap-1.5">
-                  <label htmlFor="user-role-select" className="sr-only">
-                    Select Active Role
-                  </label>
-                  <select
-                    id="user-role-select"
-                    value={role}
-                    onChange={(e) => setRole(e.target.value as RoleType)}
-                    className="h-8 px-2 text-xs font-semibold bg-amber-50/90 text-amber-900 border border-amber-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20"
-                  >
-                    {availableRoles.map((r) => (
-                      <option key={r} value={r}>
-                        Role: {r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              ) : (
-                <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-stone-200 bg-stone-50 text-stone-700 text-xs font-semibold">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                  <span className="text-[10px] uppercase tracking-wider text-stone-400">Role:</span>
-                  <span>{role}</span>
-                </div>
-              )}
+              {/* Static Authenticated Role Badge (Role is locked during session) */}
+              <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-stone-200 bg-stone-50 text-stone-700 text-xs font-semibold">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                <span className="text-[10px] uppercase tracking-wider text-stone-400">Role:</span>
+                <span className="font-bold text-amber-900">{role}</span>
+              </div>
 
               {/* Notification Menu */}
               <NotificationMenu

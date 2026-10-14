@@ -27,6 +27,11 @@ export class RolesGuard implements CanActivate {
       );
     }
 
+    // ADMIN role has access to all role-protected endpoints
+    if (user.roles.includes('ADMIN' as RoleType)) {
+      return true;
+    }
+
     const hasRole = user.roles.some((role) => requiredRoles.includes(role));
 
     if (!hasRole) {

@@ -21,32 +21,16 @@ interface RoleContextType {
 const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { user, primaryRole, isAuthenticated, roles } = useAuth();
-  const [selectedRole, setSelectedRole] = useState<RoleType | null>(null);
+  const { user, primaryRole, isAuthenticated } = useAuth();
 
-  // Sync role with authenticated user's primary role upon login
-  useEffect(() => {
-    if (isAuthenticated && primaryRole) {
-      // If currently selected role is not among user's genuine assigned roles, reset to primary
-      if (!selectedRole || !roles.includes(selectedRole)) {
-        setSelectedRole(primaryRole);
-      }
-    } else {
-      setSelectedRole(null);
-    }
-  }, [isAuthenticated, primaryRole, roles, selectedRole]);
-
-  // Strictly bound to user's assigned roles: user CANNOT assume an ungranted role
-  const activeRole: RoleType =
-    selectedRole && roles.includes(selectedRole) ? selectedRole : primaryRole || 'EMPLOYEE';
+  // The active role is strictly locked to the authenticated user's assigned role throughout the session.
+  // Role switching during an active session is completely disabled.
+  const activeRole: RoleType = primaryRole || 'EMPLOYEE';
 
   const setRole = (newRole: RoleType) => {
-    // Only allow switching to a role that the authenticated user actually possesses
-    if (roles.includes(newRole)) {
-      setSelectedRole(newRole);
-    } else {
-      console.warn(`[RoleSecurity] Rejected unauthorized role elevation attempt to ${newRole}`);
-    }
+    console.warn(
+      `[RoleSecurity] Role switching during an active session is disabled. Session remains locked to ${activeRole}.`,
+    );
   };
 
   const currentUser: RoleUser = useMemo(() => {
@@ -72,7 +56,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         role: activeRole,
         setRole,
         currentUser,
-        availableRoles: roles,
+        availableRoles: [activeRole],
       }}
     >
       {children}

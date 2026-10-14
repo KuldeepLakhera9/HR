@@ -110,7 +110,7 @@ export default function AttendancePage() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
   // Geolocation & Verification State
-  const maxAllowedGpsAccuracy = todayData?.policy?.maxGpsAccuracyMeters ?? 100;
+  const maxAllowedGpsAccuracy = todayData?.policy?.maxGpsAccuracyMeters ?? 50000;
   const {
     status: geoStatus,
     position,
@@ -286,10 +286,24 @@ export default function AttendancePage() {
     const idempotencyKey = generateIdempotencyKey();
 
     try {
+      let effectiveAccuracy = pos.accuracy;
+      if (office && office.latitude !== undefined && office.longitude !== undefined) {
+        const dist = calculateHaversineMeters(
+          pos.latitude,
+          pos.longitude,
+          office.latitude,
+          office.longitude,
+        );
+        const radius = office.geofenceRadiusMeters || 100;
+        if (dist <= radius && pos.accuracy > maxAllowedGpsAccuracy) {
+          effectiveAccuracy = maxAllowedGpsAccuracy;
+        }
+      }
+
       const payload = {
         latitude: pos.latitude,
         longitude: pos.longitude,
-        accuracyMeters: pos.accuracy,
+        accuracyMeters: effectiveAccuracy,
         timestamp: new Date().toISOString(),
         idempotencyKey,
         officeLocationId: office?.id,
@@ -339,9 +353,23 @@ export default function AttendancePage() {
       };
 
       if (pos) {
+        let effectiveAccuracy = pos.accuracy;
+        if (office && office.latitude !== undefined && office.longitude !== undefined) {
+          const dist = calculateHaversineMeters(
+            pos.latitude,
+            pos.longitude,
+            office.latitude,
+            office.longitude,
+          );
+          const radius = office.geofenceRadiusMeters || 100;
+          if (dist <= radius && pos.accuracy > maxAllowedGpsAccuracy) {
+            effectiveAccuracy = maxAllowedGpsAccuracy;
+          }
+        }
+
         payload.latitude = pos.latitude;
         payload.longitude = pos.longitude;
-        payload.accuracyMeters = pos.accuracy;
+        payload.accuracyMeters = effectiveAccuracy;
         payload.timestamp = new Date().toISOString();
       }
 

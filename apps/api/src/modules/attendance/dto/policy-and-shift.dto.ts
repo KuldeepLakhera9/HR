@@ -122,7 +122,7 @@ export class CreatePolicyDto {
   @IsOptional()
   @IsNumber()
   @Min(10)
-  @Max(1000)
+  @Max(50000)
   maxGpsAccuracyMeters?: number;
 
   @ApiPropertyOptional()
