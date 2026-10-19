@@ -128,7 +128,7 @@ export const Header: React.FC<{ onToggleMobileMenu: () => void }> = ({ onToggleM
                 name={currentUser.name}
                 email={currentUser.email}
                 role={role}
-                avatarUrl={null}
+                avatarUrl={currentUser.avatarUrl || user?.avatarUrl || null}
                 onProfileClick={() => {
                   router.push('/profile');
                 }}

@@ -439,3 +439,10 @@ export class EmployeeFilterDto {
   @IsString()
   sortOrder?: 'asc' | 'desc' = 'asc';
 }
+
+export class UpdateProfilePhotoDto {
+  @ApiPropertyOptional({ description: 'Base64 data URI of the profile photo' })
+  @IsOptional()
+  @IsString()
+  profilePhoto?: string;
+}

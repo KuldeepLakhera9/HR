@@ -148,6 +148,7 @@ export default function AttendancePage() {
 
   const [historyStartDate, setHistoryStartDate] = useState('');
   const [historyEndDate, setHistoryEndDate] = useState('');
+  const [hasDismissedAutoClosedAlert, setHasDismissedAutoClosedAlert] = useState(false);
 
   // Fetch today status
   const loadTodayStatus = useCallback(async () => {
@@ -612,6 +613,42 @@ export default function AttendancePage() {
             </button>
           </div>
         )}
+
+        {todayData?.autoClosedSessionsCount &&
+          todayData.autoClosedSessionsCount > 0 &&
+          !hasDismissedAutoClosedAlert && (
+            <div className="p-3.5 bg-amber-50 border border-amber-300/80 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-900 animate-fade-in shadow-xs">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5 sm:mt-0" />
+                <span>
+                  Your previous attendance session was automatically closed due to a missing
+                  check-out and marked as{' '}
+                  <strong className="font-semibold underline decoration-amber-400">
+                    INCOMPLETE
+                  </strong>
+                  . You can punch in for today below and submit a regularization request for the
+                  previous day.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setIsCorrectionModalOpen(true)}
+                  className="text-xs h-7 px-2.5 bg-white border-amber-300 text-amber-900 hover:bg-amber-100/60"
+                >
+                  Request Regularization
+                </Button>
+                <button
+                  onClick={() => setHasDismissedAutoClosedAlert(true)}
+                  className="text-amber-700 hover:text-amber-900 font-bold px-1"
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+          )}
 
         {activeTab === 'my' ? (
           /* =======================================================================

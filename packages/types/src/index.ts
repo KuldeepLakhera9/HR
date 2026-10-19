@@ -63,6 +63,7 @@ export interface AuthUser {
   status: UserStatus;
   roles: RoleType[];
   permissions: string[];
+  avatarUrl?: string | null;
 }
 
 export interface LoginCredentials {

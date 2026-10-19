@@ -581,6 +581,31 @@ export const employeesApi = {
     return res.data;
   },
 
+  async uploadProfilePicture(fileOrDataUrl: File | string) {
+    if (typeof fileOrDataUrl === 'string') {
+      const res = await fetchWithAuth<{ profilePhoto: string }>('/employees/me/profile-picture', {
+        method: 'POST',
+        body: JSON.stringify({ profilePhoto: fileOrDataUrl }),
+      });
+      return res.data;
+    } else {
+      const formData = new FormData();
+      formData.append('file', fileOrDataUrl);
+      const res = await fetchWithAuth<{ profilePhoto: string }>('/employees/me/profile-picture', {
+        method: 'POST',
+        body: formData,
+      });
+      return res.data;
+    }
+  },
+
+  async removeProfilePicture() {
+    const res = await fetchWithAuth<{ success: boolean }>('/employees/me/profile-picture', {
+      method: 'DELETE',
+    });
+    return res.data;
+  },
+
   async findOne(id: string) {
     const res = await fetchWithAuth<any>(`/employees/${id}`);
     return res.data;

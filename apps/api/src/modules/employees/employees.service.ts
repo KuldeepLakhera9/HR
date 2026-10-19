@@ -2978,4 +2978,156 @@ export class EmployeesService {
       };
     }
   }
+
+  /**
+   * Validate image buffer and return data URL
+   */
+  private validateAndProcessImage(buffer: Buffer): { dataUrl: string; mimeType: string } {
+    if (!buffer || buffer.length === 0) {
+      throw new BadRequestException('Image file buffer is empty');
+    }
+    const maxSizeBytes = 5 * 1024 * 1024; // 5MB limit
+    if (buffer.length > maxSizeBytes) {
+      throw new BadRequestException('Image size exceeds the maximum limit of 5MB');
+    }
+
+    let mimeType: string | null = null;
+    // PNG check: 89 50 4E 47 0D 0A 1A 0A
+    if (
+      buffer.length >= 8 &&
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47
+    ) {
+      mimeType = 'image/png';
+    } else if (
+      // JPEG check: FF D8 FF
+      buffer.length >= 3 &&
+      buffer[0] === 0xff &&
+      buffer[1] === 0xd8 &&
+      buffer[2] === 0xff
+    ) {
+      mimeType = 'image/jpeg';
+    } else if (
+      // WebP check: RIFF....WEBP
+      buffer.length >= 12 &&
+      buffer[0] === 0x52 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x46 &&
+      buffer.toString('ascii', 8, 12) === 'WEBP'
+    ) {
+      mimeType = 'image/webp';
+    }
+
+    if (!mimeType) {
+      throw new BadRequestException('Invalid image format. Only PNG, JPEG, and WebP are allowed.');
+    }
+
+    const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+    return { dataUrl, mimeType };
+  }
+
+  /**
+   * Update the profile picture for the currently authenticated employee and user account
+   */
+  async updateMyProfilePicture(
+    user: AuthenticatedUser,
+    file?: { buffer: Buffer; mimetype?: string; size?: number },
+    base64Photo?: string,
+  ): Promise<{ profilePhoto: string }> {
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        userId: user.id,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('No employee record linked to current user');
+    }
+
+    let buffer: Buffer;
+    if (file && file.buffer) {
+      buffer = file.buffer;
+    } else if (base64Photo && typeof base64Photo === 'string') {
+      const match = base64Photo.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i);
+      if (match) {
+        buffer = Buffer.from(match[2], 'base64');
+      } else {
+        buffer = Buffer.from(base64Photo, 'base64');
+      }
+    } else {
+      throw new BadRequestException('Either an image file upload or image base64 data is required');
+    }
+
+    const { dataUrl } = this.validateAndProcessImage(buffer);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: { profilePhoto: dataUrl },
+      });
+      await tx.user.update({
+        where: { id: user.id },
+        data: { avatarUrl: dataUrl },
+      });
+    });
+
+    await this.auditService.record({
+      action: 'EMPLOYEE_PROFILE_PHOTO_UPDATED',
+      entity: 'Employee',
+      entityId: employee.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        employeeCode: employee.employeeCode,
+      },
+    });
+
+    return { profilePhoto: dataUrl };
+  }
+
+  /**
+   * Remove the profile picture for the currently authenticated employee and user account
+   */
+  async removeMyProfilePicture(user: AuthenticatedUser): Promise<{ success: boolean }> {
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        userId: user.id,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('No employee record linked to current user');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: { profilePhoto: null },
+      });
+      await tx.user.update({
+        where: { id: user.id },
+        data: { avatarUrl: null },
+      });
+    });
+
+    await this.auditService.record({
+      action: 'EMPLOYEE_PROFILE_PHOTO_REMOVED',
+      entity: 'Employee',
+      entityId: employee.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        employeeCode: employee.employeeCode,
+      },
+    });
+
+    return { success: true };
+  }
 }

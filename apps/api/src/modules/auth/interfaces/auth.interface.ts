@@ -43,6 +43,7 @@ export interface SafeUser {
   status: UserStatus;
   roles: RoleType[];
   permissions: string[];
+  avatarUrl?: string | null;
 }
 
 export interface LoginResult {

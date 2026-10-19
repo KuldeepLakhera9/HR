@@ -410,6 +410,7 @@ describe('AttendanceService', () => {
       prisma.attendanceSession.findFirst.mockResolvedValueOnce({
         id: 'sess-active-existing',
         status: 'OPEN',
+        date: new Date(),
         checkInTime: new Date(),
       });
 
@@ -420,6 +421,48 @@ describe('AttendanceService', () => {
       };
 
       await expect(service.checkIn(mockUser, dto)).rejects.toThrow(ConflictException);
+    });
+
+    it('auto-closes stale unclosed session from previous day and permits check-in on the new working day', async () => {
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      prisma.attendanceSession.findFirst.mockResolvedValueOnce({
+        id: 'sess-stale-yesterday',
+        employeeId: mockEmployeeId,
+        organizationId: mockOrgId,
+        date: yesterday,
+        checkInTime: yesterday,
+        status: 'OPEN',
+      });
+
+      const dto: CheckInDto = {
+        latitude: 12.9716,
+        longitude: 77.5946,
+        idempotencyKey: 'idem-key-next-day-checkin',
+      };
+
+      const result = await service.checkIn(mockUser, dto);
+
+      expect(result.success).toBe(true);
+      expect(prisma.attendanceSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'sess-stale-yesterday' },
+          data: { status: 'AUTO_CLOSED' },
+        }),
+      );
+      expect(prisma.attendanceException.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            exceptionType: 'MISSING_CHECKOUT',
+          }),
+        }),
+      );
+      expect(prisma.attendanceDailySummary.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          update: expect.objectContaining({
+            status: 'INCOMPLETE',
+          }),
+        }),
+      );
     });
 
     it('prevents multiple sessions on same day when policy disallows multiple sessions', async () => {

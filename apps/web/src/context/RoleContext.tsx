@@ -9,6 +9,7 @@ export interface RoleUser {
   email: string;
   role: RoleType;
   title: string;
+  avatarUrl?: string | null;
 }
 
 interface RoleContextType {
@@ -40,6 +41,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
         email: user.email,
         role: activeRole,
         title: user.employeeCode ? `Emp ID: ${user.employeeCode}` : 'Team Member',
+        avatarUrl: user.avatarUrl ?? null,
       };
     }
     return {
@@ -47,6 +49,7 @@ export const RoleProvider: React.FC<{ children: React.ReactNode }> = ({ children
       email: '',
       role: 'EMPLOYEE',
       title: 'Guest',
+      avatarUrl: null,
     };
   }, [user, isAuthenticated, activeRole]);
 

@@ -28,6 +28,7 @@ import {
   UpdateEmployeeDto,
   TransitionStatusDto,
   EmployeeFilterDto,
+  UpdateProfilePhotoDto,
 } from './dto/employee.dto';
 import {
   CreateProfileChangeRequestDto,
@@ -126,6 +127,38 @@ export class EmployeesController {
     return {
       success: true,
       message: 'Current employee profile retrieved successfully',
+      data,
+    };
+  }
+
+  @Post('me/profile-picture')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data', 'application/json')
+  @ApiOperation({ summary: 'Upload or update current employee profile picture' })
+  async updateProfilePicture(
+    @Req() req: AuthenticatedRequest,
+    @UploadedFile() file?: { buffer: Buffer; mimetype?: string; size?: number },
+    @Body() body?: UpdateProfilePhotoDto,
+  ) {
+    const data = await this.employeesService.updateMyProfilePicture(
+      req.user,
+      file,
+      body?.profilePhoto,
+    );
+    return {
+      success: true,
+      message: 'Profile picture updated successfully',
+      data,
+    };
+  }
+
+  @Delete('me/profile-picture')
+  @ApiOperation({ summary: 'Remove current employee profile picture' })
+  async removeProfilePicture(@Req() req: AuthenticatedRequest) {
+    const data = await this.employeesService.removeMyProfilePicture(req.user);
+    return {
+      success: true,
+      message: 'Profile picture removed successfully',
       data,
     };
   }

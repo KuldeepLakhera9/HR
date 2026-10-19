@@ -336,6 +336,7 @@ export class AuthService {
       status: user.status as UserStatus,
       roles,
       permissions,
+      avatarUrl: user.avatarUrl ?? null,
     };
 
     return {
@@ -520,6 +521,7 @@ export class AuthService {
       status: user.status as UserStatus,
       roles,
       permissions,
+      avatarUrl: user.avatarUrl ?? null,
     };
 
     return {
@@ -646,6 +648,7 @@ export class AuthService {
       status: user.status as UserStatus,
       roles,
       permissions: Array.from(permissionsSet),
+      avatarUrl: user.avatarUrl ?? null,
     };
   }
 
