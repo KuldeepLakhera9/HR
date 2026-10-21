@@ -191,11 +191,25 @@ async function main() {
   // 4. Create Designations
   const designationsData = [
     {
+      code: 'CEO',
+      title: 'Chief Executive Officer',
+      level: 5,
+      deptCode: 'EXEC',
+      desc: 'Chief Executive Officer & Strategic Governance',
+    },
+    {
       code: 'CTO',
       title: 'Chief Technology Officer',
       level: 5,
       deptCode: 'EXEC',
       desc: 'Executive leadership of technology',
+    },
+    {
+      code: 'TL',
+      title: 'Team Lead',
+      level: 4,
+      deptCode: 'ENG',
+      desc: 'Technical leadership and team supervision',
     },
     {
       code: 'HR-LEAD',
@@ -536,16 +550,16 @@ async function main() {
     }
   }
 
-  // 8. Exactly 3 Foundational Accounts: 1 Admin, 1 HR, 1 Manager
+  // 8. Foundational Company Accounts (Leadership & Core Team)
   const seedPeople = [
     {
       code: 'EMP001',
-      email: 'admin@peopleos.local',
-      firstName: 'Admin',
-      lastName: 'User',
+      email: 'nilesh.nalawade@peopleos.local',
+      firstName: 'Nilesh',
+      lastName: 'Nalawade',
       role: RoleCode.ADMIN,
       deptCode: 'EXEC',
-      desigCode: 'CTO',
+      desigCode: 'CEO',
       branchCode: 'ADT-AITF',
       managerCode: null,
       gender: Gender.MALE,
@@ -554,15 +568,15 @@ async function main() {
       employmentType: EmploymentType.FULL_TIME,
       joiningDate: new Date('2022-01-10'),
       phone: '+91 98765 00001',
-      dob: new Date('1985-01-01'),
+      dob: new Date('1980-05-15'),
       city: 'Baramati',
       state: 'Maharashtra',
     },
     {
       code: 'EMP002',
-      email: 'hr@peopleos.local',
-      firstName: 'HR',
-      lastName: 'Manager',
+      email: 'heena.bhatia@peopleos.local',
+      firstName: 'Heena',
+      lastName: 'Bhatia',
       role: RoleCode.HR,
       deptCode: 'HR',
       desigCode: 'HR-LEAD',
@@ -574,15 +588,15 @@ async function main() {
       employmentType: EmploymentType.FULL_TIME,
       joiningDate: new Date('2022-03-01'),
       phone: '+91 98765 00002',
-      dob: new Date('1990-05-15'),
+      dob: new Date('1990-08-20'),
       city: 'Baramati',
       state: 'Maharashtra',
     },
     {
       code: 'EMP003',
-      email: 'manager@peopleos.local',
-      firstName: 'Team',
-      lastName: 'Manager',
+      email: 'santosh.deshmukh@peopleos.local',
+      firstName: 'Santosh',
+      lastName: 'Deshmukh',
       role: RoleCode.MANAGER,
       deptCode: 'ENG',
       desigCode: 'EM',
@@ -594,7 +608,47 @@ async function main() {
       employmentType: EmploymentType.FULL_TIME,
       joiningDate: new Date('2022-04-15'),
       phone: '+91 98765 00003',
-      dob: new Date('1988-08-20'),
+      dob: new Date('1988-03-12'),
+      city: 'Baramati',
+      state: 'Maharashtra',
+    },
+    {
+      code: 'EMP005',
+      email: 'sanjani@peopleos.local',
+      firstName: 'Sanjani',
+      lastName: 'Lead',
+      role: RoleCode.MANAGER,
+      deptCode: 'ENG',
+      desigCode: 'TL',
+      branchCode: 'ADT-AITF',
+      managerCode: 'EMP001',
+      gender: Gender.FEMALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.HYBRID,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2022-05-01'),
+      phone: '+91 98765 00005',
+      dob: new Date('1991-07-22'),
+      city: 'Baramati',
+      state: 'Maharashtra',
+    },
+    {
+      code: 'EMP004',
+      email: 'kuldeeplakhera018@gmail.com',
+      firstName: 'Kuldeep',
+      lastName: 'Lakhera',
+      role: RoleCode.EMPLOYEE,
+      deptCode: 'ENG',
+      desigCode: 'SWE',
+      branchCode: 'ADT-AITF',
+      managerCode: 'EMP003',
+      gender: Gender.MALE,
+      status: EmploymentStatus.ACTIVE,
+      workMode: WorkMode.OFFICE,
+      employmentType: EmploymentType.FULL_TIME,
+      joiningDate: new Date('2022-06-01'),
+      phone: '+91 98765 00004',
+      dob: new Date('1996-01-01'),
       city: 'Baramati',
       state: 'Maharashtra',
     },
@@ -982,19 +1036,32 @@ async function main() {
   }
 
   console.log('------------------------------------------------------------');
-  console.log('CLEAN HRMS SEED COMPLETED SUCCESSFULLY:');
-  console.log('1. Admin Account:');
-  console.log('   - Email: admin@peopleos.local');
+  console.log('CLEAN HRMS LEADERSHIP & TEAM SEED COMPLETED SUCCESSFULLY:');
+  console.log('1. CEO / Executive Leadership:');
+  console.log('   - Name: Nilesh Nalawade');
+  console.log('   - Email: nilesh.nalawade@peopleos.local');
   console.log('   - Password: Password@123');
   console.log('   - Role: ADMIN (EMP001)');
-  console.log('2. HR Account:');
-  console.log('   - Email: hr@peopleos.local');
+  console.log('2. Human Resources Lead:');
+  console.log('   - Name: Heena Bhatia');
+  console.log('   - Email: heena.bhatia@peopleos.local');
   console.log('   - Password: Password@123');
   console.log('   - Role: HR (EMP002)');
-  console.log('3. Manager Account:');
-  console.log('   - Email: manager@peopleos.local');
+  console.log('3. Team Lead / Manager:');
+  console.log('   - Name: Santosh Deshmukh');
+  console.log('   - Email: santosh.deshmukh@peopleos.local');
   console.log('   - Password: Password@123');
   console.log('   - Role: MANAGER (EMP003)');
+  console.log('4. Team Lead / Manager:');
+  console.log('   - Name: Sanjani');
+  console.log('   - Email: sanjani@peopleos.local');
+  console.log('   - Password: Password@123');
+  console.log('   - Role: MANAGER (EMP005)');
+  console.log('5. Data Engineer:');
+  console.log('   - Name: Kuldeep Lakhera');
+  console.log('   - Email: kuldeeplakhera018@gmail.com');
+  console.log('   - Password: Password@123');
+  console.log('   - Role: EMPLOYEE (EMP004)');
   console.log('------------------------------------------------------------');
 }
 
