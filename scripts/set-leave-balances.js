@@ -4,9 +4,7 @@ const prisma = new PrismaClient();
 
 async function main() {
   const quotas = {
-    CL: 12,
-    SL: 10,
-    PL: 15,
+    CL: 24,
   };
 
   const targetCodes = ['EMP004', 'EMP006'];

@@ -442,13 +442,13 @@ export default function LeaveManagementPage() {
                   No leave policies assigned to your employee profile yet. Please contact HR.
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {balances.map((acc) => (
                     <KPICard
                       key={acc.leaveType.id}
                       title={`${acc.leaveType.name} (${acc.leaveType.code})`}
                       value={`${acc.closingBalance} Days`}
-                      description={`${acc.usedBalance} utilized · ${acc.pendingBalance} pending · ${acc.allocatedBalance} allocated`}
+                      description={`${acc.usedBalance} utilized · ${acc.pendingBalance} pending · ${acc.allocatedBalance} allocated (24/year)`}
                       icon={<Calendar className="h-5 w-5 text-amber-700" />}
                       iconBg="bg-amber-100"
                     />

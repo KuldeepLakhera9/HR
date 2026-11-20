@@ -794,7 +794,9 @@ export default function TeamManagerPage() {
                         </div>
                         <div>
                           <p className="text-xs font-semibold text-stone-900">Leave Requests</p>
-                          <p className="text-[10px] text-stone-500">Paid, sick, & casual leaves</p>
+                          <p className="text-[10px] text-stone-500">
+                            Casual leave requests (24 days/year)
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">

@@ -876,15 +876,15 @@ async function main() {
     },
   });
 
-  // 11. Standard Leave Types & Policies
+  // 11. Standard Leave Types & Policies (Casual Leave Only - 24 Days / Year)
   const clType = await prisma.leaveType.upsert({
     where: { organizationId_code: { organizationId: org.id, code: 'CL' } },
-    update: { name: 'Casual Leave', color: '#d97706', allowHalfDay: true },
+    update: { name: 'Casual Leave', color: '#d97706', allowHalfDay: true, isActive: true },
     create: {
       organizationId: org.id,
       code: 'CL',
       name: 'Casual Leave',
-      description: 'Casual leave for personal appointments and short unplanned absences',
+      description: 'Annual Casual Leave allowance of 24 days per year',
       color: '#d97706',
       isPaid: true,
       allowHalfDay: true,
@@ -894,147 +894,70 @@ async function main() {
     },
   });
 
-  const slType = await prisma.leaveType.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'SL' } },
-    update: { name: 'Sick Leave', color: '#dc2626', allowHalfDay: true },
-    create: {
-      organizationId: org.id,
-      code: 'SL',
-      name: 'Sick Leave',
-      description: 'Sick leave for medical care, recovery, and illness',
-      color: '#dc2626',
-      isPaid: true,
-      allowHalfDay: true,
-      requiresDoc: true,
-      docThresholdDays: 2,
-      isActive: true,
-    },
-  });
-
-  const plType = await prisma.leaveType.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'PL' } },
-    update: { name: 'Privilege / Earned Leave', color: '#2563eb', allowHalfDay: false },
-    create: {
-      organizationId: org.id,
-      code: 'PL',
-      name: 'Privilege / Earned Leave',
-      description: 'Earned leave policy for planned vacations and time off',
-      color: '#2563eb',
-      isPaid: true,
-      allowHalfDay: false,
-      requiresDoc: false,
-      docThresholdDays: 5,
-      isActive: true,
-    },
-  });
-
   const clPolicy = await prisma.leavePolicy.upsert({
     where: { organizationId_code: { organizationId: org.id, code: 'POL-CL' } },
-    update: { annualEntitlement: 12.0 },
+    update: {
+      name: 'Casual Leave (24 Days)',
+      annualEntitlement: 24.0,
+      description: '24 days annual casual leave per year',
+      accrualFrequency: 'ANNUAL',
+      isActive: true,
+    },
     create: {
       organizationId: org.id,
       leaveTypeId: clType.id,
       code: 'POL-CL',
-      name: 'Standard Casual Leave (12 Days)',
-      description: '12 days annual entitlement granted at start of leave year',
-      annualEntitlement: 12.0,
+      name: 'Casual Leave (24 Days)',
+      description: '24 days annual casual leave per year',
+      annualEntitlement: 24.0,
       accrualFrequency: 'ANNUAL',
       carryForwardLimit: 0.0,
-      maxConsecutiveDays: 3,
-      minNoticeDays: 0,
-      countWeekendsAsLeave: false,
-      countHolidaysAsLeave: false,
       allowNegativeBalance: false,
       isActive: true,
     },
   });
 
-  const slPolicy = await prisma.leavePolicy.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'POL-SL' } },
-    update: { annualEntitlement: 10.0 },
-    create: {
-      organizationId: org.id,
-      leaveTypeId: slType.id,
-      code: 'POL-SL',
-      name: 'Standard Sick Leave (10 Days)',
-      description: '10 days annual entitlement for medical recovery',
-      annualEntitlement: 10.0,
-      accrualFrequency: 'ANNUAL',
-      carryForwardLimit: 5.0,
-      maxConsecutiveDays: 14,
-      minNoticeDays: 0,
-      countWeekendsAsLeave: false,
-      countHolidaysAsLeave: false,
-      allowNegativeBalance: false,
-      isActive: true,
-    },
-  });
-
-  const plPolicy = await prisma.leavePolicy.upsert({
-    where: { organizationId_code: { organizationId: org.id, code: 'POL-PL' } },
-    update: { annualEntitlement: 15.0 },
-    create: {
-      organizationId: org.id,
-      leaveTypeId: plType.id,
-      code: 'POL-PL',
-      name: 'Standard Earned Leave (15 Days)',
-      description: '15 days annual entitlement with 3-day advance notice',
-      annualEntitlement: 15.0,
-      accrualFrequency: 'ANNUAL',
-      carryForwardLimit: 30.0,
-      maxConsecutiveDays: 20,
-      minNoticeDays: 3,
-      countWeekendsAsLeave: false,
-      countHolidaysAsLeave: false,
-      allowNegativeBalance: false,
-      isActive: true,
-    },
-  });
-
-  // Assign policies to all 3 foundational employees and initialize opening ledger
+  // Assign 24 Casual Leaves to all employees and initialize opening ledger
   const allEmployees = await prisma.employee.findMany({ where: { organizationId: org.id } });
-  const samplePolicies = [clPolicy, slPolicy, plPolicy];
 
   for (const emp of allEmployees) {
-    for (const pol of samplePolicies) {
-      await prisma.employeeLeavePolicyAssignment.create({
-        data: {
-          organizationId: org.id,
-          employeeId: emp.id,
-          leavePolicyId: pol.id,
-          effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
-        },
-      });
+    await prisma.employeeLeavePolicyAssignment.create({
+      data: {
+        organizationId: org.id,
+        employeeId: emp.id,
+        leavePolicyId: clPolicy.id,
+        effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    });
 
-      const entitlement = Number(pol.annualEntitlement);
-      const acc = await prisma.leaveBalanceAccount.create({
-        data: {
-          organizationId: org.id,
-          employeeId: emp.id,
-          leaveTypeId: pol.leaveTypeId,
-          leaveYear: 2026,
-          openingBalance: entitlement,
-          allocatedBalance: entitlement,
-          accruedBalance: 0,
-          usedBalance: 0,
-          pendingBalance: 0,
-          closingBalance: entitlement,
-          lastReconciledAt: new Date(),
-        },
-      });
+    const entitlement = Number(clPolicy.annualEntitlement);
+    const acc = await prisma.leaveBalanceAccount.create({
+      data: {
+        organizationId: org.id,
+        employeeId: emp.id,
+        leaveTypeId: clPolicy.leaveTypeId,
+        leaveYear: 2026,
+        openingBalance: entitlement,
+        allocatedBalance: entitlement,
+        accruedBalance: entitlement,
+        usedBalance: 0,
+        pendingBalance: 0,
+        closingBalance: entitlement,
+        lastReconciledAt: new Date(),
+      },
+    });
 
-      const idempotencyKey = `grant:seed:${acc.id}:2026`;
-      await prisma.leaveBalanceTransaction.create({
-        data: {
-          accountId: acc.id,
-          transactionType: 'OPENING_GRANT',
-          amount: entitlement,
-          balanceAfter: entitlement,
-          reason: `Initial annual entitlement grant (${pol.name})`,
-          idempotencyKey,
-        },
-      });
-    }
+    const idempotencyKey = `grant:seed:${acc.id}:2026`;
+    await prisma.leaveBalanceTransaction.create({
+      data: {
+        accountId: acc.id,
+        transactionType: 'OPENING_GRANT',
+        amount: entitlement,
+        balanceAfter: entitlement,
+        reason: `Initial annual entitlement grant (${clPolicy.name})`,
+        idempotencyKey,
+      },
+    });
   }
 
   console.log('------------------------------------------------------------');
