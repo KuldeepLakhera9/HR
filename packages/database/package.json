@@ -21,5 +21,8 @@
     "prisma": "^6.4.1",
     "ts-node": "^10.9.2",
     "typescript": "^5.5.4"
+  },
+  "prisma": {
+    "seed": "ts-node prisma/seed.ts"
   }
 }

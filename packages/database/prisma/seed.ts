@@ -9,14 +9,16 @@ import {
   EmployeeHistoryEventType,
 } from '@prisma/client';
 import * as argon2 from 'argon2';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('Resetting and seeding clean HRMS data...');
+  console.log('=== SEEDING PRODUCTION-LEVEL HRMS ENVIRONMENT (ZERO DUMMY DATA) ===');
 
   // 0. Clean all existing operational, employee, and user data
-  console.log('Truncating existing operational, employee, and authentication data...');
+  console.log('Truncating existing operational data, mock attendance, and dummy documents...');
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE 
       "sessions",
@@ -71,7 +73,25 @@ async function main() {
     CASCADE;
   `);
 
-  // 1. Create Organization
+  // Clean out any physical binary files from local storage
+  const storageDirs = [
+    path.resolve(process.cwd(), 'storage/documents'),
+    path.resolve(process.cwd(), 'apps/api/storage/documents'),
+    path.resolve(__dirname, '../../../storage/documents'),
+  ];
+  for (const sDir of storageDirs) {
+    if (fs.existsSync(sDir)) {
+      try {
+        fs.rmSync(sDir, { recursive: true, force: true });
+        fs.mkdirSync(sDir, { recursive: true });
+        console.log(`Cleaned physical storage directory: ${sDir}`);
+      } catch (err: any) {
+        console.warn(`Could not clean storage dir ${sDir}: ${err.message}`);
+      }
+    }
+  }
+
+  // 1. Create Organization: ADT-AI Training Foundation
   const org = await prisma.organization.upsert({
     where: { code: 'PEOPLEOS' },
     update: {
@@ -147,24 +167,32 @@ async function main() {
     },
   });
 
-  // 3. Create Departments
+  // 3. Create Official Departments
   const departmentsData = [
-    { code: 'EXEC', name: 'Executive Leadership', description: 'C-suite & strategic governance' },
-    { code: 'HR', name: 'Human Resources', description: 'People operations, talent, and culture' },
     {
-      code: 'ENG',
-      name: 'Engineering & Product',
-      description: 'Software engineering, architecture, and design',
+      code: 'EXEC',
+      name: 'Executive Leadership',
+      description: 'Governance and institutional direction',
     },
     {
-      code: 'OPS',
-      name: 'Operations & Facilities',
-      description: 'Infrastructure, workplace, and procurement',
+      code: 'HR',
+      name: 'Human Resources',
+      description: 'Talent management, employee relations, and policy',
     },
     {
       code: 'FIN',
       name: 'Finance & Accounts',
-      description: 'Financial planning, accounting, and compliance',
+      description: 'Financial compliance, accounting, and payroll',
+    },
+    {
+      code: 'ENG',
+      name: 'Engineering & Product',
+      description: 'Artificial intelligence development and software engineering',
+    },
+    {
+      code: 'OPS',
+      name: 'Operations & Facilities',
+      description: 'Infrastructure, lab facilities, and operations',
     },
   ];
 
@@ -178,6 +206,7 @@ async function main() {
         },
       },
       update: {
+        name: dept.name,
         description: dept.description,
       },
       create: {
@@ -190,70 +219,35 @@ async function main() {
     deptMap[dept.code] = record.id;
   }
 
-  // 4. Create Designations
+  // 4. Create Official Designations
   const designationsData = [
     {
       code: 'CEO',
-      title: 'Chief Executive Officer',
+      title: 'Director / Executive Head',
       level: 5,
       deptCode: 'EXEC',
-      desc: 'Chief Executive Officer & Strategic Governance',
-    },
-    {
-      code: 'CTO',
-      title: 'Chief Technology Officer',
-      level: 5,
-      deptCode: 'EXEC',
-      desc: 'Executive leadership of technology',
-    },
-    {
-      code: 'TL',
-      title: 'Team Lead',
-      level: 4,
-      deptCode: 'ENG',
-      desc: 'Technical leadership and team supervision',
+      desc: 'Executive Leadership & Direction',
     },
     {
       code: 'HR-LEAD',
-      title: 'People Operations Lead',
-      level: 3,
-      deptCode: 'HR',
-      desc: 'HR policies and employee experience',
-    },
-    {
-      code: 'EM',
-      title: 'Engineering Manager',
+      title: 'HR Manager',
       level: 4,
-      deptCode: 'ENG',
-      desc: 'Engineering team and technical execution',
-    },
-    {
-      code: 'SR-SWE',
-      title: 'Senior Software Engineer',
-      level: 3,
-      deptCode: 'ENG',
-      desc: 'Senior frontend and backend engineering',
-    },
-    {
-      code: 'SWE',
-      title: 'Software Engineer',
-      level: 2,
-      deptCode: 'ENG',
-      desc: 'Full-stack software development',
-    },
-    {
-      code: 'OPS-LEAD',
-      title: 'Operations Lead',
-      level: 3,
-      deptCode: 'OPS',
-      desc: 'Workplace and logistical leadership',
+      deptCode: 'HR',
+      desc: 'Head of Human Resources & Operations',
     },
     {
       code: 'FIN-LEAD',
-      title: 'Finance Controller',
-      level: 3,
+      title: 'Senior Accountant',
+      level: 4,
       deptCode: 'FIN',
-      desc: 'Accounts, taxation, and payroll audit',
+      desc: 'Finance & Accounts Controller',
+    },
+    {
+      code: 'SR-SWE',
+      title: 'Principal AI Engineer',
+      level: 4,
+      deptCode: 'ENG',
+      desc: 'Lead AI & Software Engineering',
     },
   ];
 
@@ -286,7 +280,14 @@ async function main() {
   }
 
   // 5. Create System Roles
-  const roles: RoleCode[] = [RoleCode.ADMIN, RoleCode.HR, RoleCode.MANAGER, RoleCode.EMPLOYEE];
+  const roles: RoleCode[] = [
+    RoleCode.ADMIN,
+    RoleCode.HR,
+    RoleCode.ACCOUNTANT,
+    RoleCode.MANAGER,
+    RoleCode.EMPLOYEE,
+  ];
+
   for (const roleCode of roles) {
     await prisma.role.upsert({
       where: {
@@ -418,7 +419,7 @@ async function main() {
     // ADMIN receives ALL permissions
     [RoleCode.ADMIN]: permissionsToSeed.map((p) => p.code),
 
-    // HR receives workforce, leave, payroll, organization and settings capabilities
+    // HR receives workforce, leave, attendance, documents, reports, and settings
     [RoleCode.HR]: [
       'ORGANIZATION_VIEW',
       'BRANCH_VIEW',
@@ -444,17 +445,25 @@ async function main() {
       'LEAVE_APPROVE',
       'LEAVE_REJECT',
       'LEAVE_POLICY_MANAGE',
-      'VISIT_VIEW',
-      'VISIT_APPLY',
-      'VISIT_APPROVE',
-      'WFH_VIEW',
-      'WFH_APPLY',
-      'WFH_APPROVE',
       'DOCUMENT_VIEW',
       'DOCUMENT_MANAGE',
       'REPORT_VIEW',
       'REPORT_EXPORT',
+      'AUDIT_VIEW',
+      'SETTING_VIEW',
       'PROFILE_CHANGE_REVIEW',
+    ],
+
+    // ACCOUNTANT receives payroll, compensation, bank export, attendance review, and financial reports
+    [RoleCode.ACCOUNTANT]: [
+      'ORGANIZATION_VIEW',
+      'BRANCH_VIEW',
+      'DEPARTMENT_VIEW',
+      'DESIGNATION_VIEW',
+      'EMPLOYEE_VIEW',
+      'ORG_CHART_VIEW',
+      'ATTENDANCE_VIEW',
+      'LEAVE_VIEW',
       'PAYROLL_VIEW',
       'PAYROLL_MANAGE',
       'PAYROLL_COMPENSATION',
@@ -463,44 +472,33 @@ async function main() {
       'PAYROLL_PUBLISH',
       'PAYSLIP_VIEW_SELF',
       'PAYROLL_EXPORT',
-      'PERFORMANCE_VIEW',
-      'GOAL_MANAGE',
-      'REVIEW_CYCLE_MANAGE',
-      'APPRAISAL_EXECUTE',
-      'SETTING_VIEW',
+      'DOCUMENT_VIEW',
+      'REPORT_VIEW',
+      'REPORT_EXPORT',
     ],
 
-    // MANAGER receives team visibility, approval rights, org view and performance
+    // MANAGER receives team attendance and leave approval
     [RoleCode.MANAGER]: [
       'ORGANIZATION_VIEW',
       'BRANCH_VIEW',
       'DEPARTMENT_VIEW',
       'DESIGNATION_VIEW',
       'EMPLOYEE_VIEW',
-      'EMPLOYEE_HISTORY_VIEW',
       'ORG_CHART_VIEW',
       'ATTENDANCE_VIEW',
       'ATTENDANCE_MARK',
-      'ATTENDANCE_UPDATE',
+      'ATTENDANCE_CORRECT',
       'ATTENDANCE_APPROVE',
       'LEAVE_VIEW',
       'LEAVE_APPLY',
       'LEAVE_APPROVE',
       'LEAVE_REJECT',
-      'VISIT_VIEW',
-      'VISIT_APPLY',
-      'VISIT_APPROVE',
-      'WFH_VIEW',
-      'WFH_APPLY',
-      'WFH_APPROVE',
       'DOCUMENT_VIEW',
-      'REPORT_VIEW',
       'PAYSLIP_VIEW_SELF',
-      'PERFORMANCE_VIEW',
-      'GOAL_MANAGE',
+      'REPORT_VIEW',
     ],
 
-    // EMPLOYEE receives self-service and org chart visibility
+    // EMPLOYEE receives self-service attendance, leaves, documents, payslips
     [RoleCode.EMPLOYEE]: [
       'ORGANIZATION_VIEW',
       'BRANCH_VIEW',
@@ -513,10 +511,6 @@ async function main() {
       'ATTENDANCE_CORRECT',
       'LEAVE_VIEW',
       'LEAVE_APPLY',
-      'VISIT_VIEW',
-      'VISIT_APPLY',
-      'WFH_VIEW',
-      'WFH_APPLY',
       'DOCUMENT_VIEW',
       'PAYSLIP_VIEW_SELF',
     ],
@@ -552,8 +546,17 @@ async function main() {
     }
   }
 
-  // 8. Foundational Company Accounts (Leadership & Core Team)
-  const seedPeople = [
+  // 8. Load Real Profile Photo for Kuldeep Lakhera if backed up
+  let kuldeepRealPhoto: string | null = null;
+  try {
+    const photoFile = path.resolve(__dirname, '../../../scripts/kuldeep_photo.txt');
+    if (fs.existsSync(photoFile)) {
+      kuldeepRealPhoto = fs.readFileSync(photoFile, 'utf8').trim();
+    }
+  } catch {}
+
+  // 9. Foundational Real Organization Accounts (Only Real Personnel - No Dummy Records)
+  const realPeople = [
     {
       code: 'EMP001',
       email: 'nilesh.nalawade@vpspcoe-ai.org',
@@ -573,6 +576,7 @@ async function main() {
       dob: new Date('1980-05-15'),
       city: 'Baramati',
       state: 'Maharashtra',
+      profilePhoto: null,
     },
     {
       code: 'EMP002',
@@ -586,53 +590,35 @@ async function main() {
       managerCode: 'EMP001',
       gender: Gender.FEMALE,
       status: EmploymentStatus.ACTIVE,
-      workMode: WorkMode.HYBRID,
+      workMode: WorkMode.OFFICE,
       employmentType: EmploymentType.FULL_TIME,
       joiningDate: new Date('2022-03-01'),
       phone: '+91 98765 00002',
       dob: new Date('1990-08-20'),
       city: 'Baramati',
       state: 'Maharashtra',
+      profilePhoto: null,
     },
     {
-      code: 'EMP003',
-      email: 'santosh.deshmukh@vpspcoe-ai.org',
-      firstName: 'Santosh',
-      lastName: 'Deshmukh',
-      role: RoleCode.MANAGER,
-      deptCode: 'ENG',
-      desigCode: 'EM',
-      branchCode: 'ADT-AITF',
-      managerCode: 'EMP001',
-      gender: Gender.MALE,
-      status: EmploymentStatus.ACTIVE,
-      workMode: WorkMode.HYBRID,
-      employmentType: EmploymentType.FULL_TIME,
-      joiningDate: new Date('2022-04-15'),
-      phone: '+91 98765 00003',
-      dob: new Date('1988-03-12'),
-      city: 'Baramati',
-      state: 'Maharashtra',
-    },
-    {
-      code: 'EMP005',
-      email: 'sanjani@vpspcoe-ai.org',
-      firstName: 'Sanjani',
-      lastName: 'Lead',
-      role: RoleCode.MANAGER,
-      deptCode: 'ENG',
-      desigCode: 'TL',
+      code: 'ADTAITF/023',
+      email: 'samruddhi.ranmode@vpspcoe-ai.org',
+      firstName: 'Samruddhi',
+      lastName: 'Ranmode',
+      role: RoleCode.ACCOUNTANT,
+      deptCode: 'FIN',
+      desigCode: 'FIN-LEAD',
       branchCode: 'ADT-AITF',
       managerCode: 'EMP001',
       gender: Gender.FEMALE,
       status: EmploymentStatus.ACTIVE,
-      workMode: WorkMode.HYBRID,
+      workMode: WorkMode.OFFICE,
       employmentType: EmploymentType.FULL_TIME,
-      joiningDate: new Date('2022-05-01'),
-      phone: '+91 98765 00005',
-      dob: new Date('1991-07-22'),
+      joiningDate: new Date('2023-01-15'),
+      phone: '+91 98765 00023',
+      dob: new Date('1995-04-10'),
       city: 'Baramati',
       state: 'Maharashtra',
+      profilePhoto: null,
     },
     {
       code: 'EMP004',
@@ -641,9 +627,9 @@ async function main() {
       lastName: 'Lakhera',
       role: RoleCode.EMPLOYEE,
       deptCode: 'ENG',
-      desigCode: 'SWE',
+      desigCode: 'SR-SWE',
       branchCode: 'ADT-AITF',
-      managerCode: 'EMP003',
+      managerCode: 'EMP001',
       gender: Gender.MALE,
       status: EmploymentStatus.ACTIVE,
       workMode: WorkMode.OFFICE,
@@ -653,19 +639,19 @@ async function main() {
       dob: new Date('1996-01-01'),
       city: 'Baramati',
       state: 'Maharashtra',
+      profilePhoto: kuldeepRealPhoto,
     },
   ];
 
   // Argon2id hash for Password@123
   const passwordHash = await argon2.hash('Password@123');
-
   const employeeRecordMap: Record<string, string> = {};
   const branchMap: Record<string, string> = {
     'ADT-AITF': adtBranch.id,
   };
 
-  // Step 8a: Create Users and Base Employees
-  for (const person of seedPeople) {
+  // Step 9a: Create Clean Users and Base Employees
+  for (const person of realPeople) {
     const branchId = branchMap[person.branchCode];
     const deptId = deptMap[person.deptCode];
     const desigId = desigMap[person.desigCode];
@@ -689,7 +675,7 @@ async function main() {
       },
     });
 
-    // 2. Strict single role assignment (Admin has ADMIN only, HR has HR only, Manager has MANAGER only)
+    // 2. Strict Role Assignment
     const role = await prisma.role.findFirst({
       where: { organizationId: org.id, code: person.role },
     });
@@ -698,12 +684,12 @@ async function main() {
         data: {
           userId: user.id,
           roleId: role.id,
-          assignedBy: 'SYSTEM_SEED',
+          assignedBy: 'SYSTEM_PROD_INIT',
         },
       });
     }
 
-    // 3. Employee Normalized Record
+    // 3. Employee Normalized Record (Zero dummy documents, zero fake data)
     const employee = await prisma.employee.create({
       data: {
         userId: user.id,
@@ -716,6 +702,7 @@ async function main() {
         gender: person.gender,
         status: person.status,
         joiningDate: person.joiningDate,
+        profilePhoto: person.profilePhoto,
         isActive: true,
       },
     });
@@ -727,49 +714,23 @@ async function main() {
       data: {
         employeeId: employee.id,
         workEmail: person.email,
-        personalEmail: `${person.firstName.toLowerCase()}.${person.lastName.toLowerCase()}@personal.example.com`,
         phone: person.phone,
         city: person.city,
         state: person.state,
         country: 'India',
-        postalCode: '560001',
-      },
-    });
-
-    // 5. Emergency Contact
-    await prisma.emergencyContact.create({
-      data: {
-        employeeId: employee.id,
-        name: `${person.firstName} Family Contact`,
-        relationship: 'Spouse / Parent',
-        phone: '+91 98765 99999',
-        isPrimary: true,
-        address: `${person.city}, ${person.state}`,
-      },
-    });
-
-    // 6. Documents Metadata
-    await prisma.employeeDocumentMetadata.create({
-      data: {
-        employeeId: employee.id,
-        documentType: 'GOVT_ID',
-        documentName: 'Aadhaar / National ID Card',
-        documentNumber: `XXXX-XXXX-${person.code.slice(-4)}`,
-        isVerified: true,
-        verifiedAt: new Date(),
+        postalCode: '413115',
       },
     });
   }
 
-  // Step 8b: Wire Manager Relationships & Employments
-  for (const person of seedPeople) {
+  // Step 9b: Wire Department Leadership & Employments
+  for (const person of realPeople) {
     const employeeId = employeeRecordMap[person.code];
     const branchId = branchMap[person.branchCode];
     const deptId = deptMap[person.deptCode];
     const desigId = desigMap[person.desigCode];
     const managerId = person.managerCode ? employeeRecordMap[person.managerCode] : null;
 
-    // Update managerId on Employee table
     if (managerId) {
       await prisma.employee.update({
         where: { id: employeeId },
@@ -792,7 +753,6 @@ async function main() {
       },
     });
 
-    // Initial Join History Record
     await prisma.employeeHistory.create({
       data: {
         employeeId,
@@ -809,44 +769,32 @@ async function main() {
   }
 
   // Set Department Heads
-  if (deptMap['ENG'] && employeeRecordMap['EMP003']) {
+  if (deptMap['EXEC'] && employeeRecordMap['EMP001']) {
     await prisma.department.update({
-      where: { id: deptMap['ENG'] },
-      data: { departmentHeadId: employeeRecordMap['EMP003'] }, // Team Manager
+      where: { id: deptMap['EXEC'] },
+      data: { departmentHeadId: employeeRecordMap['EMP001'] }, // Nilesh Nalawade
     });
   }
   if (deptMap['HR'] && employeeRecordMap['EMP002']) {
     await prisma.department.update({
       where: { id: deptMap['HR'] },
-      data: { departmentHeadId: employeeRecordMap['EMP002'] }, // HR Manager
+      data: { departmentHeadId: employeeRecordMap['EMP002'] }, // Heena Bhatia
     });
   }
-  if (deptMap['EXEC'] && employeeRecordMap['EMP001']) {
+  if (deptMap['FIN'] && employeeRecordMap['ADTAITF/023']) {
     await prisma.department.update({
-      where: { id: deptMap['EXEC'] },
-      data: { departmentHeadId: employeeRecordMap['EMP001'] }, // Admin User
+      where: { id: deptMap['FIN'] },
+      data: { departmentHeadId: employeeRecordMap['ADTAITF/023'] }, // Samruddhi Ranmode
+    });
+  }
+  if (deptMap['ENG'] && employeeRecordMap['EMP004']) {
+    await prisma.department.update({
+      where: { id: deptMap['ENG'] },
+      data: { departmentHeadId: employeeRecordMap['EMP004'] }, // Kuldeep Lakhera
     });
   }
 
-  // 9. System Settings
-  await prisma.systemSetting.upsert({
-    where: {
-      organizationId_key: {
-        organizationId: org.id,
-        key: 'ATTENDANCE_GRACE_PERIOD_MINUTES',
-      },
-    },
-    update: {},
-    create: {
-      organizationId: org.id,
-      key: 'ATTENDANCE_GRACE_PERIOD_MINUTES',
-      value: '15',
-      type: 'NUMBER',
-      description: 'Standard grace period allowed after shift start time in minutes',
-    },
-  });
-
-  // 10. Default Primary Office Location
+  // 10. Default Primary Office Location (Geofenced at Baramati)
   await prisma.officeLocation.upsert({
     where: {
       organizationId_name: {
@@ -876,7 +824,80 @@ async function main() {
     },
   });
 
-  // 11. Standard Leave Types & Policies (Casual Leave Only - 24 Days / Year)
+  // 11. Standard Shift & Attendance Policy
+  const attPolicy = await prisma.attendancePolicy.upsert({
+    where: {
+      organizationId_code_version: {
+        organizationId: org.id,
+        code: 'STD-OFFICE',
+        version: 1,
+      },
+    },
+    update: {
+      name: 'Standard Foundation Office Policy',
+      standardWorkMinutes: 480,
+      halfDayThresholdMinutes: 240,
+      fullDayThresholdMinutes: 420,
+      gracePeriodMinutes: 15,
+      isDefault: true,
+    },
+    create: {
+      organizationId: org.id,
+      branchId: adtBranch.id,
+      name: 'Standard Foundation Office Policy',
+      code: 'STD-OFFICE',
+      version: 1,
+      description: 'Standard 8-hour working day with 15-minute grace period',
+      standardWorkMinutes: 480,
+      halfDayThresholdMinutes: 240,
+      fullDayThresholdMinutes: 420,
+      gracePeriodMinutes: 15,
+      isDefault: true,
+    },
+  });
+
+  const generalShift = await prisma.shift.upsert({
+    where: {
+      organizationId_code: {
+        organizationId: org.id,
+        code: 'GS',
+      },
+    },
+    update: {
+      name: 'General Shift (09:00 - 18:00)',
+      startTime: '09:00',
+      endTime: '18:00',
+      workDays: [1, 2, 3, 4, 5, 6], // Mon through Sat
+      breakDurationMinutes: 60,
+    },
+    create: {
+      organizationId: org.id,
+      policyId: attPolicy.id,
+      code: 'GS',
+      name: 'General Shift (09:00 - 18:00)',
+      description: 'Foundation general office shift',
+      startTime: '09:00',
+      endTime: '18:00',
+      workDays: [1, 2, 3, 4, 5, 6],
+      breakDurationMinutes: 60,
+      color: '#d97706',
+    },
+  });
+
+  // Assign General Shift to all real personnel
+  for (const person of realPeople) {
+    const employeeId = employeeRecordMap[person.code];
+    await prisma.shiftAssignment.create({
+      data: {
+        organizationId: org.id,
+        employeeId,
+        shiftId: generalShift.id,
+        effectiveFrom: new Date('2026-01-01T00:00:00.000Z'),
+      },
+    });
+  }
+
+  // 12. Standard Leave Types & Policies (Casual Leave Only - Strictly 24 Days / Year)
   const clType = await prisma.leaveType.upsert({
     where: { organizationId_code: { organizationId: org.id, code: 'CL' } },
     update: { name: 'Casual Leave', color: '#d97706', allowHalfDay: true, isActive: true },
@@ -917,10 +938,9 @@ async function main() {
     },
   });
 
-  // Assign 24 Casual Leaves to all employees and initialize opening ledger
-  const allEmployees = await prisma.employee.findMany({ where: { organizationId: org.id } });
-
-  for (const emp of allEmployees) {
+  // Assign 24 Casual Leaves to all real personnel with clean initial balance
+  const activePersonnel = await prisma.employee.findMany({ where: { organizationId: org.id } });
+  for (const emp of activePersonnel) {
     await prisma.employeeLeavePolicyAssignment.create({
       data: {
         organizationId: org.id,
@@ -947,47 +967,66 @@ async function main() {
       },
     });
 
-    const idempotencyKey = `grant:seed:${acc.id}:2026`;
     await prisma.leaveBalanceTransaction.create({
       data: {
         accountId: acc.id,
         transactionType: 'OPENING_GRANT',
         amount: entitlement,
         balanceAfter: entitlement,
-        reason: `Initial annual entitlement grant (${clPolicy.name})`,
-        idempotencyKey,
+        reason: `Annual Casual Leave entitlement grant (${clPolicy.name})`,
+        idempotencyKey: `grant:prod:${acc.id}:2026`,
       },
     });
   }
 
-  console.log('------------------------------------------------------------');
-  console.log('CLEAN HRMS LEADERSHIP & TEAM SEED COMPLETED SUCCESSFULLY:');
-  console.log('1. CEO / Executive Leadership:');
-  console.log('   - Name: Nilesh Nalawade');
-  console.log('   - Email: nilesh.nalawade@vpspcoe-ai.org');
-  console.log('   - Password: Password@123');
-  console.log('   - Role: ADMIN (EMP001)');
+  // 13. System Settings
+  await prisma.systemSetting.upsert({
+    where: {
+      organizationId_key: {
+        organizationId: org.id,
+        key: 'ATTENDANCE_GRACE_PERIOD_MINUTES',
+      },
+    },
+    update: {},
+    create: {
+      organizationId: org.id,
+      key: 'ATTENDANCE_GRACE_PERIOD_MINUTES',
+      value: '15',
+      type: 'NUMBER',
+      description: 'Standard grace period allowed after shift start time in minutes',
+    },
+  });
+
+  console.log('================================================================');
+  console.log('PRODUCTION ENVIRONMENT READY (ZERO DUMMY DATA)');
+  console.log('================================================================');
+  console.log('Operational Records:');
+  console.log(' - Attendance Events: 0 (Live punches will record here)');
+  console.log(' - Attendance Daily Summaries: 0 (Fresh real records)');
+  console.log(' - Documents in Vault: 0 (Real documents to be uploaded manually)');
+  console.log(' - Leave Policy: Casual Leave (24 days/year credited)');
+  console.log('----------------------------------------------------------------');
+  console.log('OFFICIAL FOUNDATION CREDENTIALS:');
+  console.log('1. Executive Leadership / Admin:');
+  console.log('   Email:    nilesh.nalawade@vpspcoe-ai.org');
+  console.log('   Password: Password@123');
+  console.log('   Role:     ADMIN (Director / Executive Head)');
+  console.log('');
   console.log('2. Human Resources Lead:');
-  console.log('   - Name: Heena Bhatia');
-  console.log('   - Email: heena.bhatia@vpspcoe-ai.org');
-  console.log('   - Password: Password@123');
-  console.log('   - Role: HR (EMP002)');
-  console.log('3. Team Lead / Manager:');
-  console.log('   - Name: Santosh Deshmukh');
-  console.log('   - Email: santosh.deshmukh@vpspcoe-ai.org');
-  console.log('   - Password: Password@123');
-  console.log('   - Role: MANAGER (EMP003)');
-  console.log('4. Team Lead / Manager:');
-  console.log('   - Name: Sanjani');
-  console.log('   - Email: sanjani@vpspcoe-ai.org');
-  console.log('   - Password: Password@123');
-  console.log('   - Role: MANAGER (EMP005)');
-  console.log('5. Data Engineer:');
-  console.log('   - Name: Kuldeep Lakhera');
-  console.log('   - Email: kuldeep.lakhera@vpspcoe-ai.org');
-  console.log('   - Password: Password@123');
-  console.log('   - Role: EMPLOYEE (EMP004)');
-  console.log('------------------------------------------------------------');
+  console.log('   Email:    heena.bhatia@vpspcoe-ai.org');
+  console.log('   Password: Password@123');
+  console.log('   Role:     HR (HR Manager)');
+  console.log('');
+  console.log('3. Finance & Accounts:');
+  console.log('   Email:    samruddhi.ranmode@vpspcoe-ai.org');
+  console.log('   Password: Password@123');
+  console.log('   Role:     ACCOUNTANT (Senior Accountant)');
+  console.log('');
+  console.log('4. Engineering & Product:');
+  console.log('   Email:    kuldeep.lakhera@vpspcoe-ai.org');
+  console.log('   Password: Password@123');
+  console.log('   Role:     EMPLOYEE (Principal AI Engineer)');
+  console.log('================================================================');
 }
 
 main()
