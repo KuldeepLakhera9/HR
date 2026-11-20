@@ -4,6 +4,7 @@ import React, { useEffect, useState, useTransition } from 'react';
 import Link from 'next/link';
 import { AppShell } from '../../layouts/AppShell';
 import { useRole } from '../../context/RoleContext';
+import { useAuth } from '../../context/AuthContext';
 import { employeesApi } from '../../lib/api-client';
 import {
   Card,
@@ -39,6 +40,9 @@ import {
   FileText,
   ChevronRight,
   RefreshCw,
+  Camera,
+  Upload,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 interface EmergencyContactFormItem {
@@ -52,11 +56,20 @@ interface EmergencyContactFormItem {
 
 export default function ProfilePage() {
   const { currentUser, role } = useRole();
+  const { updateUser } = useAuth();
   const [employee, setEmployee] = useState<any | null>(null);
   const [changeRequests, setChangeRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'history'>('overview');
   const [isPending, startTransition] = useTransition();
+
+  // Profile Photo state
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState<string | null>(null);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   // Modal state for submitting a change request
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -78,6 +91,77 @@ export default function ProfilePage() {
 
   // Action status state
   const [cancellingId, setCancellingId] = useState<string | null>(null);
+
+  const openPhotoModal = () => {
+    setPhotoFile(null);
+    setPhotoPreview(employee?.profilePhoto || null);
+    setPhotoError(null);
+    setIsPhotoModalOpen(true);
+  };
+
+  const handlePhotoFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setPhotoError(null);
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      setPhotoError('Image file size must be less than 5MB.');
+      return;
+    }
+
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      setPhotoError('Only JPEG, PNG, and WebP images are supported.');
+      return;
+    }
+
+    setPhotoFile(file);
+    const reader = new FileReader();
+    reader.onload = (uploadEvent) => {
+      setPhotoPreview(uploadEvent.target?.result as string);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleSaveProfilePhoto = async () => {
+    if (!photoFile && !photoPreview) {
+      setPhotoError('Please select an image file to upload.');
+      return;
+    }
+    setUploadingPhoto(true);
+    setPhotoError(null);
+    try {
+      const res = await employeesApi.uploadProfilePicture(photoFile || photoPreview!);
+      setEmployee((prev: any) => (prev ? { ...prev, profilePhoto: res.profilePhoto } : null));
+      updateUser({ avatarUrl: res.profilePhoto });
+      setSuccessMessage('Profile picture updated successfully!');
+      setIsPhotoModalOpen(false);
+      setPhotoFile(null);
+      setPhotoPreview(null);
+    } catch (err: any) {
+      setPhotoError(err.message || 'Failed to upload profile picture. Please try again.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
+
+  const handleRemoveProfilePhoto = async () => {
+    if (!confirm('Are you sure you want to remove your profile picture?')) return;
+    setUploadingPhoto(true);
+    setPhotoError(null);
+    try {
+      await employeesApi.removeProfilePicture();
+      setEmployee((prev: any) => (prev ? { ...prev, profilePhoto: null } : null));
+      updateUser({ avatarUrl: null });
+      setSuccessMessage('Profile picture removed successfully.');
+      setIsPhotoModalOpen(false);
+      setPhotoFile(null);
+      setPhotoPreview(null);
+    } catch (err: any) {
+      setPhotoError(err.message || 'Failed to remove profile picture.');
+    } finally {
+      setUploadingPhoto(false);
+    }
+  };
 
   const loadData = async () => {
     try {
@@ -347,21 +431,50 @@ export default function ProfilePage() {
 
         {/* Profile Card Header */}
         <div className="bg-white rounded-2xl border border-stone-200/80 p-6 shadow-xs flex flex-col sm:flex-row items-center sm:items-start gap-6">
-          <Avatar name={displayName} size="xl" status="online" />
-          <div className="flex-1 text-center sm:text-left space-y-1">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-              <h2 className="text-xl font-bold text-stone-900">{displayName}</h2>
-              <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                {role}
-              </span>
-              <Badge
-                variant={
-                  status === 'ACTIVE' ? 'success' : status === 'PROBATION' ? 'warning' : 'default'
-                }
+          <div className="relative group shrink-0">
+            <Avatar
+              name={displayName}
+              src={employee?.profilePhoto || null}
+              size="xl"
+              status="online"
+              className="ring-4 ring-amber-100/70 shadow-xs"
+            />
+            <button
+              type="button"
+              onClick={openPhotoModal}
+              aria-label="Change profile picture"
+              title="Change profile picture"
+              className="absolute -bottom-1 -right-1 p-2 rounded-full bg-amber-600 hover:bg-amber-700 text-white shadow-md transition-all duration-150 hover:scale-110 focus:outline-hidden focus:ring-2 focus:ring-amber-500 focus:ring-offset-2"
+            >
+              <Camera className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          <div className="flex-1 text-center sm:text-left space-y-1 w-full">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-2 justify-center sm:justify-start">
+                <h2 className="text-xl font-bold text-stone-900">{displayName}</h2>
+                <span className="inline-block px-2 py-0.5 rounded text-xs font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                  {role}
+                </span>
+                <Badge
+                  variant={
+                    status === 'ACTIVE' ? 'success' : status === 'PROBATION' ? 'warning' : 'default'
+                  }
+                  size="sm"
+                >
+                  {status}
+                </Badge>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
                 size="sm"
+                onClick={openPhotoModal}
+                className="gap-1.5 text-xs font-semibold text-stone-700 hover:text-amber-700 hover:border-amber-300 self-center sm:self-auto"
               >
-                {status}
-              </Badge>
+                <Camera className="h-3.5 w-3.5 text-amber-600" />
+                {employee?.profilePhoto ? 'Change Photo' : 'Add Profile Picture'}
+              </Button>
             </div>
             <p className="text-sm font-medium text-stone-600">{designationName}</p>
 
@@ -1107,6 +1220,144 @@ export default function ProfilePage() {
                   </Button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Profile Picture Management Modal */}
+        {isPhotoModalOpen && (
+          <div className="fixed inset-0 z-50 bg-stone-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl border border-stone-200 shadow-2xl max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              {/* Modal Header */}
+              <div className="px-6 py-4 border-b border-stone-100 flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-amber-50 text-amber-700">
+                    <Camera className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-stone-900 text-base">Profile Picture</h3>
+                    <p className="text-xs text-stone-500">Update your account avatar</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsPhotoModalOpen(false)}
+                  className="p-1 rounded-lg text-stone-400 hover:text-stone-600 hover:bg-stone-100 transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 space-y-5">
+                {photoError && (
+                  <div className="rounded-xl bg-rose-50 border border-rose-200 p-3 flex items-start gap-2.5 text-xs text-rose-800">
+                    <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                    <span>{photoError}</span>
+                  </div>
+                )}
+
+                {/* Avatar Preview */}
+                <div className="flex flex-col items-center justify-center gap-3">
+                  <div className="relative">
+                    <div className="h-28 w-28 rounded-full overflow-hidden border-4 border-amber-100/80 shadow-md bg-stone-100 flex items-center justify-center">
+                      {photoPreview ? (
+                        <img
+                          src={photoPreview}
+                          alt="Profile Preview"
+                          className="h-full w-full object-cover"
+                        />
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-stone-400">
+                          <User className="h-12 w-12 text-stone-300" />
+                          <span className="text-[10px] font-semibold text-stone-400 mt-1">
+                            No Photo
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <p className="text-xs text-stone-500 text-center max-w-xs">
+                    Allowed formats: PNG, JPEG, WebP. Maximum file size: 5MB.
+                  </p>
+                </div>
+
+                {/* File Input and Drop Zone */}
+                <div>
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    onChange={handlePhotoFileChange}
+                  />
+
+                  <div
+                    onClick={() => fileInputRef.current?.click()}
+                    className="border-2 border-dashed border-stone-200 hover:border-amber-400 hover:bg-amber-50/30 rounded-xl p-5 text-center cursor-pointer transition-colors group flex flex-col items-center gap-2"
+                  >
+                    <div className="p-2.5 rounded-full bg-stone-100 group-hover:bg-amber-100 text-stone-500 group-hover:text-amber-700 transition-colors">
+                      <Upload className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold text-stone-800 group-hover:text-amber-900">
+                        {photoFile ? photoFile.name : 'Click to select a photo from your computer'}
+                      </p>
+                      <p className="text-[11px] text-stone-400 mt-0.5">
+                        {photoFile
+                          ? `${(photoFile.size / 1024 / 1024).toFixed(2)} MB • Ready to save`
+                          : 'High-resolution professional headshot recommended'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-stone-50 border-t border-stone-100 flex items-center justify-between gap-3">
+                <div>
+                  {employee?.profilePhoto && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveProfilePhoto}
+                      disabled={uploadingPhoto}
+                      className="inline-flex items-center gap-1.5 text-xs text-rose-600 hover:text-rose-800 hover:underline font-medium disabled:opacity-50"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                      Remove Current Picture
+                    </button>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setIsPhotoModalOpen(false)}
+                    disabled={uploadingPhoto}
+                    className="text-xs text-stone-600"
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={handleSaveProfilePhoto}
+                    disabled={uploadingPhoto || (!photoFile && !photoPreview)}
+                    className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold shadow-xs gap-1.5"
+                  >
+                    {uploadingPhoto ? (
+                      <>
+                        <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        Saving...
+                      </>
+                    ) : (
+                      'Save Picture'
+                    )}
+                  </Button>
+                </div>
+              </div>
             </div>
           </div>
         )}

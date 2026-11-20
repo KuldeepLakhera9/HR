@@ -19,6 +19,7 @@ export interface AuthContextType {
   hasRole: (required: RoleType | RoleType[]) => boolean;
   hasPermission: (required: string | string[]) => boolean;
   clearError: () => void;
+  updateUser: (updated: Partial<AuthUser>) => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -30,6 +31,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [error, setError] = useState<string | null>(null);
 
   const clearError = useCallback(() => setError(null), []);
+
+  const updateUser = useCallback((updated: Partial<AuthUser>) => {
+    setUser((prev) => (prev ? { ...prev, ...updated } : null));
+  }, []);
 
   const roles = useMemo<RoleType[]>(() => {
     return user?.roles || [];
@@ -43,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (roles.length > 0) {
       if (roles.includes('ADMIN')) return 'ADMIN';
       if (roles.includes('HR')) return 'HR';
+      if (roles.includes('ACCOUNTANT')) return 'ACCOUNTANT';
       if (roles.includes('MANAGER')) return 'MANAGER';
       return roles[0];
     }
@@ -165,6 +171,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       hasRole,
       hasPermission,
       clearError,
+      updateUser,
     }),
     [
       user,
@@ -180,6 +187,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       hasRole,
       hasPermission,
       clearError,
+      updateUser,
     ],
   );
 

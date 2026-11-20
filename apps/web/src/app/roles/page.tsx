@@ -37,13 +37,21 @@ export default function RolesAccessPage() {
       id: '3',
       code: 'MANAGER',
       name: 'Team Manager',
-      description:
-        'Departmental oversight, team attendance, official visit sign-offs, and leave approvals.',
+      description: 'Departmental oversight, team attendance, and leave approvals.',
       usersCount: 16,
       permissionsCount: 18,
     },
     {
       id: '4',
+      code: 'ACCOUNTANT',
+      name: 'Finance & Accounts',
+      description:
+        'Payroll execution, compensation structures, financial registers, bank advice, and tax audits.',
+      usersCount: 1,
+      permissionsCount: 22,
+    },
+    {
+      id: '5',
       code: 'EMPLOYEE',
       name: 'Individual Contributor',
       description:

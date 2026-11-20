@@ -20,7 +20,18 @@ export class PermissionsGuard implements CanActivate {
     const request = context.switchToHttp().getRequest();
     const user = request.user as AuthenticatedUser | undefined;
 
-    if (!user || !user.permissions || user.permissions.length === 0) {
+    if (!user) {
+      throw new ForbiddenException(
+        'Access denied: You do not possess the required privilege to perform this action.',
+      );
+    }
+
+    // ADMIN role has full super-admin access across the entire HRMS
+    if (user.roles && user.roles.includes('ADMIN' as any)) {
+      return true;
+    }
+
+    if (!user.permissions || user.permissions.length === 0) {
       throw new ForbiddenException(
         'Access denied: You do not possess the required privilege to perform this action.',
       );

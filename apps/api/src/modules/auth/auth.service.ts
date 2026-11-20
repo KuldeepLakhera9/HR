@@ -79,7 +79,7 @@ export class AuthService {
     const normalizedEmail = dto.email.trim().toLowerCase();
 
     // 2. Find active user
-    const user = await this.prisma.user.findFirst({
+    let user = await this.prisma.user.findFirst({
       where: {
         email: normalizedEmail,
         deletedAt: null,
@@ -100,6 +100,53 @@ export class AuthService {
         },
       },
     });
+
+    // Support backward-compatible system aliases (e.g. admin@vpspcoe-ai.org -> EMP001, hr@vpspcoe-ai.org -> EMP002, manager@vpspcoe-ai.org -> EMP003)
+    if (!user) {
+      const aliasCodeMap: Record<string, string> = {
+        'admin@vpspcoe-ai.org': 'EMP001',
+        'ceo@vpspcoe-ai.org': 'EMP001',
+        'hr@vpspcoe-ai.org': 'EMP002',
+        'manager@vpspcoe-ai.org': 'EMP003',
+        'accountant@vpspcoe-ai.org': 'EMP006',
+        'accounts@vpspcoe-ai.org': 'EMP006',
+        'employee@vpspcoe-ai.org': 'EMP004',
+        'staff@vpspcoe-ai.org': 'EMP004',
+        'emp@vpspcoe-ai.org': 'EMP004',
+        'admin@peopleos.local': 'EMP001',
+        'ceo@peopleos.local': 'EMP001',
+        'hr@peopleos.local': 'EMP002',
+        'manager@peopleos.local': 'EMP003',
+        'employee@peopleos.local': 'EMP004',
+        'emp@peopleos.local': 'EMP004',
+        'kuldeeplakhera018@gmail.com': 'EMP004',
+        'kuldeep.lakhera@vpspcoe-ai.org': 'EMP004',
+      };
+      const aliasEmpCode = aliasCodeMap[normalizedEmail];
+      if (aliasEmpCode) {
+        user = await this.prisma.user.findFirst({
+          where: {
+            employeeCode: aliasEmpCode,
+            deletedAt: null,
+          },
+          include: {
+            userRoles: {
+              include: {
+                role: {
+                  include: {
+                    rolePermissions: {
+                      include: {
+                        permission: true,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        });
+      }
+    }
 
     // Timing-attack mitigation: if user does not exist, run dummy verification
     if (!user) {
@@ -336,6 +383,7 @@ export class AuthService {
       status: user.status as UserStatus,
       roles,
       permissions,
+      avatarUrl: user.avatarUrl ?? null,
     };
 
     return {
@@ -520,6 +568,7 @@ export class AuthService {
       status: user.status as UserStatus,
       roles,
       permissions,
+      avatarUrl: user.avatarUrl ?? null,
     };
 
     return {
@@ -646,6 +695,7 @@ export class AuthService {
       status: user.status as UserStatus,
       roles,
       permissions: Array.from(permissionsSet),
+      avatarUrl: user.avatarUrl ?? null,
     };
   }
 

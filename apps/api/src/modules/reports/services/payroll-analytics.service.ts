@@ -45,7 +45,10 @@ export class PayrollAnalyticsService {
     user: AuthenticatedUser,
     isEmployeeLevel = false,
   ): { isAdminOrHr: boolean; isManager: boolean } {
-    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const isAdminOrHr =
+      user.roles.includes('ADMIN') ||
+      user.roles.includes('HR') ||
+      user.roles.includes('ACCOUNTANT');
     const hasPayrollPerm =
       user.permissions.includes('PAYROLL_VIEW') ||
       user.permissions.includes('PAYROLL_MANAGE') ||

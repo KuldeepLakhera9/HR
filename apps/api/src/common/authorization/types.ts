@@ -25,6 +25,7 @@ export const ROLE_DEFAULT_SCOPES: Record<RoleType, AccessScope> = {
   HR: 'ORGANIZATION',
   MANAGER: 'TEAM',
   EMPLOYEE: 'SELF',
+  ACCOUNTANT: 'ORGANIZATION',
 };
 
 /**

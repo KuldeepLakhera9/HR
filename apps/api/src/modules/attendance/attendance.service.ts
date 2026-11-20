@@ -924,12 +924,19 @@ export class AttendanceService {
     try {
       const { session, event, summary } = await this.prisma.$transaction(async (tx) => {
         // A. Prevent overlapping / duplicate open sessions
-        const openSession = await tx.attendanceSession.findFirst({
+        let openSession = await tx.attendanceSession.findFirst({
           where: {
             employeeId: employee.id,
             status: 'OPEN',
           },
         });
+
+        // If open session belongs to a prior working day, employee forgot to check out.
+        // Auto-close it now so they can check in on the new working day.
+        if (openSession && new Date(openSession.date).getTime() < workingDateUtc.getTime()) {
+          await this.closeStaleSession(tx, openSession, employee.organizationId);
+          openSession = null;
+        }
 
         if (openSession) {
           this.recordAttendanceException({
@@ -1919,6 +1926,71 @@ export class AttendanceService {
   // ===========================================================================
 
   /**
+   * Closes a stale unclosed session from a previous working day as AUTO_CLOSED,
+   * records a MISSING_CHECKOUT exception, and marks the daily summary as INCOMPLETE.
+   */
+  async closeStaleSession(client: any, session: any, organizationId: string) {
+    await client.attendanceSession.update({
+      where: { id: session.id },
+      data: { status: 'AUTO_CLOSED' },
+    });
+
+    await client.attendanceException
+      .create({
+        data: {
+          organizationId,
+          employeeId: session.employeeId,
+          date: session.date,
+          exceptionType: 'MISSING_CHECKOUT',
+          severity: 'MEDIUM',
+          status: 'OPEN',
+          resolved: false,
+          idempotencyKey: `ex:missing_checkout:${session.id}`,
+          details: {
+            sessionId: session.id,
+            checkInTime: session.checkInTime
+              ? session.checkInTime instanceof Date
+                ? session.checkInTime.toISOString()
+                : session.checkInTime
+              : new Date().toISOString(),
+            message:
+              'Session automatically closed due to missing checkout before next working day.',
+          },
+        },
+      })
+      .catch(() => null);
+
+    await client.attendanceDailySummary.upsert({
+      where: {
+        organizationId_employeeId_date: {
+          organizationId,
+          employeeId: session.employeeId,
+          date: session.date,
+        },
+      },
+      create: {
+        organizationId,
+        employeeId: session.employeeId,
+        date: session.date,
+        firstCheckIn: session.checkInTime || new Date(),
+        lastCheckOut: null,
+        totalWorkMinutes: 0,
+        status: 'INCOMPLETE',
+        correctionNotes: 'Missing checkout flagged by reconciliation engine (incomplete session)',
+      },
+      update: {
+        lastCheckOut: null,
+        status: 'INCOMPLETE',
+        correctionNotes: 'Missing checkout flagged by reconciliation engine (incomplete session)',
+      },
+    });
+
+    this.logger.log(
+      `Auto-closed stale attendance session ${session.id} for employee ${session.employeeId}`,
+    );
+  }
+
+  /**
    * Identifies unclosed open sessions past their working day or shift window,
    * transitions them to AUTO_CLOSED, and flags an AttendanceException without
    * fabricating a fake CHECK_OUT event.
@@ -2353,6 +2425,22 @@ export class AttendanceService {
       },
     });
 
+    let autoClosedSessionsCount = 0;
+    if (sessions.length === 0) {
+      const staleSession = await this.prisma.attendanceSession.findFirst({
+        where: {
+          employeeId: employee.id,
+          status: 'OPEN',
+          date: { lt: workingDateUtc },
+        },
+      });
+
+      if (staleSession) {
+        await this.closeStaleSession(this.prisma, staleSession, employee.organizationId);
+        autoClosedSessionsCount = 1;
+      }
+    }
+
     const activeSession = sessions.find((s) => s.status === 'OPEN') || null;
 
     // Determine break status
@@ -2381,6 +2469,7 @@ export class AttendanceService {
       data: {
         date: workingDateStr,
         workingDateUtc: workingDateUtc.toISOString(),
+        autoClosedSessionsCount,
         employee: {
           id: employee.id,
           employeeCode: employee.employeeCode,

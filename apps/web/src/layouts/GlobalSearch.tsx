@@ -180,7 +180,7 @@ export const GlobalSearch: React.FC<GlobalSearchProps> = ({ isOpen, onClose }) =
             </kbd>
           </div>
           <span className="text-[10px] text-stone-400 flex items-center gap-1">
-            <Command className="h-3 w-3" /> PeopleOS Search
+            <Command className="h-3 w-3" /> ADT-AITF Search
           </span>
         </div>
       </div>

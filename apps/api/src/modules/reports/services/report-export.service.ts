@@ -40,7 +40,10 @@ export class ReportExportService {
   async resolveScopedEmployeeIds(
     user: AuthenticatedUser,
   ): Promise<{ scopedEmployeeIds: string[] | null; scopeType: 'ORGANIZATION' | 'TEAM' }> {
-    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const isAdminOrHr =
+      user.roles.includes('ADMIN') ||
+      user.roles.includes('HR') ||
+      user.roles.includes('ACCOUNTANT');
     const isManager = user.roles.includes('MANAGER');
 
     if (!isAdminOrHr && !isManager) {

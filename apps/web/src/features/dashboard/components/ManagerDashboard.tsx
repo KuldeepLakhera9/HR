@@ -258,7 +258,7 @@ export const ManagerDashboard: React.FC = () => {
                   </span>
                 </div>
                 <p className="text-xs text-stone-600 mt-1">
-                  Leave, work from home, and official visit requests submitted by your team members.
+                  Leave and attendance regularization requests submitted by your team members.
                 </p>
                 <Link href="/requests" className="mt-3 block">
                   <Button size="sm" className="w-full h-8 text-xs">

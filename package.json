@@ -12,7 +12,13 @@
     "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "prepare": "husky",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "hpc:setup": "bash scripts/hpc/setup.sh",
+    "hpc:start": "bash scripts/hpc/start.sh",
+    "hpc:stop": "bash scripts/hpc/stop.sh",
+    "hpc:status": "bash scripts/hpc/status.sh",
+    "hpc:restart": "bash scripts/hpc/restart.sh",
+    "hpc:backup": "bash scripts/hpc/backup-db.sh"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [

@@ -273,13 +273,9 @@ export const EmployeeDashboard: React.FC = () => {
                 <Badge variant={attendanceBadgeVariant} size="sm">
                   {attendanceToday.isCheckedIn ? 'ACTIVE' : attendanceToday.status}
                 </Badge>
-                {attendanceToday.mode && (
+                {attendanceToday.mode === 'OFFICE' && (
                   <Badge variant="outline" size="sm" className="text-[11px]">
-                    {attendanceToday.mode === 'OFFICE'
-                      ? 'Office'
-                      : attendanceToday.mode === 'WFH'
-                        ? 'Work From Home'
-                        : 'Official Visit'}
+                    Office
                   </Badge>
                 )}
               </div>
@@ -343,7 +339,7 @@ export const EmployeeDashboard: React.FC = () => {
       </div>
 
       {/* 3. Quick Actions Hub */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         <Link href="/attendance" className="block">
           <div className="p-3 rounded-xl border border-stone-200/90 bg-white hover:border-amber-400 hover:bg-amber-50/30 transition-all text-center group cursor-pointer shadow-2xs">
             <Clock className="h-5 w-5 mx-auto text-amber-700 group-hover:scale-110 transition-transform mb-1.5" />
@@ -363,20 +359,6 @@ export const EmployeeDashboard: React.FC = () => {
             <Banknote className="h-5 w-5 mx-auto text-emerald-600 group-hover:scale-110 transition-transform mb-1.5" />
             <span className="text-xs font-semibold text-stone-800 block">Payslips</span>
             <span className="text-[10px] text-stone-400">Salary & Tax</span>
-          </div>
-        </Link>
-        <Link href="/wfh" className="block">
-          <div className="p-3 rounded-xl border border-stone-200/90 bg-white hover:border-amber-400 hover:bg-amber-50/30 transition-all text-center group cursor-pointer shadow-2xs">
-            <Home className="h-5 w-5 mx-auto text-sky-700 group-hover:scale-110 transition-transform mb-1.5" />
-            <span className="text-xs font-semibold text-stone-800 block">WFH</span>
-            <span className="text-[10px] text-stone-400">Remote Work</span>
-          </div>
-        </Link>
-        <Link href="/visits" className="block">
-          <div className="p-3 rounded-xl border border-stone-200/90 bg-white hover:border-amber-400 hover:bg-amber-50/30 transition-all text-center group cursor-pointer shadow-2xs">
-            <Briefcase className="h-5 w-5 mx-auto text-purple-700 group-hover:scale-110 transition-transform mb-1.5" />
-            <span className="text-xs font-semibold text-stone-800 block">Official Visit</span>
-            <span className="text-[10px] text-stone-400">Outdoor Duty</span>
           </div>
         </Link>
         <Link href="/attendance" className="block">

@@ -1726,11 +1726,50 @@ export class EmployeesService {
       throw new ConflictException(`Work email '${dto.workEmail}' is already registered`);
     }
 
-    // 3. Verify Branch, Dept, Designation
+    // 3. Resolve and Verify Designation
+    let resolvedDesignationId = dto.designationId;
+
+    if (dto.customDesignation && dto.customDesignation.trim()) {
+      const customTitle = dto.customDesignation.trim();
+      const customCode =
+        customTitle
+          .toUpperCase()
+          .replace(/[^A-Z0-9]/g, '_')
+          .replace(/_+/g, '_')
+          .slice(0, 20) || `DESIG_${Date.now().toString().slice(-6)}`;
+
+      let customDesig = await this.prisma.designation.findFirst({
+        where: {
+          organizationId: orgId,
+          OR: [{ title: { equals: customTitle, mode: 'insensitive' } }, { code: customCode }],
+        },
+      });
+
+      if (!customDesig) {
+        customDesig = await this.prisma.designation.create({
+          data: {
+            organizationId: orgId,
+            departmentId: dto.departmentId,
+            code: customCode,
+            title: customTitle,
+            name: customTitle,
+            level: 1,
+            description: `Custom designation: ${customTitle}`,
+          },
+        });
+      }
+      resolvedDesignationId = customDesig.id;
+    }
+
+    if (!resolvedDesignationId) {
+      throw new BadRequestException('Designation or custom designation title is required');
+    }
+
+    // Verify Branch, Dept, Designation
     const [branch, dept, desig] = await Promise.all([
       this.prisma.branch.findUnique({ where: { id: dto.branchId } }),
       this.prisma.department.findUnique({ where: { id: dto.departmentId } }),
-      this.prisma.designation.findUnique({ where: { id: dto.designationId } }),
+      this.prisma.designation.findUnique({ where: { id: resolvedDesignationId } }),
     ]);
 
     if (!branch || branch.organizationId !== orgId) {
@@ -1756,8 +1795,12 @@ export class EmployeesService {
 
       // Provision User login account if requested
       if (dto.createLoginAccount !== false) {
-        const initialPassword = dto.initialPassword || 'Welcome@123';
+        const initialPassword = dto.initialPassword || 'Password@123';
         const passwordHash = await argon2.hash(initialPassword);
+
+        // Determine target role from dto or default to EMPLOYEE
+        const targetRoleCode =
+          dto.role && Object.values(RoleCode).includes(dto.role) ? dto.role : RoleCode.EMPLOYEE;
 
         const existingUser = await tx.user.findFirst({
           where: { organizationId: orgId, email: dto.workEmail },
@@ -1769,7 +1812,7 @@ export class EmployeesService {
               organizationId: orgId,
               branchId: dto.branchId,
               departmentId: dto.departmentId,
-              designationId: dto.designationId,
+              designationId: resolvedDesignationId,
               employeeCode: dto.employeeCode,
               email: dto.workEmail,
               passwordHash,
@@ -1777,25 +1820,50 @@ export class EmployeesService {
               lastName: dto.lastName,
               phone: dto.phone || null,
               status: UserStatus.ACTIVE,
+              isActive: true,
             },
           });
           createdUserId = newUser.id;
 
-          // Default role assignment: EMPLOYEE
-          const empRole = await tx.role.findFirst({
-            where: { organizationId: orgId, code: RoleCode.EMPLOYEE },
+          // Assign specified system access role
+          const targetRole = await tx.role.findFirst({
+            where: { organizationId: orgId, code: targetRoleCode },
           });
-          if (empRole) {
+          if (targetRole) {
             await tx.userRole.create({
               data: {
                 userId: newUser.id,
-                roleId: empRole.id,
+                roleId: targetRole.id,
                 assignedBy: user.id,
               },
             });
           }
         } else {
           createdUserId = existingUser.id;
+
+          // Wire assigned role to existing user if not present
+          const targetRole = await tx.role.findFirst({
+            where: { organizationId: orgId, code: targetRoleCode },
+          });
+          if (targetRole) {
+            const hasRole = await tx.userRole.findUnique({
+              where: {
+                userId_roleId: {
+                  userId: existingUser.id,
+                  roleId: targetRole.id,
+                },
+              },
+            });
+            if (!hasRole) {
+              await tx.userRole.create({
+                data: {
+                  userId: existingUser.id,
+                  roleId: targetRole.id,
+                  assignedBy: user.id,
+                },
+              });
+            }
+          }
         }
       }
 
@@ -1824,7 +1892,7 @@ export class EmployeesService {
           employeeId: emp.id,
           branchId: dto.branchId,
           departmentId: dto.departmentId,
-          designationId: dto.designationId,
+          designationId: resolvedDesignationId,
           managerId: dto.managerId || null,
           employmentType: dto.employmentType || EmploymentType.FULL_TIME,
           employmentStatus: dto.employmentStatus || EmploymentStatus.PROBATION,
@@ -2909,5 +2977,157 @@ export class EmployeesService {
         filename: `employees_export_${timestamp}.csv`,
       };
     }
+  }
+
+  /**
+   * Validate image buffer and return data URL
+   */
+  private validateAndProcessImage(buffer: Buffer): { dataUrl: string; mimeType: string } {
+    if (!buffer || buffer.length === 0) {
+      throw new BadRequestException('Image file buffer is empty');
+    }
+    const maxSizeBytes = 5 * 1024 * 1024; // 5MB limit
+    if (buffer.length > maxSizeBytes) {
+      throw new BadRequestException('Image size exceeds the maximum limit of 5MB');
+    }
+
+    let mimeType: string | null = null;
+    // PNG check: 89 50 4E 47 0D 0A 1A 0A
+    if (
+      buffer.length >= 8 &&
+      buffer[0] === 0x89 &&
+      buffer[1] === 0x50 &&
+      buffer[2] === 0x4e &&
+      buffer[3] === 0x47
+    ) {
+      mimeType = 'image/png';
+    } else if (
+      // JPEG check: FF D8 FF
+      buffer.length >= 3 &&
+      buffer[0] === 0xff &&
+      buffer[1] === 0xd8 &&
+      buffer[2] === 0xff
+    ) {
+      mimeType = 'image/jpeg';
+    } else if (
+      // WebP check: RIFF....WEBP
+      buffer.length >= 12 &&
+      buffer[0] === 0x52 &&
+      buffer[1] === 0x49 &&
+      buffer[2] === 0x46 &&
+      buffer[3] === 0x46 &&
+      buffer.toString('ascii', 8, 12) === 'WEBP'
+    ) {
+      mimeType = 'image/webp';
+    }
+
+    if (!mimeType) {
+      throw new BadRequestException('Invalid image format. Only PNG, JPEG, and WebP are allowed.');
+    }
+
+    const dataUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+    return { dataUrl, mimeType };
+  }
+
+  /**
+   * Update the profile picture for the currently authenticated employee and user account
+   */
+  async updateMyProfilePicture(
+    user: AuthenticatedUser,
+    file?: { buffer: Buffer; mimetype?: string; size?: number },
+    base64Photo?: string,
+  ): Promise<{ profilePhoto: string }> {
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        userId: user.id,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('No employee record linked to current user');
+    }
+
+    let buffer: Buffer;
+    if (file && file.buffer) {
+      buffer = file.buffer;
+    } else if (base64Photo && typeof base64Photo === 'string') {
+      const match = base64Photo.match(/^data:image\/(png|jpeg|jpg|webp);base64,(.+)$/i);
+      if (match) {
+        buffer = Buffer.from(match[2], 'base64');
+      } else {
+        buffer = Buffer.from(base64Photo, 'base64');
+      }
+    } else {
+      throw new BadRequestException('Either an image file upload or image base64 data is required');
+    }
+
+    const { dataUrl } = this.validateAndProcessImage(buffer);
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: { profilePhoto: dataUrl },
+      });
+      await tx.user.update({
+        where: { id: user.id },
+        data: { avatarUrl: dataUrl },
+      });
+    });
+
+    await this.auditService.record({
+      action: 'EMPLOYEE_PROFILE_PHOTO_UPDATED',
+      entity: 'Employee',
+      entityId: employee.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        employeeCode: employee.employeeCode,
+      },
+    });
+
+    return { profilePhoto: dataUrl };
+  }
+
+  /**
+   * Remove the profile picture for the currently authenticated employee and user account
+   */
+  async removeMyProfilePicture(user: AuthenticatedUser): Promise<{ success: boolean }> {
+    const employee = await this.prisma.employee.findFirst({
+      where: {
+        userId: user.id,
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+    });
+
+    if (!employee) {
+      throw new NotFoundException('No employee record linked to current user');
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.employee.update({
+        where: { id: employee.id },
+        data: { profilePhoto: null },
+      });
+      await tx.user.update({
+        where: { id: user.id },
+        data: { avatarUrl: null },
+      });
+    });
+
+    await this.auditService.record({
+      action: 'EMPLOYEE_PROFILE_PHOTO_REMOVED',
+      entity: 'Employee',
+      entityId: employee.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      metadata: {
+        employeeCode: employee.employeeCode,
+      },
+    });
+
+    return { success: true };
   }
 }

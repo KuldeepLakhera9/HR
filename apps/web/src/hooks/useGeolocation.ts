@@ -25,7 +25,7 @@ export interface GeolocationState {
   isAcquiring: boolean;
 }
 
-export function useGeolocation(maxAccuracyMeters: number = 100) {
+export function useGeolocation(maxAccuracyMeters: number = 50000) {
   const [state, setState] = useState<GeolocationState>({
     status: 'IDLE',
     position: null,

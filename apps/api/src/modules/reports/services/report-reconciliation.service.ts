@@ -18,7 +18,10 @@ export class ReportReconciliationService {
    * Only ADMIN and HR users are permitted to inspect data discrepancies.
    */
   private verifyAccess(user: AuthenticatedUser): void {
-    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const isAdminOrHr =
+      user.roles.includes('ADMIN') ||
+      user.roles.includes('HR') ||
+      user.roles.includes('ACCOUNTANT');
     if (!isAdminOrHr) {
       throw new ForbiddenException(
         'Only HR and Administrators are authorized to run reporting data reconciliation audits',

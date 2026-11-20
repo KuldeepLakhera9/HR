@@ -16,8 +16,6 @@ import { CalendarDays } from 'lucide-react';
 export interface LeaveTrendDataPoint {
   month: string;
   casual: number;
-  sick: number;
-  privilege: number;
 }
 
 export const LeaveTrendChart: React.FC<{ data?: LeaveTrendDataPoint[] }> = ({ data = [] }) => {
@@ -27,8 +25,7 @@ export const LeaveTrendChart: React.FC<{ data?: LeaveTrendDataPoint[] }> = ({ da
         <CalendarDays className="h-8 w-8 text-stone-300 mb-2" aria-hidden="true" />
         <p className="text-xs font-semibold text-stone-700">No Monthly Leave Trend Data</p>
         <p className="text-[11px] text-stone-400 mt-1 max-w-xs">
-          Leave utilization patterns across Casual, Sick, and Privilege balances will render as
-          approvals are processed.
+          Casual leave utilization patterns (24 days/year) will render as approvals are processed.
         </p>
       </div>
     );
@@ -60,22 +57,6 @@ export const LeaveTrendChart: React.FC<{ data?: LeaveTrendDataPoint[] }> = ({ da
             dataKey="casual"
             name="Casual Leave"
             stroke="#F59E0B"
-            strokeWidth={2}
-            dot={{ r: 3 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="sick"
-            name="Sick Leave"
-            stroke="#EF4444"
-            strokeWidth={2}
-            dot={{ r: 3 }}
-          />
-          <Line
-            type="monotone"
-            dataKey="privilege"
-            name="Privilege Leave"
-            stroke="#3B82F6"
             strokeWidth={2}
             dot={{ r: 3 }}
           />

@@ -74,17 +74,19 @@ export const Sidebar: React.FC<{ isOpen?: boolean; onClose?: () => void }> = ({
       )}
     >
       {/* Brand Header */}
-      <div className="h-16 flex items-center justify-between px-5 border-b border-stone-150">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-amber-700 to-amber-500 flex items-center justify-center text-white font-bold text-lg shadow-sm shadow-amber-600/30">
-            P
-          </div>
-          <div>
-            <span className="font-bold text-base text-stone-900 tracking-tight block leading-tight">
-              PeopleOS
+      <div className="h-16 flex items-center justify-between px-4 border-b border-stone-150">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <img
+            src="/adt-logo.jpg"
+            alt="ADT-AI Training Foundation"
+            className="h-10 w-auto rounded-lg object-contain border border-stone-200/60 shadow-2xs shrink-0"
+          />
+          <div className="min-w-0">
+            <span className="font-bold text-sm text-stone-900 tracking-tight block leading-tight truncate">
+              ADT-AITF
             </span>
-            <span className="text-[10px] uppercase font-semibold tracking-wider text-amber-700 block">
-              Self-Hosted HRMS
+            <span className="text-[10px] uppercase font-semibold tracking-wider text-emerald-800 block truncate">
+              AI Training Foundation
             </span>
           </div>
         </div>

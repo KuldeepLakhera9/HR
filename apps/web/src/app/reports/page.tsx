@@ -275,7 +275,7 @@ export default function ReportsPage() {
             }`}
           >
             <Calendar className="h-4 w-4 text-amber-600" />
-            Leave, WFH & Requests
+            Leave & Request Analytics
           </button>
           <button
             onClick={() => setMainTab('PERFORMANCE')}

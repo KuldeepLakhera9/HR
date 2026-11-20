@@ -22,7 +22,7 @@ export default function Home() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-ivory-50 text-stone-500 gap-2">
       <Loader2 className="h-6 w-6 animate-spin text-amber-600" />
-      <p className="text-xs font-medium">Entering PeopleOS workspace...</p>
+      <p className="text-xs font-medium">Entering ADT-AI Training Foundation workspace...</p>
     </div>
   );
 }

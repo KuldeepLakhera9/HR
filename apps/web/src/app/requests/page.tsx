@@ -219,8 +219,8 @@ export default function MyRequestsPage() {
               </h1>
             </div>
             <p className="text-sm text-stone-500 mt-1">
-              Consolidated view of all your leave, work-from-home, official visits, regularizations,
-              and profile changes.
+              Consolidated view of all your leave requests, attendance regularizations, and profile
+              changes.
             </p>
           </div>
 
@@ -232,22 +232,10 @@ export default function MyRequestsPage() {
               <Calendar className="h-3.5 w-3.5" /> Apply Leave
             </Link>
             <Link
-              href="/wfh"
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-purple-600 hover:bg-purple-700 text-white shadow-xs transition-colors"
-            >
-              <Home className="h-3.5 w-3.5" /> Apply WFH
-            </Link>
-            <Link
-              href="/visits"
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-colors"
-            >
-              <Briefcase className="h-3.5 w-3.5" /> Official Visit
-            </Link>
-            <Link
               href="/attendance"
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors"
             >
-              <Clock className="h-3.5 w-3.5" /> Regularize
+              <Clock className="h-3.5 w-3.5" /> Regularize Attendance
             </Link>
           </div>
         </div>
@@ -314,27 +302,27 @@ export default function MyRequestsPage() {
           <Card className="p-4 bg-white border-stone-200">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                Approved WFH
+                Regularizations
               </span>
-              <Home className="h-4 w-4 text-purple-500" />
+              <Clock className="h-4 w-4 text-amber-500" />
             </div>
-            <div className="text-2xl font-bold font-mono text-purple-700 mt-2">
-              {data?.counts?.wfh ?? (isLoading ? '—' : 0)}
+            <div className="text-2xl font-bold font-mono text-amber-700 mt-2">
+              {data?.counts?.correction ?? (isLoading ? '—' : 0)}
             </div>
-            <span className="text-[11px] text-stone-400">Remote days authorized</span>
+            <span className="text-[11px] text-stone-400">Punch corrections filed</span>
           </Card>
 
           <Card className="p-4 bg-white border-stone-200">
             <div className="flex items-center justify-between">
               <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                Official Visits
+                Profile Updates
               </span>
-              <Briefcase className="h-4 w-4 text-indigo-500" />
+              <User className="h-4 w-4 text-emerald-500" />
             </div>
-            <div className="text-2xl font-bold font-mono text-indigo-700 mt-2">
-              {data?.counts?.visit ?? (isLoading ? '—' : 0)}
+            <div className="text-2xl font-bold font-mono text-emerald-700 mt-2">
+              {data?.counts?.profile ?? (isLoading ? '—' : 0)}
             </div>
-            <span className="text-[11px] text-stone-400">Outdoor duties assigned</span>
+            <span className="text-[11px] text-stone-400">Profile change requests</span>
           </Card>
         </div>
 
@@ -349,8 +337,6 @@ export default function MyRequestsPage() {
               [
                 { id: 'ALL', label: 'All Requests' },
                 { id: 'LEAVE', label: 'Leave' },
-                { id: 'WFH', label: 'Work From Home' },
-                { id: 'OFFICIAL_VISIT', label: 'Official Visits' },
                 { id: 'ATTENDANCE_CORRECTION', label: 'Regularizations' },
                 { id: 'PROFILE_CHANGE', label: 'Profile Changes' },
               ] as const
@@ -475,7 +461,7 @@ export default function MyRequestsPage() {
               Retry
             </Button>
           </Card>
-        ) : !data || data.items.length === 0 ? (
+        ) : !data || !Array.isArray(data.items) || data.items.length === 0 ? (
           <Card className="p-12 text-center border-dashed border-stone-300 bg-white">
             <FileText className="h-10 w-10 text-stone-300 mx-auto mb-3" />
             <h3 className="text-base font-semibold text-stone-800">
@@ -515,130 +501,131 @@ export default function MyRequestsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100 font-medium">
-                {data.items.map((item) => {
-                  const meta = getTypeMeta(item.type);
-                  const Icon = meta.icon;
-                  const isCancelable =
-                    item.status === 'PENDING' && item.type !== 'ATTENDANCE_CORRECTION';
+                {Array.isArray(data?.items) &&
+                  data.items.map((item) => {
+                    const meta = getTypeMeta(item.type);
+                    const Icon = meta.icon;
+                    const isCancelable =
+                      item.status === 'PENDING' && item.type !== 'ATTENDANCE_CORRECTION';
 
-                  return (
-                    <tr key={item.id} className="hover:bg-stone-50/60 transition-colors">
-                      {/* Type Badge */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${meta.badgeColor}`}
-                        >
-                          <Icon className="h-3.5 w-3.5" />
-                          {item.title || meta.label}
-                        </span>
-                      </td>
-
-                      {/* Status Badge */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        {getStatusBadge(item.status)}
-                      </td>
-
-                      {/* Duration / Target Dates */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="font-semibold text-stone-900">
-                          {item.startDate || '—'}
-                          {item.endDate && item.endDate !== item.startDate && (
-                            <span className="text-stone-500 font-normal"> to {item.endDate}</span>
-                          )}
-                        </div>
-                        {item.daysCount !== undefined && (
-                          <div className="text-[11px] text-stone-400 font-normal">
-                            {item.daysCount} {item.daysCount === 1 ? 'day' : 'days'}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Details / Reason */}
-                      <td className="py-3.5 px-4 max-w-xs">
-                        <p className="truncate text-stone-800" title={item.reason || ''}>
-                          {item.reason || 'No specific notes provided'}
-                        </p>
-                        {item.reviewNotes && (
-                          <p
-                            className="text-[11px] text-amber-700 italic truncate mt-0.5"
-                            title={`Feedback: ${item.reviewNotes}`}
+                    return (
+                      <tr key={item.id} className="hover:bg-stone-50/60 transition-colors">
+                        {/* Type Badge */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <span
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border ${meta.badgeColor}`}
                           >
-                            Feedback: {item.reviewNotes}
-                          </p>
-                        )}
-                      </td>
+                            <Icon className="h-3.5 w-3.5" />
+                            {item.title || meta.label}
+                          </span>
+                        </td>
 
-                      {/* Submitted At */}
-                      <td className="py-3.5 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">
-                        {new Date(item.submittedAt).toLocaleDateString([], {
-                          year: 'numeric',
-                          month: 'short',
-                          day: 'numeric',
-                        })}
-                      </td>
+                        {/* Status Badge */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {getStatusBadge(item.status)}
+                        </td>
 
-                      {/* Reviewer / Decision Date */}
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        {item.reviewerName ? (
-                          <div>
-                            <span className="text-stone-800 font-medium block">
-                              {item.reviewerName}
-                            </span>
-                            {item.reviewedAt && (
-                              <span className="text-[10px] text-stone-400 block">
-                                {new Date(item.reviewedAt).toLocaleDateString([], {
-                                  month: 'short',
-                                  day: 'numeric',
-                                })}
-                              </span>
+                        {/* Duration / Target Dates */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <div className="font-semibold text-stone-900">
+                            {item.startDate || '—'}
+                            {item.endDate && item.endDate !== item.startDate && (
+                              <span className="text-stone-500 font-normal"> to {item.endDate}</span>
                             )}
                           </div>
-                        ) : (
-                          <span className="text-stone-400 italic">Pending</span>
-                        )}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => setDetailItem(item)}
-                            className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-md transition-colors"
-                            title="View complete details"
-                          >
-                            <Eye className="h-4 w-4" />
-                          </button>
-
-                          {isCancelable && (
-                            <button
-                              onClick={() => setCancellingItem(item)}
-                              className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
-                              title="Cancel this pending request"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                          {item.daysCount !== undefined && (
+                            <div className="text-[11px] text-stone-400 font-normal">
+                              {item.daysCount} {item.daysCount === 1 ? 'day' : 'days'}
+                            </div>
                           )}
+                        </td>
 
-                          <Link
-                            href={meta.viewHref}
-                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-colors"
-                            title={`Open dedicated ${meta.label} portal`}
-                          >
-                            <ExternalLink className="h-4 w-4" />
-                          </Link>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        {/* Details / Reason */}
+                        <td className="py-3.5 px-4 max-w-xs">
+                          <p className="truncate text-stone-800" title={item.reason || ''}>
+                            {item.reason || 'No specific notes provided'}
+                          </p>
+                          {item.reviewNotes && (
+                            <p
+                              className="text-[11px] text-amber-700 italic truncate mt-0.5"
+                              title={`Feedback: ${item.reviewNotes}`}
+                            >
+                              Feedback: {item.reviewNotes}
+                            </p>
+                          )}
+                        </td>
+
+                        {/* Submitted At */}
+                        <td className="py-3.5 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">
+                          {new Date(item.submittedAt).toLocaleDateString([], {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </td>
+
+                        {/* Reviewer / Decision Date */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          {item.reviewerName ? (
+                            <div>
+                              <span className="text-stone-800 font-medium block">
+                                {item.reviewerName}
+                              </span>
+                              {item.reviewedAt && (
+                                <span className="text-[10px] text-stone-400 block">
+                                  {new Date(item.reviewedAt).toLocaleDateString([], {
+                                    month: 'short',
+                                    day: 'numeric',
+                                  })}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-stone-400 italic">Pending</span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1.5">
+                            <button
+                              onClick={() => setDetailItem(item)}
+                              className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-md transition-colors"
+                              title="View complete details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </button>
+
+                            {isCancelable && (
+                              <button
+                                onClick={() => setCancellingItem(item)}
+                                className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
+                                title="Cancel this pending request"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+
+                            <Link
+                              href={meta.viewHref}
+                              className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-md transition-colors"
+                              title={`Open dedicated ${meta.label} portal`}
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Link>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
               </tbody>
             </table>
 
             {/* Pagination footer */}
             <div className="flex items-center justify-between px-4 py-3 border-t border-stone-200 bg-stone-50/50 text-xs text-stone-500">
               <div>
-                Showing {(page - 1) * limit + 1} to {Math.min(page * limit, data.meta.total)} of{' '}
-                {data.meta.total} requests
+                Showing {(page - 1) * limit + 1} to {Math.min(page * limit, data?.meta?.total ?? 0)}{' '}
+                of {data?.meta?.total ?? 0} requests
               </div>
               <div className="flex items-center gap-1.5">
                 <Button
@@ -651,12 +638,12 @@ export default function MyRequestsPage() {
                   <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous
                 </Button>
                 <span className="px-2 font-mono text-stone-700">
-                  {page} / {data.meta.totalPages || 1}
+                  {page} / {data?.meta?.totalPages || 1}
                 </span>
                 <Button
                   size="sm"
                   variant="secondary"
-                  disabled={page >= data.meta.totalPages}
+                  disabled={page >= (data?.meta?.totalPages || 1)}
                   onClick={() => setPage((p) => p + 1)}
                   className="px-2.5 py-1 text-xs border-stone-200"
                 >

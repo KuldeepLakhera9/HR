@@ -794,7 +794,9 @@ export default function TeamManagerPage() {
                         </div>
                         <div>
                           <p className="text-xs font-semibold text-stone-900">Leave Requests</p>
-                          <p className="text-[10px] text-stone-500">Paid, sick, & casual leaves</p>
+                          <p className="text-[10px] text-stone-500">
+                            Casual leave requests (24 days/year)
+                          </p>
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -805,56 +807,6 @@ export default function TeamManagerPage() {
                           {data?.pendingBreakdown.leaves ?? 0}
                         </Badge>
                         <ArrowRight className="h-3.5 w-3.5 text-stone-400 group-hover:text-amber-700 transition-colors" />
-                      </div>
-                    </Link>
-
-                    <Link
-                      href="/wfh"
-                      className="p-2.5 rounded-lg bg-stone-50 hover:bg-cyan-50/70 border border-stone-200/70 flex items-center justify-between transition-colors group"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 rounded-md bg-cyan-100 text-cyan-800">
-                          <Home className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-stone-900">Work From Home</p>
-                          <p className="text-[10px] text-stone-500">Remote attendance requests</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Badge
-                          variant={(data?.pendingBreakdown.wfh ?? 0) > 0 ? 'warning' : 'outline'}
-                          size="sm"
-                        >
-                          {data?.pendingBreakdown.wfh ?? 0}
-                        </Badge>
-                        <ArrowRight className="h-3.5 w-3.5 text-stone-400 group-hover:text-cyan-700 transition-colors" />
-                      </div>
-                    </Link>
-
-                    <Link
-                      href="/visits"
-                      className="p-2.5 rounded-lg bg-stone-50 hover:bg-amber-50/70 border border-stone-200/70 flex items-center justify-between transition-colors group"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-1.5 rounded-md bg-amber-100 text-amber-900">
-                          <MapPin className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <p className="text-xs font-semibold text-stone-900">
-                            Official Duty Visits
-                          </p>
-                          <p className="text-[10px] text-stone-500">Client and off-site visits</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <Badge
-                          variant={(data?.pendingBreakdown.visits ?? 0) > 0 ? 'warning' : 'outline'}
-                          size="sm"
-                        >
-                          {data?.pendingBreakdown.visits ?? 0}
-                        </Badge>
-                        <ArrowRight className="h-3.5 w-3.5 text-stone-400 group-hover:text-amber-800 transition-colors" />
                       </div>
                     </Link>
 
