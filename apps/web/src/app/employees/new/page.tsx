@@ -625,7 +625,7 @@ export default function AddEmployeePage() {
                     <input
                       type="email"
                       required
-                      placeholder="e.g. name@peopleos.local"
+                      placeholder="e.g. name@vpspcoe-ai.org"
                       value={formData.workEmail}
                       onChange={(e) => setFormData({ ...formData, workEmail: e.target.value })}
                       className="w-full text-xs px-3 py-2 border border-stone-300 rounded-md focus:outline-none focus:ring-1 focus:ring-amber-700"
@@ -838,6 +838,9 @@ export default function AddEmployeePage() {
                               MANAGER (Team Oversight, Approvals & Reviews)
                             </option>
                             <option value="HR">HR (Workforce Management & Operations)</option>
+                            <option value="ACCOUNTANT">
+                              ACCOUNTANT (Payroll, Financial Records & Compensation Audit)
+                            </option>
                             <option value="ADMIN">
                               ADMIN (Full System Administration & Security)
                             </option>

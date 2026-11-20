@@ -51,7 +51,10 @@ export class ExecutiveDashboardService {
     };
   }> {
     // 1. Role Verification & Scoping
-    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const isAdminOrHr =
+      user.roles.includes('ADMIN') ||
+      user.roles.includes('HR') ||
+      user.roles.includes('ACCOUNTANT');
     const isManager = user.roles.includes('MANAGER');
 
     if (!isAdminOrHr && !isManager) {

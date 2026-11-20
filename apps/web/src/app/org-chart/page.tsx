@@ -3,6 +3,7 @@
 import React, { useEffect, useState, useMemo, useRef, useCallback } from 'react';
 import Link from 'next/link';
 import { AppShell } from '../../layouts/AppShell';
+import { useAuth } from '../../context/AuthContext';
 import { employeesApi, organizationApi } from '../../lib/api-client';
 import {
   Card,
@@ -358,6 +359,7 @@ function OrgChartBranch({
 // -----------------------------------------------------------------------------
 
 export default function OrgChartPage() {
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
   const [treeData, setTreeData] = useState<OrgNode[]>([]);
   const [departments, setDepartments] = useState<any[]>([]);
   const [branches, setBranches] = useState<any[]>([]);
@@ -382,7 +384,7 @@ export default function OrgChartPage() {
     const map = new Map<string, OrgNode>();
     const parentMap = new Map<string, string>(); // childId -> parentId
 
-    function traverse(nodes: OrgNode[], parentId?: string) {
+    const traverse = (nodes: OrgNode[], parentId?: string) => {
       for (const n of nodes) {
         map.set(n.id, n);
         if (parentId) parentMap.set(n.id, parentId);
@@ -391,7 +393,7 @@ export default function OrgChartPage() {
           traverse(children, n.id);
         }
       }
-    }
+    };
     traverse(treeData);
     return { nodes: map, parents: parentMap };
   }, [treeData]);
@@ -400,7 +402,7 @@ export default function OrgChartPage() {
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
-      const [chartRes, deptRes, branchRes, overviewRes] = await Promise.all([
+      const [chartResult, deptResult, branchResult, overviewResult] = await Promise.allSettled([
         employeesApi.getOrgChart({
           departmentId: selectedDept || undefined,
           branchId: selectedBranch || undefined,
@@ -410,19 +412,67 @@ export default function OrgChartPage() {
         organizationApi.getOverview().catch(() => null),
       ]);
 
-      const data = chartRes || [];
-      setTreeData(data);
-      setDepartments(deptRes || []);
-      setBranches(branchRes || []);
-      if (overviewRes) setOrgOverview(overviewRes);
+      let data: OrgNode[] = [];
+      if (chartResult.status === 'fulfilled' && chartResult.value) {
+        const val = chartResult.value;
+        if (Array.isArray(val)) {
+          data = val;
+        } else if (val && typeof val === 'object') {
+          if (Array.isArray((val as any).data)) {
+            data = (val as any).data;
+          } else if (Array.isArray((val as any).items)) {
+            data = (val as any).items;
+          }
+        }
+      }
 
-      // Default expansion: expand root nodes and level 1 directors for optimal performance
+      let depts: any[] = [];
+      if (deptResult.status === 'fulfilled' && deptResult.value) {
+        const val = deptResult.value;
+        if (Array.isArray(val)) {
+          depts = val;
+        } else if (val && typeof val === 'object') {
+          if (Array.isArray((val as any).data)) {
+            depts = (val as any).data;
+          } else if (Array.isArray((val as any).items)) {
+            depts = (val as any).items;
+          }
+        }
+      }
+
+      let branchesList: any[] = [];
+      if (branchResult.status === 'fulfilled' && branchResult.value) {
+        const val = branchResult.value;
+        if (Array.isArray(val)) {
+          branchesList = val;
+        } else if (val && typeof val === 'object') {
+          if (Array.isArray((val as any).data)) {
+            branchesList = (val as any).data;
+          } else if (Array.isArray((val as any).items)) {
+            branchesList = (val as any).items;
+          }
+        }
+      }
+
+      setTreeData(data);
+      setDepartments(depts);
+      setBranches(branchesList);
+      if (overviewResult.status === 'fulfilled' && overviewResult.value) {
+        setOrgOverview(overviewResult.value);
+      }
+
+      // Default expansion: expand all levels across the management hierarchy so the full tree graph is displayed immediately
       const initialExpanded = new Set<string>();
-      data.forEach((root: OrgNode) => {
-        initialExpanded.add(root.id);
-        const children = root.children || root.subordinates || [];
-        children.forEach((c) => initialExpanded.add(c.id));
-      });
+      const expandNodes = (nodes: OrgNode[], depth = 0) => {
+        for (const n of nodes) {
+          initialExpanded.add(n.id);
+          const children = n.children || n.subordinates || [];
+          if (children.length > 0 && depth < 5) {
+            expandNodes(children, depth + 1);
+          }
+        }
+      };
+      expandNodes(data, 0);
       setExpandedIds(initialExpanded);
     } catch (err) {
       console.error('Failed to load organization chart:', err);
@@ -432,8 +482,10 @@ export default function OrgChartPage() {
   }, [selectedDept, selectedBranch]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (!authLoading && isAuthenticated) {
+      loadData();
+    }
+  }, [loadData, authLoading, isAuthenticated]);
 
   // Compute matched nodes based on search query
   const matchedNodes = useMemo(() => {
@@ -890,18 +942,27 @@ export default function OrgChartPage() {
               No employees matched the selected department or branch filters. Try resetting the
               filters to inspect other departments.
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSelectedDept('');
-                setSelectedBranch('');
-                setFocusedRootId(null);
-              }}
-              className="mt-4"
-            >
-              Reset All Filters
-            </Button>
+            <div className="flex items-center gap-2 mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSelectedDept('');
+                  setSelectedBranch('');
+                  setFocusedRootId(null);
+                }}
+              >
+                Reset All Filters
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={loadData}
+                className="bg-amber-900 hover:bg-amber-800 text-white"
+              >
+                Reload Hierarchy
+              </Button>
+            </div>
           </div>
         ) : viewMode === 'tree' ? (
           /* Tree View Interactive Canvas */

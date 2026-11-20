@@ -153,15 +153,19 @@ function LoginFormContent() {
   return (
     <div className="w-full max-w-md relative z-10 space-y-6">
       {/* Brand Header */}
-      <div className="text-center space-y-2">
-        <div className="inline-flex items-center justify-center p-3 bg-gradient-to-tr from-amber-700 to-amber-500 text-white rounded-2xl shadow-md shadow-amber-600/25 mb-1 transition-transform hover:scale-105 duration-200">
-          <ShieldCheck className="h-8 w-8" aria-hidden="true" />
+      <div className="text-center space-y-3">
+        <div className="inline-flex items-center justify-center p-2.5 bg-white rounded-2xl shadow-md border border-stone-200/90 mb-1 transition-transform hover:scale-105 duration-200">
+          <img
+            src="/adt-logo.jpg"
+            alt="ADT-AI Training Foundation Logo"
+            className="h-20 w-auto object-contain rounded-xl"
+          />
         </div>
-        <h1 className="text-2xl font-bold tracking-tight text-stone-900">
-          People<span className="text-amber-600">OS</span>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-stone-900">
+          ADT-AI Training Foundation
         </h1>
         <p className="text-xs text-stone-500 max-w-xs mx-auto">
-          Self-Hosted Enterprise Human Resource Management System
+          Enterprise Human Resource Management System
         </p>
       </div>
 
@@ -237,7 +241,7 @@ function LoginFormContent() {
                 if (errorMessage) setErrorMessage(null);
               }}
               onBlur={handleEmailBlur}
-              placeholder="name@company.com"
+              placeholder="name@vpspcoe-ai.org"
               required
               autoComplete="email"
               disabled={isSubmitting}
@@ -324,7 +328,7 @@ function LoginFormContent() {
         isOpen={forgotPasswordOpen}
         onClose={resetForgotPasswordModal}
         title="Reset Account Password"
-        description="Self-Hosted PeopleOS Security Verification"
+        description="ADT-AI Training Foundation Security Verification"
         maxWidth="md"
       >
         <div className="p-6 space-y-4">
@@ -347,7 +351,7 @@ function LoginFormContent() {
                   type="email"
                   value={forgotPasswordEmail}
                   onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                  placeholder="name@company.com"
+                  placeholder="name@vpspcoe-ai.org"
                   required
                   autoComplete="email"
                   leftIcon={<Mail className="h-4 w-4" aria-hidden="true" />}
@@ -389,7 +393,7 @@ function LoginFormContent() {
 
       {/* Security & Deployment Footer */}
       <div className="text-center text-[11px] text-stone-400 space-y-1">
-        <div>Self-Hosted Private Datacenter Deployment</div>
+        <div>Agricultural Development Trust • Dedicated Enterprise Deployment</div>
         <div className="flex items-center justify-center gap-1.5">
           <span>Protected with Argon2id</span>
           <span>•</span>

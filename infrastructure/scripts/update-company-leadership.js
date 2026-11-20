@@ -811,7 +811,14 @@ async function main() {
   // ==========================================
   console.log('\n[5/5] Aligning reporting hierarchy for Kuldeep Lakhera...');
   const kuldeepUser = await prisma.user.findFirst({
-    where: { organizationId: org.id, email: 'kuldeeplakhera018@gmail.com' },
+    where: {
+      organizationId: org.id,
+      OR: [
+        { email: 'kuldeep.lakhera@vpspcoe-ai.org' },
+        { email: 'kuldeeplakhera018@gmail.com' },
+        { employeeCode: 'EMP004' },
+      ],
+    },
   });
 
   if (kuldeepUser) {
@@ -840,14 +847,14 @@ async function main() {
   console.log('======================================================================');
   console.log('1. CEO / Executive Leadership (Role: ADMIN)');
   console.log('   - Name: Nilesh Nalawade');
-  console.log('   - Email: nilesh.nalawade@peopleos.local');
+  console.log('   - Email: nilesh.nalawade@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Designation: Chief Executive Officer (CEO)');
   console.log('   - Employee Code: EMP001');
   console.log('----------------------------------------------------------------------');
   console.log('2. Human Resources Lead (Role: HR)');
   console.log('   - Name: Heena Bhatia');
-  console.log('   - Email: heena.bhatia@peopleos.local');
+  console.log('   - Email: heena.bhatia@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Designation: People Operations Lead');
   console.log('   - Employee Code: EMP002');
@@ -855,7 +862,7 @@ async function main() {
   console.log('----------------------------------------------------------------------');
   console.log('3. Team Lead / Engineering Manager (Role: MANAGER)');
   console.log('   - Name: Santosh Deshmukh');
-  console.log('   - Email: santosh.deshmukh@peopleos.local');
+  console.log('   - Email: santosh.deshmukh@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Designation: Engineering Manager');
   console.log('   - Employee Code: EMP003');
@@ -863,7 +870,7 @@ async function main() {
   console.log('----------------------------------------------------------------------');
   console.log('4. Team Lead / Manager (Role: MANAGER)');
   console.log('   - Name: Sanjani');
-  console.log('   - Email: sanjani@peopleos.local');
+  console.log('   - Email: sanjani@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Designation: Team Lead / Engineering Manager');
   console.log('   - Employee Code: EMP005');
@@ -871,7 +878,7 @@ async function main() {
   console.log('----------------------------------------------------------------------');
   console.log('5. Data Engineer (Role: EMPLOYEE)');
   console.log('   - Name: Kuldeep Lakhera');
-  console.log('   - Email: kuldeeplakhera018@gmail.com');
+  console.log('   - Email: kuldeep.lakhera@vpspcoe-ai.org');
   console.log('   - Employee Code: EMP004');
   console.log('   - Reports to: Santosh Deshmukh (Team Lead)');
   console.log('======================================================================\n');

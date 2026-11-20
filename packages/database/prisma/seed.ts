@@ -75,30 +75,32 @@ async function main() {
   const org = await prisma.organization.upsert({
     where: { code: 'PEOPLEOS' },
     update: {
-      name: 'PeopleOS Technologies Inc.',
-      legalName: 'PeopleOS Solutions Private Limited',
-      email: 'contact@peopleos.local',
-      phone: '+91 80 4123 4567',
-      website: 'https://peopleos.local',
-      addressLine1: 'Prestige Tech Cloud, Phase 2',
-      addressLine2: 'Bellary Road',
-      city: 'Bengaluru',
-      state: 'Karnataka',
+      name: 'ADT-AI Training Foundation',
+      legalName: 'Agricultural Development Trust - AI Training Foundation',
+      logo: '/adt-logo.jpg',
+      email: 'contact@vpspcoe-ai.org',
+      phone: '+91 2112 255518',
+      website: 'https://vpspcoe-ai.org',
+      addressLine1: 'Atal Incubation Centre, Agricultural Development Trust, Sharadanagar',
+      addressLine2: 'Malegaon Road',
+      city: 'Baramati',
+      state: 'Maharashtra',
       country: 'India',
       timezone: 'Asia/Kolkata',
       currency: 'INR',
     },
     create: {
       code: 'PEOPLEOS',
-      name: 'PeopleOS Technologies Inc.',
-      legalName: 'PeopleOS Solutions Private Limited',
-      email: 'contact@peopleos.local',
-      phone: '+91 80 4123 4567',
-      website: 'https://peopleos.local',
-      addressLine1: 'Prestige Tech Cloud, Phase 2',
-      addressLine2: 'Bellary Road',
-      city: 'Bengaluru',
-      state: 'Karnataka',
+      name: 'ADT-AI Training Foundation',
+      legalName: 'Agricultural Development Trust - AI Training Foundation',
+      logo: '/adt-logo.jpg',
+      email: 'contact@vpspcoe-ai.org',
+      phone: '+91 2112 255518',
+      website: 'https://vpspcoe-ai.org',
+      addressLine1: 'Atal Incubation Centre, Agricultural Development Trust, Sharadanagar',
+      addressLine2: 'Malegaon Road',
+      city: 'Baramati',
+      state: 'Maharashtra',
       country: 'India',
       timezone: 'Asia/Kolkata',
       currency: 'INR',
@@ -554,7 +556,7 @@ async function main() {
   const seedPeople = [
     {
       code: 'EMP001',
-      email: 'nilesh.nalawade@peopleos.local',
+      email: 'nilesh.nalawade@vpspcoe-ai.org',
       firstName: 'Nilesh',
       lastName: 'Nalawade',
       role: RoleCode.ADMIN,
@@ -574,7 +576,7 @@ async function main() {
     },
     {
       code: 'EMP002',
-      email: 'heena.bhatia@peopleos.local',
+      email: 'heena.bhatia@vpspcoe-ai.org',
       firstName: 'Heena',
       lastName: 'Bhatia',
       role: RoleCode.HR,
@@ -594,7 +596,7 @@ async function main() {
     },
     {
       code: 'EMP003',
-      email: 'santosh.deshmukh@peopleos.local',
+      email: 'santosh.deshmukh@vpspcoe-ai.org',
       firstName: 'Santosh',
       lastName: 'Deshmukh',
       role: RoleCode.MANAGER,
@@ -614,7 +616,7 @@ async function main() {
     },
     {
       code: 'EMP005',
-      email: 'sanjani@peopleos.local',
+      email: 'sanjani@vpspcoe-ai.org',
       firstName: 'Sanjani',
       lastName: 'Lead',
       role: RoleCode.MANAGER,
@@ -634,7 +636,7 @@ async function main() {
     },
     {
       code: 'EMP004',
-      email: 'kuldeeplakhera018@gmail.com',
+      email: 'kuldeep.lakhera@vpspcoe-ai.org',
       firstName: 'Kuldeep',
       lastName: 'Lakhera',
       role: RoleCode.EMPLOYEE,
@@ -849,7 +851,7 @@ async function main() {
     where: {
       organizationId_name: {
         organizationId: org.id,
-        name: 'AIC-ADT Baramati',
+        name: 'ADT AI Baramati',
       },
     },
     update: {
@@ -857,15 +859,15 @@ async function main() {
       longitude: 74.614057,
       geofenceRadiusMeters: 100,
       timezone: 'Asia/Kolkata',
-      code: 'AIC-ADT-01',
-      address: 'Atal Incubation Centre, Agricultural Development Trust, Shardanagar, Baramati',
+      code: 'ADT-AI-01',
+      address: 'ADT AI Training Foundation, Shardanagar, Baramati, Maharashtra 413115',
       isActive: true,
     },
     create: {
       organizationId: org.id,
-      name: 'AIC-ADT Baramati',
-      code: 'AIC-ADT-01',
-      address: 'Atal Incubation Centre, Agricultural Development Trust, Shardanagar, Baramati',
+      name: 'ADT AI Baramati',
+      code: 'ADT-AI-01',
+      address: 'ADT AI Training Foundation, Shardanagar, Baramati, Maharashtra 413115',
       latitude: 18.17441,
       longitude: 74.614057,
       geofenceRadiusMeters: 100,
@@ -1039,27 +1041,27 @@ async function main() {
   console.log('CLEAN HRMS LEADERSHIP & TEAM SEED COMPLETED SUCCESSFULLY:');
   console.log('1. CEO / Executive Leadership:');
   console.log('   - Name: Nilesh Nalawade');
-  console.log('   - Email: nilesh.nalawade@peopleos.local');
+  console.log('   - Email: nilesh.nalawade@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Role: ADMIN (EMP001)');
   console.log('2. Human Resources Lead:');
   console.log('   - Name: Heena Bhatia');
-  console.log('   - Email: heena.bhatia@peopleos.local');
+  console.log('   - Email: heena.bhatia@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Role: HR (EMP002)');
   console.log('3. Team Lead / Manager:');
   console.log('   - Name: Santosh Deshmukh');
-  console.log('   - Email: santosh.deshmukh@peopleos.local');
+  console.log('   - Email: santosh.deshmukh@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Role: MANAGER (EMP003)');
   console.log('4. Team Lead / Manager:');
   console.log('   - Name: Sanjani');
-  console.log('   - Email: sanjani@peopleos.local');
+  console.log('   - Email: sanjani@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Role: MANAGER (EMP005)');
   console.log('5. Data Engineer:');
   console.log('   - Name: Kuldeep Lakhera');
-  console.log('   - Email: kuldeeplakhera018@gmail.com');
+  console.log('   - Email: kuldeep.lakhera@vpspcoe-ai.org');
   console.log('   - Password: Password@123');
   console.log('   - Role: EMPLOYEE (EMP004)');
   console.log('------------------------------------------------------------');

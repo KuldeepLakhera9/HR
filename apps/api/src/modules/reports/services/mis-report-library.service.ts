@@ -380,7 +380,7 @@ export class MisReportLibraryService {
       ],
       dataFreshness:
         'Immutable snapshot aggregations tied to approved and locked payroll calculation versions',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['CHART', 'TABLE'],
     },
     {
@@ -400,7 +400,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Real-time calculation run rollup with departmental assignment mapping',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['CHART', 'TABLE'],
     },
     {
@@ -430,7 +430,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Direct snapshot read with masked banking and tax identifiers',
-      allowedRoles: ['ADMIN', 'HR'],
+      allowedRoles: ['ADMIN', 'HR', 'ACCOUNTANT'],
       supportedViews: ['TABLE'],
     },
     {
@@ -450,7 +450,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Verified line-item calculation snapshot aggregates',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['CHART', 'TABLE'],
     },
     {
@@ -470,7 +470,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Live transactional exception ledger synchronized with run orchestration',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['TABLE'],
     },
     {
@@ -490,7 +490,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Comparative delta computed across consecutive finalized calculation versions',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['CHART', 'TABLE'],
     },
     {
@@ -510,7 +510,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Immediate transactional ledger reflecting adjustment approval states',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['TABLE'],
     },
     {
@@ -530,7 +530,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Immutable audit log of all transition events',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['TABLE'],
     },
     {
@@ -550,7 +550,7 @@ export class MisReportLibraryService {
         },
       ],
       dataFreshness: 'Bank settlement file upload and payment processor webhook updates',
-      allowedRoles: ['ADMIN', 'HR', 'MANAGER'],
+      allowedRoles: ['ADMIN', 'HR', 'MANAGER', 'ACCOUNTANT'],
       supportedViews: ['CHART', 'TABLE'],
     },
   ];
@@ -572,7 +572,10 @@ export class MisReportLibraryService {
     isAdminOrHr: boolean;
     isManager: boolean;
   } {
-    const isAdminOrHr = user.roles.includes('ADMIN') || user.roles.includes('HR');
+    const isAdminOrHr =
+      user.roles.includes('ADMIN') ||
+      user.roles.includes('HR') ||
+      user.roles.includes('ACCOUNTANT');
     const isManager = user.roles.includes('MANAGER');
 
     if (!isAdminOrHr && !isManager) {

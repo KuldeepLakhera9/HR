@@ -83,7 +83,6 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/a
 
 // In-memory access token store — NEVER persisted to localStorage/sessionStorage
 let inMemoryAccessToken: string | null = null;
-let refreshPromise: Promise<string | null> | null = null;
 let authFailureCallback: (() => void) | null = null;
 
 export const setAccessToken = (token: string | null): void => {
@@ -181,15 +180,14 @@ export async function fetchWithAuth<T = unknown>(
   return data as ApiResponse<T>;
 }
 
-/**
- * Singleton refresh token handler preventing concurrent refresh requests
- */
-async function handleTokenRefresh(): Promise<string | null> {
-  if (refreshPromise) {
-    return refreshPromise;
+let activeRefreshPromise: Promise<{ accessToken: string; user: AuthUser } | null> | null = null;
+
+async function executeRefresh(): Promise<{ accessToken: string; user: AuthUser } | null> {
+  if (activeRefreshPromise) {
+    return activeRefreshPromise;
   }
 
-  refreshPromise = (async () => {
+  activeRefreshPromise = (async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
         method: 'POST',
@@ -205,18 +203,29 @@ async function handleTokenRefresh(): Promise<string | null> {
       }
 
       const result = await response.json();
-      const token = result?.data?.accessToken || null;
-      setAccessToken(token);
-      return token;
+      if (result?.data?.accessToken) {
+        setAccessToken(result.data.accessToken);
+        return result.data;
+      }
+      setAccessToken(null);
+      return null;
     } catch {
       setAccessToken(null);
       return null;
     } finally {
-      refreshPromise = null;
+      activeRefreshPromise = null;
     }
   })();
 
-  return refreshPromise;
+  return activeRefreshPromise;
+}
+
+/**
+ * Singleton refresh token handler preventing concurrent refresh requests
+ */
+async function handleTokenRefresh(): Promise<string | null> {
+  const result = await executeRefresh();
+  return result?.accessToken || null;
 }
 
 /**
@@ -244,30 +253,7 @@ export const authApi = {
    * Refresh session using HttpOnly cookie
    */
   async refresh(): Promise<{ accessToken: string; user: AuthUser } | null> {
-    try {
-      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        setAccessToken(null);
-        return null;
-      }
-
-      const result = await response.json();
-      if (result?.data?.accessToken) {
-        setAccessToken(result.data.accessToken);
-        return result.data;
-      }
-      return null;
-    } catch {
-      setAccessToken(null);
-      return null;
-    }
+    return executeRefresh();
   },
 
   /**
@@ -680,8 +666,8 @@ export const employeesApi = {
       });
     }
     const query = new URLSearchParams(cleanParams).toString();
-    const res = await fetchWithAuth<any[]>(`/org-chart${query ? `?${query}` : ''}`);
-    return res.data;
+    const res = await fetchWithAuth<any>(`/org-chart${query ? `?${query}` : ''}`);
+    return res?.data !== undefined ? res.data : res;
   },
 
   async previewImport(formData: FormData) {
@@ -797,8 +783,64 @@ export const employeesApi = {
     if (params?.page) query.set('page', String(params.page));
     if (params?.limit) query.set('limit', String(params.limit));
     const qs = query.toString() ? `?${query.toString()}` : '';
-    const res = await fetchWithAuth<UnifiedRequestsResponse>(`/employees/me/requests${qs}`);
-    return res.data;
+    const res = await fetchWithAuth<any>(`/employees/me/requests${qs}`);
+    const raw = res.data;
+
+    if (raw && Array.isArray(raw.items)) {
+      return {
+        items: raw.items,
+        counts: raw.counts ||
+          (res as any).counts || {
+            all: raw.items.length,
+            pending: 0,
+            leave: 0,
+            wfh: 0,
+            visit: 0,
+            correction: 0,
+            profile: 0,
+            document: 0,
+          },
+        meta: raw.meta ||
+          (res as any).meta || {
+            total: raw.items.length,
+            page: 1,
+            limit: 10,
+            totalPages: 1,
+          },
+      };
+    }
+
+    if (Array.isArray(raw)) {
+      return {
+        items: raw,
+        counts: (res as any).counts || {
+          all: raw.length,
+          pending: 0,
+          leave: 0,
+          wfh: 0,
+          visit: 0,
+          correction: 0,
+          profile: 0,
+          document: 0,
+        },
+        meta: (res as any).meta || { total: raw.length, page: 1, limit: 10, totalPages: 1 },
+      };
+    }
+
+    return {
+      items: [],
+      counts: {
+        all: 0,
+        pending: 0,
+        leave: 0,
+        wfh: 0,
+        visit: 0,
+        correction: 0,
+        profile: 0,
+        document: 0,
+      },
+      meta: { total: 0, page: 1, limit: 10, totalPages: 0 },
+    };
   },
 };
 

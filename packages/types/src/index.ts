@@ -4,9 +4,9 @@
  */
 
 // 1. Roles & Permissions (Minimal user-facing roles as per Phase 1 Requirement 26)
-export type RoleType = 'ADMIN' | 'HR' | 'MANAGER' | 'EMPLOYEE';
+export type RoleType = 'ADMIN' | 'HR' | 'MANAGER' | 'EMPLOYEE' | 'ACCOUNTANT';
 
-export const USER_ROLES: RoleType[] = ['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE'];
+export const USER_ROLES: RoleType[] = ['ADMIN', 'HR', 'MANAGER', 'EMPLOYEE', 'ACCOUNTANT'];
 
 // 1b. Data Access Scopes (Phase 2 Step 6)
 export type AccessScope = 'GLOBAL' | 'ORGANIZATION' | 'TEAM' | 'SELF';

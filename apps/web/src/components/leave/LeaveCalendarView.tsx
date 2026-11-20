@@ -259,7 +259,7 @@ export const LeaveCalendarView: React.FC = () => {
 
       {/* KPI Overview Strip */}
       {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
             <span className="text-xs text-slate-500 font-medium">Approved Leave</span>
             <div className="flex items-baseline gap-2 mt-1">
@@ -283,20 +283,6 @@ export const LeaveCalendarView: React.FC = () => {
             <div className="flex items-baseline gap-2 mt-1">
               <span className="text-2xl font-bold text-emerald-600">{summary.totalHolidays}</span>
               <span className="text-xs text-slate-400">days</span>
-            </div>
-          </div>
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <span className="text-xs text-slate-500 font-medium">Work From Home</span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-bold text-purple-600">{summary.totalWfh}</span>
-              <span className="text-xs text-slate-400">authorized</span>
-            </div>
-          </div>
-          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
-            <span className="text-xs text-slate-500 font-medium">Official Visits</span>
-            <div className="flex items-baseline gap-2 mt-1">
-              <span className="text-2xl font-bold text-blue-600">{summary.totalVisits}</span>
-              <span className="text-xs text-slate-400">trips</span>
             </div>
           </div>
           <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between">
@@ -373,12 +359,6 @@ export const LeaveCalendarView: React.FC = () => {
               key: 'HOLIDAY',
               label: 'Holiday',
               color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-            },
-            { key: 'WFH', label: 'WFH', color: 'bg-purple-50 text-purple-700 border-purple-200' },
-            {
-              key: 'OFFICIAL_VISIT',
-              label: 'Visit',
-              color: 'bg-blue-50 text-blue-700 border-blue-200',
             },
           ].map((pill) => (
             <button

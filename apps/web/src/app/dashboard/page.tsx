@@ -7,6 +7,7 @@ import { AdminDashboard } from '../../features/dashboard/components/AdminDashboa
 import { HRDashboard } from '../../features/dashboard/components/HRDashboard';
 import { ManagerDashboard } from '../../features/dashboard/components/ManagerDashboard';
 import { EmployeeDashboard } from '../../features/dashboard/components/EmployeeDashboard';
+import { AccountantDashboard } from '../../features/dashboard/components/AccountantDashboard';
 
 export default function DashboardPage() {
   const { role } = useRole();
@@ -17,6 +18,7 @@ export default function DashboardPage() {
       {role === 'HR' && <HRDashboard />}
       {role === 'MANAGER' && <ManagerDashboard />}
       {role === 'EMPLOYEE' && <EmployeeDashboard />}
+      {role === 'ACCOUNTANT' && <AccountantDashboard />}
     </AppShell>
   );
 }

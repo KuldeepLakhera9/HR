@@ -42,7 +42,7 @@ export class UsersService {
       {
         id: '1',
         employeeCode: 'EMP001',
-        email: 'nilesh.nalawade@peopleos.local',
+        email: 'nilesh.nalawade@vpspcoe-ai.org',
         firstName: 'Nilesh',
         lastName: 'Nalawade',
         isActive: true,
@@ -50,7 +50,7 @@ export class UsersService {
       {
         id: '2',
         employeeCode: 'EMP002',
-        email: 'heena.bhatia@peopleos.local',
+        email: 'heena.bhatia@vpspcoe-ai.org',
         firstName: 'Heena',
         lastName: 'Bhatia',
         isActive: true,
@@ -58,7 +58,7 @@ export class UsersService {
       {
         id: '3',
         employeeCode: 'EMP003',
-        email: 'santosh.deshmukh@peopleos.local',
+        email: 'santosh.deshmukh@vpspcoe-ai.org',
         firstName: 'Santosh',
         lastName: 'Deshmukh',
         isActive: true,
@@ -66,7 +66,7 @@ export class UsersService {
       {
         id: '5',
         employeeCode: 'EMP005',
-        email: 'sanjani@peopleos.local',
+        email: 'sanjani@vpspcoe-ai.org',
         firstName: 'Sanjani',
         lastName: 'Lead',
         isActive: true,
@@ -74,7 +74,7 @@ export class UsersService {
       {
         id: '4',
         employeeCode: 'EMP004',
-        email: 'kuldeeplakhera018@gmail.com',
+        email: 'kuldeep.lakhera@vpspcoe-ai.org',
         firstName: 'Kuldeep',
         lastName: 'Lakhera',
         isActive: true,
@@ -86,7 +86,7 @@ export class UsersService {
     return {
       id,
       employeeCode: 'EMP001',
-      email: 'nilesh.nalawade@peopleos.local',
+      email: 'nilesh.nalawade@vpspcoe-ai.org',
       firstName: 'Nilesh',
       lastName: 'Nalawade',
       isActive: true,

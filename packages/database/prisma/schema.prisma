@@ -188,6 +188,7 @@ enum RoleCode {
   HR
   MANAGER
   EMPLOYEE
+  ACCOUNTANT
 }
 
 enum UserStatus {

@@ -184,7 +184,8 @@ export class EmployeesController {
     return {
       success: true,
       message: 'Unified employee requests retrieved successfully',
-      data: data.items,
+      data,
+      items: data.items,
       meta: data.meta,
       counts: data.counts,
     };

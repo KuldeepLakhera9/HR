@@ -105,19 +105,23 @@ function ResetPasswordFormContent() {
   return (
     <div className="w-full max-w-md relative z-10 space-y-6">
       {/* Brand Header */}
-      <div className="text-center space-y-2">
+      <div className="text-center space-y-3">
         <Link
           href="/login"
-          className="inline-flex items-center justify-center p-3 bg-gradient-to-tr from-amber-700 to-amber-500 text-white rounded-2xl shadow-md shadow-amber-600/25 mb-1 transition-transform hover:scale-105 duration-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-          aria-label="PeopleOS Home"
+          className="inline-flex items-center justify-center p-2.5 bg-white rounded-2xl shadow-md border border-stone-200/90 mb-1 transition-transform hover:scale-105 duration-200 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
+          aria-label="ADT-AI Training Foundation Home"
         >
-          <ShieldCheck className="h-8 w-8" aria-hidden="true" />
+          <img
+            src="/adt-logo.jpg"
+            alt="ADT Logo"
+            className="h-16 w-auto object-contain rounded-xl"
+          />
         </Link>
-        <h1 className="text-2xl font-bold tracking-tight text-stone-900">
-          People<span className="text-amber-600">OS</span>
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-stone-900">
+          ADT-AI Training Foundation
         </h1>
         <p className="text-xs text-stone-500 max-w-xs mx-auto">
-          Self-Hosted Enterprise Human Resource Management System
+          Enterprise Human Resource Management System
         </p>
       </div>
 

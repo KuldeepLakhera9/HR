@@ -12,9 +12,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'PeopleOS | Self-Hosted Enterprise HRMS',
+  title: 'ADT-AI Training Foundation | Enterprise HRMS',
   description:
-    'Production-grade self-hosted Human Resource Management System for modern organizations.',
+    'Production-grade Enterprise Human Resource Management System for ADT-AI Training Foundation.',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

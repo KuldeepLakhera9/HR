@@ -409,7 +409,7 @@ export default function SettingsPage() {
                     </label>
                     <div className="flex items-center gap-1.5 text-sm text-stone-900 bg-stone-50 px-3 py-2 rounded border border-stone-200">
                       <Building2 className="h-3.5 w-3.5 text-stone-500" />
-                      <span>PeopleOS Technologies</span>
+                      <span>ADT-AI Training Foundation</span>
                     </div>
                   </div>
                 </div>
@@ -678,27 +678,6 @@ export default function SettingsPage() {
                     }
                   />
 
-                  <Switch
-                    label="Work From Home (WFH) Approvals"
-                    description="Instant alerts for manager decisions regarding remote work requests."
-                    checked={notificationPrefs.wfhUpdates}
-                    onChange={(e) =>
-                      setNotificationPrefs((prev) => ({ ...prev, wfhUpdates: e.target.checked }))
-                    }
-                  />
-
-                  <Switch
-                    label="Official Visit Location Verifications"
-                    description="Notifications regarding outdoor duty approvals and arrival confirmation alerts."
-                    checked={notificationPrefs.officialVisitUpdates}
-                    onChange={(e) =>
-                      setNotificationPrefs((prev) => ({
-                        ...prev,
-                        officialVisitUpdates: e.target.checked,
-                      }))
-                    }
-                  />
-
                   <div className="pt-2 text-xs text-stone-500 border-t border-stone-100 flex items-center gap-1.5">
                     <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
                     <span>
@@ -728,8 +707,8 @@ export default function SettingsPage() {
               </CardHeader>
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <Input label="Organization Name" defaultValue="PeopleOS Technologies Inc." />
-                  <Input label="Organization Code" defaultValue="PEOPLEOS" disabled />
+                  <Input label="Organization Name" defaultValue="ADT-AI Training Foundation" />
+                  <Input label="Organization Code" defaultValue="ADT-AITF" disabled />
                   <Input label="Default Timezone" defaultValue="Asia/Kolkata (IST)" />
                   <Input label="Operating Currency" defaultValue="INR (₹)" />
                 </div>
@@ -754,12 +733,6 @@ export default function SettingsPage() {
                   <Switch
                     label="Enforce GPS Geofence for Office Attendance"
                     description="Requires employees to be within verified branch perimeter when attendance mode is Office."
-                    defaultChecked={true}
-                  />
-
-                  <Switch
-                    label="Allow Outdoor Duty (Official Visit) Geofence Bypass"
-                    description="Permits punches outside geofence when manager-approved Official Visit is active."
                     defaultChecked={true}
                   />
 

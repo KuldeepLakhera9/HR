@@ -138,7 +138,7 @@ export default function DesignSystemPage() {
         {/* Header Title */}
         <div className="border-b border-stone-200 pb-5">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-900 mb-2">
-            <Palette className="h-3.5 w-3.5" /> PeopleOS Design System
+            <Palette className="h-3.5 w-3.5" /> ADT-AITF Design System
           </div>
           <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-stone-900">
             HRMS Centralized Design Tokens & UI Library

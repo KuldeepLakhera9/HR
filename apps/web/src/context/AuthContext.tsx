@@ -48,6 +48,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (roles.length > 0) {
       if (roles.includes('ADMIN')) return 'ADMIN';
       if (roles.includes('HR')) return 'HR';
+      if (roles.includes('ACCOUNTANT')) return 'ACCOUNTANT';
       if (roles.includes('MANAGER')) return 'MANAGER';
       return roles[0];
     }
