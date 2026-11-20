@@ -46,6 +46,7 @@ postgres_data
 scratch/
 
 # Local file storage (documents & uploaded binaries)
+storage/
 apps/api/storage/*
 !apps/api/storage/.gitkeep
 

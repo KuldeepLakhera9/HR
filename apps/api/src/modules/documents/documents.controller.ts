@@ -4,6 +4,7 @@ import {
   Post,
   Delete,
   Param,
+  Query,
   Body,
   Req,
   Res,
@@ -222,6 +223,66 @@ export class DocumentsController {
   // ===========================================================================
   // HR / ADMIN MANAGEMENT ENDPOINTS
   // ===========================================================================
+
+  @Get('organization')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({
+    summary: 'List all employee documents and photos across organization (HR/Admin)',
+  })
+  async getOrganizationDocuments(
+    @Req() req: AuthenticatedRequest,
+    @Query('employeeId') employeeId?: string,
+    @Query('documentType') documentType?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    const data = await this.documentsService.getAllOrganizationDocumentsForHR(req.user, {
+      employeeId,
+      documentType,
+      status,
+      search,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+    return {
+      success: true,
+      message: 'Organization documents retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('employee/:employeeId/:id/preview')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({ summary: 'Preview an employee document or photo in browser (HR/Admin)' })
+  async previewEmployeeDocument(
+    @Req() req: AuthenticatedRequest,
+    @Param('employeeId') employeeId: string,
+    @Param('id') documentId: string,
+    @Res() res: Response,
+  ) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string);
+    const userAgent = extractUserAgent(req);
+
+    const result = await this.documentsService.streamDocumentForHR(
+      req.user,
+      employeeId,
+      documentId,
+      clientIp,
+      userAgent,
+    );
+
+    res.set({
+      'Content-Type': result.mimeType,
+      'Content-Disposition': `inline; filename="${result.fileName}"`,
+      'Content-Length': result.fileSize,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+    });
+
+    result.stream.pipe(res);
+  }
 
   @Get('employee/:employeeId')
   @RequirePermissions('DOCUMENT_VIEW')

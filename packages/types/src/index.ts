@@ -1780,6 +1780,33 @@ export interface EmployeeDocumentStats {
   rejected: number;
   expiringSoon: number;
   expired: number;
+  photosCount?: number;
+}
+
+export interface OrganizationDocumentEmployeeInfo {
+  id: string;
+  employeeCode: string;
+  displayName: string;
+  profilePhoto: string | null;
+  departmentName?: string | null;
+  branchName?: string | null;
+  designationTitle?: string | null;
+}
+
+export interface OrganizationDocumentItem extends EmployeeDocumentItem {
+  employee: OrganizationDocumentEmployeeInfo;
+}
+
+export interface OrganizationDocumentsResult {
+  items: OrganizationDocumentItem[];
+  stats: EmployeeDocumentStats & { photosCount: number };
+  employees: OrganizationDocumentEmployeeInfo[];
+  meta: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 export interface VerifyDocumentDto {

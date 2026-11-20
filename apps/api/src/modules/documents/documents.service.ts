@@ -538,6 +538,210 @@ export class DocumentsService {
   // ===========================================================================
 
   /**
+   * List all employee documents and photos across organization for HR/Admin
+   */
+  async getAllOrganizationDocumentsForHR(
+    user: AuthenticatedUser,
+    query: {
+      employeeId?: string;
+      documentType?: string;
+      status?: string;
+      search?: string;
+      page?: number;
+      limit?: number;
+    },
+  ): Promise<{
+    items: Array<
+      EmployeeDocumentItem & {
+        employee: {
+          id: string;
+          employeeCode: string;
+          displayName: string;
+          profilePhoto: string | null;
+          departmentName: string | null;
+          branchName: string | null;
+          designationTitle: string | null;
+        };
+      }
+    >;
+    stats: EmployeeDocumentStats & { photosCount: number };
+    employees: Array<{
+      id: string;
+      employeeCode: string;
+      displayName: string;
+      profilePhoto: string | null;
+    }>;
+    meta: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    const page = Math.max(1, Number(query.page) || 1);
+    const limit = Math.min(100, Math.max(1, Number(query.limit) || 50));
+    const skip = (page - 1) * limit;
+
+    // Fetch all active employees in organization for lookups
+    const orgEmployees = await this.prisma.employee.findMany({
+      where: {
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+      include: {
+        employment: {
+          include: {
+            department: true,
+            designation: true,
+            branch: true,
+          },
+        },
+      },
+      orderBy: { employeeCode: 'asc' },
+    });
+
+    const employeeLookupMap = new Map<string, any>();
+    for (const emp of orgEmployees) {
+      employeeLookupMap.set(emp.id, {
+        id: emp.id,
+        employeeCode: emp.employeeCode,
+        displayName: emp.displayName,
+        profilePhoto: emp.profilePhoto,
+        departmentName: emp.employment?.department?.name || null,
+        branchName: emp.employment?.branch?.name || null,
+        designationTitle: emp.employment?.designation?.title || null,
+      });
+    }
+
+    const where: any = {
+      employee: {
+        organizationId: user.organizationId,
+        deletedAt: null,
+      },
+    };
+
+    if (query.employeeId && query.employeeId !== 'ALL') {
+      where.employeeId = query.employeeId;
+    }
+
+    if (query.documentType && query.documentType !== 'ALL') {
+      where.documentType = query.documentType;
+    }
+
+    if (query.status && query.status !== 'ALL') {
+      if (query.status === 'VERIFIED') {
+        where.isVerified = true;
+      } else if (query.status === 'REJECTED') {
+        where.isVerified = false;
+        where.verifiedAt = { not: null };
+      } else if (query.status === 'PENDING') {
+        where.isVerified = false;
+        where.verifiedAt = null;
+      }
+    }
+
+    if (query.search && query.search.trim()) {
+      const q = query.search.trim();
+      where.OR = [
+        { documentName: { contains: q, mode: 'insensitive' } },
+        { documentNumber: { contains: q, mode: 'insensitive' } },
+        { employee: { displayName: { contains: q, mode: 'insensitive' } } },
+        { employee: { employeeCode: { contains: q, mode: 'insensitive' } } },
+      ];
+    }
+
+    const [total, docs] = await Promise.all([
+      this.prisma.employeeDocumentMetadata.count({ where }),
+      this.prisma.employeeDocumentMetadata.findMany({
+        where,
+        orderBy: [{ documentType: 'asc' }, { createdAt: 'desc' }],
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    // All documents for stats computation
+    const allOrgDocs = await this.prisma.employeeDocumentMetadata.findMany({
+      where: {
+        employee: {
+          organizationId: user.organizationId,
+          deletedAt: null,
+        },
+      },
+      select: {
+        isVerified: true,
+        verifiedAt: true,
+        expiryDate: true,
+        documentType: true,
+      },
+    });
+
+    const now = new Date();
+    const thirtyDaysAhead = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    let verified = 0;
+    let pending = 0;
+    let rejected = 0;
+    let expiringSoon = 0;
+    let expired = 0;
+    let photosCount = 0;
+
+    for (const d of allOrgDocs) {
+      if (d.documentType === 'PHOTO') photosCount++;
+      if (d.isVerified) verified++;
+      else if (d.verifiedAt && !d.isVerified) rejected++;
+      else pending++;
+
+      if (d.expiryDate) {
+        if (d.expiryDate < now) expired++;
+        else if (d.expiryDate <= thirtyDaysAhead) expiringSoon++;
+      }
+    }
+
+    const items = docs.map((doc) => {
+      const base = this.mapDocumentRecord(doc, null);
+      const empInfo = employeeLookupMap.get(doc.employeeId) || {
+        id: doc.employeeId,
+        employeeCode: 'UNKNOWN',
+        displayName: 'Unknown Employee',
+        profilePhoto: null,
+        departmentName: null,
+        branchName: null,
+        designationTitle: null,
+      };
+      return {
+        ...base,
+        employee: empInfo,
+      };
+    });
+
+    return {
+      items,
+      stats: {
+        total: allOrgDocs.length,
+        verified,
+        pending,
+        rejected,
+        expiringSoon,
+        expired,
+        photosCount,
+      },
+      employees: orgEmployees.map((e) => ({
+        id: e.id,
+        employeeCode: e.employeeCode,
+        displayName: e.displayName,
+        profilePhoto: e.profilePhoto,
+      })),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  /**
    * List employee documents for HR review (enforces tenant scope)
    */
   async getEmployeeDocumentsForHR(

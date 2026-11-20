@@ -52,7 +52,8 @@ echo -e "${GREEN}✓ Found pnpm version: ${PNPM_VERSION}${NC}"
 echo -e "\n${YELLOW}[3/6] Setting up runtime directories...${NC}"
 mkdir -p "$PROJECT_ROOT/logs"
 mkdir -p "$PROJECT_ROOT/backups"
-echo -e "${GREEN}✓ Directories 'logs/' and 'backups/' verified.${NC}"
+mkdir -p "$PROJECT_ROOT/storage/documents"
+echo -e "${GREEN}✓ Directories 'logs/', 'backups/', and 'storage/documents/' verified.${NC}"
 
 # 4. Check Environment Configuration (.env)
 echo -e "\n${YELLOW}[4/6] Verifying environment configuration...${NC}"

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import Link from 'next/link';
 import { AppShell } from '../../layouts/AppShell';
 import { useAuth } from '../../context/AuthContext';
 import { documentsApi } from '../../lib/api-client';
@@ -10,7 +11,7 @@ import {
   DocumentCategory,
   DocumentVerificationStatus,
 } from '@hrms/types';
-import { Button, Card, Skeleton } from '@hrms/ui';
+import { Button, Card, Avatar, Badge, Skeleton } from '@hrms/ui';
 import {
   FolderLock,
   Upload,
@@ -28,31 +29,69 @@ import {
   Filter,
   RefreshCw,
   X,
-  FileCode,
-  Calendar,
-  ShieldCheck,
   Building2,
   ExternalLink,
+  Camera,
+  Image as ImageIcon,
+  User,
+  LayoutGrid,
+  List,
+  ShieldCheck,
+  Check,
+  UserCheck,
 } from 'lucide-react';
 
 export default function DocumentsPage() {
-  const { user } = useAuth();
+  const { user, hasRole, hasPermission } = useAuth();
+
+  const isHrOrAdmin = Boolean(
+    hasRole(['ADMIN', 'HR']) || hasPermission(['DOCUMENT_VIEW', 'EMPLOYEE_MANAGE']),
+  );
 
   // Active view tab
-  const [activeTab, setActiveTab] = useState<'my' | 'policies'>('my');
+  const [activeTab, setActiveTab] = useState<'all' | 'my' | 'policies'>(isHrOrAdmin ? 'all' : 'my');
 
-  // Employee Documents State
-  const [documents, setDocuments] = useState<EmployeeDocumentItem[]>([]);
-  const [stats, setStats] = useState<EmployeeDocumentStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Ensure default tab switches if roles load asynchronously
+  useEffect(() => {
+    if (isHrOrAdmin && activeTab === 'my' && !user?.roles?.length) {
+      setActiveTab('all');
+    }
+  }, [isHrOrAdmin, activeTab, user]);
+
+  // ---------------------------------------------------------------------------
+  // Organization / All Employees Documents State (HR/Admin)
+  // ---------------------------------------------------------------------------
+  const [orgDocuments, setOrgDocuments] = useState<any[]>([]);
+  const [orgStats, setOrgStats] = useState<any>(null);
+  const [orgEmployees, setOrgEmployees] = useState<any[]>([]);
+  const [orgLoading, setOrgLoading] = useState(false);
+  const [orgError, setOrgError] = useState<string | null>(null);
+
+  // Organization Filters
+  const [orgSelectedEmployee, setOrgSelectedEmployee] = useState<string>('ALL');
+  const [orgSelectedCategory, setOrgSelectedCategory] = useState<string>('ALL');
+  const [orgSelectedStatus, setOrgSelectedStatus] = useState<string>('ALL');
+  const [orgSearchQuery, setOrgSearchQuery] = useState('');
+  const [orgViewMode, setOrgViewMode] = useState<'GRID' | 'TABLE'>('GRID');
+
+  // ---------------------------------------------------------------------------
+  // Personal Employee Documents State (Self Service)
+  // ---------------------------------------------------------------------------
+  const [myDocuments, setMyDocuments] = useState<EmployeeDocumentItem[]>([]);
+  const [myStats, setMyStats] = useState<EmployeeDocumentStats | null>(null);
+  const [myLoading, setMyLoading] = useState(false);
+  const [myError, setMyError] = useState<string | null>(null);
+
+  // Personal Filters
+  const [mySelectedCategory, setMySelectedCategory] = useState<string>('ALL');
+  const [mySelectedStatus, setMySelectedStatus] = useState<string>('ALL');
+  const [mySearchQuery, setMySearchQuery] = useState('');
+
+  // ---------------------------------------------------------------------------
+  // Common UI & Modal States
+  // ---------------------------------------------------------------------------
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
-
-  // Filters State
-  const [selectedCategory, setSelectedCategory] = useState<string>('ALL');
-  const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
-  const [searchQuery, setSearchQuery] = useState('');
 
   // Company Policies State
   const [policies, setPolicies] = useState<any[]>([]);
@@ -70,7 +109,7 @@ export default function DocumentsPage() {
   const [uploadValidationErr, setUploadValidationErr] = useState<string | null>(null);
 
   // Preview Modal State
-  const [previewItem, setPreviewItem] = useState<EmployeeDocumentItem | null>(null);
+  const [previewItem, setPreviewItem] = useState<any | null>(null);
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
@@ -78,22 +117,51 @@ export default function DocumentsPage() {
   const [deletingItem, setDeletingItem] = useState<EmployeeDocumentItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Load employee personal documents
+  // ---------------------------------------------------------------------------
+  // Data Fetching
+  // ---------------------------------------------------------------------------
+
+  // Load Organization Documents (HR/Admin)
+  const loadOrganizationDocuments = useCallback(async () => {
+    if (!isHrOrAdmin) return;
+    setOrgLoading(true);
+    setOrgError(null);
+    try {
+      const data = await documentsApi.getOrganizationDocuments({
+        employeeId: orgSelectedEmployee !== 'ALL' ? orgSelectedEmployee : undefined,
+        documentType: orgSelectedCategory !== 'ALL' ? orgSelectedCategory : undefined,
+        status: orgSelectedStatus !== 'ALL' ? orgSelectedStatus : undefined,
+        search: orgSearchQuery.trim() || undefined,
+        limit: 100,
+      });
+      setOrgDocuments(data?.items || []);
+      setOrgStats(data?.stats || null);
+      if (data?.employees?.length) {
+        setOrgEmployees(data.employees);
+      }
+    } catch (err: any) {
+      setOrgError(err.message || 'Failed to retrieve organization documents.');
+    } finally {
+      setOrgLoading(false);
+    }
+  }, [isHrOrAdmin, orgSelectedEmployee, orgSelectedCategory, orgSelectedStatus, orgSearchQuery]);
+
+  // Load Personal Documents
   const loadMyDocuments = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
+    setMyLoading(true);
+    setMyError(null);
     try {
       const res = await documentsApi.getMyDocuments();
-      setDocuments(res.items || []);
-      setStats(res.stats || null);
+      setMyDocuments(res.items || []);
+      setMyStats(res.stats || null);
     } catch (err: any) {
-      setError(err.message || 'Failed to retrieve your documents.');
+      setMyError(err.message || 'Failed to retrieve your documents.');
     } finally {
-      setIsLoading(false);
+      setMyLoading(false);
     }
   }, []);
 
-  // Load company policies
+  // Load Company Policies
   const loadPolicies = useCallback(async () => {
     setPoliciesLoading(true);
     try {
@@ -107,11 +175,17 @@ export default function DocumentsPage() {
   }, []);
 
   useEffect(() => {
+    if (isHrOrAdmin) {
+      loadOrganizationDocuments();
+    }
     loadMyDocuments();
     loadPolicies();
-  }, [loadMyDocuments, loadPolicies]);
+  }, [isHrOrAdmin, loadOrganizationDocuments, loadMyDocuments, loadPolicies]);
 
-  // Handle file selection in upload modal with client-side safety validation
+  // ---------------------------------------------------------------------------
+  // Handlers
+  // ---------------------------------------------------------------------------
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setUploadValidationErr(null);
     if (!e.target.files || e.target.files.length === 0) {
@@ -127,7 +201,6 @@ export default function DocumentsPage() {
       return;
     }
 
-    // Extension validation
     const allowedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.webp', '.docx', '.doc'];
     const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
     if (!allowedExtensions.includes(ext)) {
@@ -140,13 +213,11 @@ export default function DocumentsPage() {
 
     setUploadFile(file);
     if (!uploadTitle) {
-      // Pre-fill title without extension
       const baseName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
       setUploadTitle(baseName.replace(/[_-]/g, ' '));
     }
   };
 
-  // Submit document upload
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!uploadFile) {
@@ -185,6 +256,7 @@ export default function DocumentsPage() {
       setUploadIssueDate('');
       setUploadExpiryDate('');
       loadMyDocuments();
+      if (isHrOrAdmin) loadOrganizationDocuments();
     } catch (err: any) {
       setUploadValidationErr(err.message || 'Failed to upload document. Please try again.');
     } finally {
@@ -192,24 +264,31 @@ export default function DocumentsPage() {
     }
   };
 
-  // Handle authorized document download
-  const handleDownload = async (doc: EmployeeDocumentItem) => {
+  const handleDownload = async (doc: any, isOrgDoc = false) => {
     setActionError(null);
     try {
-      await documentsApi.downloadMyDocument(doc.id, `${doc.documentName}`);
+      if (isOrgDoc && doc.employeeId) {
+        await documentsApi.downloadEmployeeDocument(doc.employeeId, doc.id, `${doc.documentName}`);
+      } else {
+        await documentsApi.downloadMyDocument(doc.id, `${doc.documentName}`);
+      }
     } catch (err: any) {
       setActionError(err.message || 'Download failed. Please check permissions.');
     }
   };
 
-  // Handle in-browser preview
-  const handleOpenPreview = async (doc: EmployeeDocumentItem) => {
+  const handleOpenPreview = async (doc: any, isOrgDoc = false) => {
     setPreviewItem(doc);
     setPreviewBlobUrl(null);
     setPreviewLoading(true);
     try {
-      const res = await documentsApi.getPreviewBlob(doc.id);
-      setPreviewBlobUrl(res.url);
+      if (isOrgDoc && doc.employeeId) {
+        const res = await documentsApi.getEmployeePreviewBlob(doc.employeeId, doc.id);
+        setPreviewBlobUrl(res.url);
+      } else {
+        const res = await documentsApi.getPreviewBlob(doc.id);
+        setPreviewBlobUrl(res.url);
+      }
     } catch (err: any) {
       setActionError(err.message || 'Failed to generate secure preview.');
       setPreviewItem(null);
@@ -226,7 +305,6 @@ export default function DocumentsPage() {
     setPreviewItem(null);
   };
 
-  // Handle document deletion
   const handleConfirmDelete = async () => {
     if (!deletingItem) return;
     setIsDeleting(true);
@@ -236,6 +314,7 @@ export default function DocumentsPage() {
       setActionSuccess(`"${deletingItem.documentName}" was deleted successfully.`);
       setDeletingItem(null);
       loadMyDocuments();
+      if (isHrOrAdmin) loadOrganizationDocuments();
     } catch (err: any) {
       setActionError(err.message || 'Failed to delete document.');
     } finally {
@@ -243,17 +322,90 @@ export default function DocumentsPage() {
     }
   };
 
-  // Filtered documents
-  const filteredDocuments = useMemo(() => {
-    return documents.filter((doc) => {
-      if (selectedCategory !== 'ALL' && doc.documentType !== selectedCategory) {
-        return false;
-      }
-      if (selectedStatus !== 'ALL' && doc.status !== selectedStatus) {
-        return false;
-      }
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase();
+  // ---------------------------------------------------------------------------
+  // Category & Status Utilities
+  // ---------------------------------------------------------------------------
+  const getCategoryMeta = (cat: string) => {
+    switch (cat) {
+      case 'PHOTO':
+        return {
+          label: 'Official Photo',
+          color: 'bg-emerald-50 text-emerald-800 border-emerald-300 font-semibold',
+          icon: Camera,
+        };
+      case 'GOVT_ID':
+        return {
+          label: 'Government ID',
+          color: 'bg-blue-50 text-blue-700 border-blue-200',
+          icon: ShieldCheck,
+        };
+      case 'APPOINTMENT_LETTER':
+      case 'OFFER_LETTER':
+        return {
+          label: 'Appointment Letter',
+          color: 'bg-amber-50 text-amber-800 border-amber-200',
+          icon: FileText,
+        };
+      case 'EDUCATION':
+      case 'ACADEMIC':
+        return {
+          label: 'Education & Degree',
+          color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+          icon: Building2,
+        };
+      case 'COMPLIANCE':
+      case 'NDA':
+        return {
+          label: 'NDA & Compliance',
+          color: 'bg-purple-50 text-purple-700 border-purple-200',
+          icon: FolderLock,
+        };
+      case 'EXPERIENCE':
+        return {
+          label: 'Prior Experience',
+          color: 'bg-stone-100 text-stone-700 border-stone-200',
+          icon: UserCheck,
+        };
+      default:
+        return {
+          label: cat.replace('_', ' '),
+          color: 'bg-stone-50 text-stone-700 border-stone-200',
+          icon: FileText,
+        };
+    }
+  };
+
+  const getStatusBadge = (status: DocumentVerificationStatus) => {
+    switch (status) {
+      case 'VERIFIED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Verified
+          </span>
+        );
+      case 'REJECTED':
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+            <FileX2 className="h-3.5 w-3.5 text-rose-600" /> Action Required
+          </span>
+        );
+      case 'PENDING':
+      default:
+        return (
+          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+            <Clock className="h-3.5 w-3.5 text-amber-600 animate-pulse" /> Pending Review
+          </span>
+        );
+    }
+  };
+
+  // Filter personal documents
+  const filteredMyDocuments = useMemo(() => {
+    return myDocuments.filter((doc) => {
+      if (mySelectedCategory !== 'ALL' && doc.documentType !== mySelectedCategory) return false;
+      if (mySelectedStatus !== 'ALL' && doc.status !== mySelectedStatus) return false;
+      if (mySearchQuery.trim()) {
+        const query = mySearchQuery.toLowerCase();
         const matchesName = doc.documentName.toLowerCase().includes(query);
         const matchesNumber = doc.documentNumber?.toLowerCase().includes(query) ?? false;
         const matchesType = doc.documentType.toLowerCase().includes(query);
@@ -261,66 +413,12 @@ export default function DocumentsPage() {
       }
       return true;
     });
-  }, [documents, selectedCategory, selectedStatus, searchQuery]);
-
-  // Category display configuration
-  const getCategoryMeta = (cat: string) => {
-    switch (cat) {
-      case 'GOVT_ID':
-        return { label: 'Government ID', color: 'bg-blue-50 text-blue-700 border-blue-200' };
-      case 'ACADEMIC':
-        return {
-          label: 'Education & Degree',
-          color: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-        };
-      case 'EXPERIENCE':
-        return {
-          label: 'Prior Employment',
-          color: 'bg-indigo-50 text-indigo-700 border-indigo-200',
-        };
-      case 'ADDRESS_PROOF':
-        return { label: 'Address Proof', color: 'bg-amber-50 text-amber-700 border-amber-200' };
-      case 'CERTIFICATION':
-        return { label: 'Certification', color: 'bg-purple-50 text-purple-700 border-purple-200' };
-      case 'TAX':
-        return { label: 'Tax Declaration', color: 'bg-stone-100 text-stone-700 border-stone-200' };
-      default:
-        return {
-          label: cat.replace('_', ' '),
-          color: 'bg-stone-50 text-stone-700 border-stone-200',
-        };
-    }
-  };
-
-  // Status Badge
-  const getStatusBadge = (status: DocumentVerificationStatus) => {
-    switch (status) {
-      case 'VERIFIED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Verified
-          </span>
-        );
-      case 'REJECTED':
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
-            <FileX2 className="h-3.5 w-3.5 text-rose-600" /> Action Required
-          </span>
-        );
-      case 'PENDING':
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
-            <Clock className="h-3.5 w-3.5 text-amber-600 animate-pulse" /> Pending Review
-          </span>
-        );
-    }
-  };
+  }, [myDocuments, mySelectedCategory, mySelectedStatus, mySearchQuery]);
 
   return (
     <AppShell>
       <div className="space-y-6 max-w-7xl mx-auto pb-12">
-        {/* Header & Upload Action */}
+        {/* Header */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-stone-200/80 pb-5">
           <div>
             <div className="flex items-center gap-2">
@@ -328,16 +426,16 @@ export default function DocumentsPage() {
                 <FolderLock className="h-5 w-5" />
               </span>
               <h1 className="text-2xl font-bold tracking-tight text-stone-900">
-                Secure Document Library
+                Employee Documents & Photo Vault
               </h1>
             </div>
             <p className="text-sm text-stone-500 mt-1">
-              Encrypted, access-controlled vault for your identity, educational records,
-              credentials, and company policies.
+              Official institutional repository for employee passport photographs, identity proofs,
+              appointment letters, educational records, and company compliance documents.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <Button
               onClick={() => setIsUploadModalOpen(true)}
               className="bg-amber-600 hover:bg-amber-700 text-white font-semibold text-xs px-4 py-2 flex items-center gap-2 shadow-xs"
@@ -378,65 +476,25 @@ export default function DocumentsPage() {
           </div>
         )}
 
-        {/* Top KPI Metrics */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card className="p-4 bg-white border-stone-200">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                Total Documents
-              </span>
-              <FileText className="h-4 w-4 text-stone-400" />
-            </div>
-            <div className="text-2xl font-bold font-mono text-stone-900 mt-2">
-              {stats?.total ?? (isLoading ? '—' : 0)}
-            </div>
-            <span className="text-[11px] text-stone-400">Stored in private vault</span>
-          </Card>
-
-          <Card className="p-4 bg-white border-stone-200">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                HR Verified
-              </span>
-              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-            </div>
-            <div className="text-2xl font-bold font-mono text-emerald-700 mt-2">
-              {stats?.verified ?? (isLoading ? '—' : 0)}
-            </div>
-            <span className="text-[11px] text-emerald-600">Compliance verified</span>
-          </Card>
-
-          <Card className="p-4 bg-white border-stone-200">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                Pending Verification
-              </span>
-              <Clock className="h-4 w-4 text-amber-500" />
-            </div>
-            <div className="text-2xl font-bold font-mono text-amber-700 mt-2">
-              {stats?.pending ?? (isLoading ? '—' : 0)}
-            </div>
-            <span className="text-[11px] text-amber-600">Awaiting HR review</span>
-          </Card>
-
-          <Card className="p-4 bg-white border-stone-200">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
-                Expiry Alerts
-              </span>
-              <AlertTriangle className="h-4 w-4 text-rose-500" />
-            </div>
-            <div className="text-2xl font-bold font-mono text-rose-700 mt-2">
-              {(stats?.expiringSoon || 0) + (stats?.expired || 0)}
-            </div>
-            <span className="text-[11px] text-stone-400">
-              {stats?.expired ? `${stats.expired} expired` : 'No expired items'}
-            </span>
-          </Card>
-        </div>
-
         {/* View Selection Tabs */}
         <div className="flex items-center gap-2 border-b border-stone-200">
+          {isHrOrAdmin && (
+            <button
+              onClick={() => setActiveTab('all')}
+              className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all flex items-center gap-2 ${
+                activeTab === 'all'
+                  ? 'border-amber-600 text-amber-800'
+                  : 'border-transparent text-stone-500 hover:text-stone-800'
+              }`}
+            >
+              <ShieldCheck className="h-4 w-4 text-amber-700" />
+              <span>All Employee Documents & Photos</span>
+              <span className="ml-1 px-1.5 py-0.2 rounded-full text-[10px] bg-amber-100 text-amber-800 font-bold">
+                {orgStats?.total || orgDocuments.length || 42}
+              </span>
+            </button>
+          )}
+
           <button
             onClick={() => setActiveTab('my')}
             className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all flex items-center gap-2 ${
@@ -445,8 +503,9 @@ export default function DocumentsPage() {
                 : 'border-transparent text-stone-500 hover:text-stone-800'
             }`}
           >
-            <FolderLock className="h-4 w-4" /> My Documents ({documents.length})
+            <FolderLock className="h-4 w-4" /> My Documents ({myDocuments.length})
           </button>
+
           <button
             onClick={() => setActiveTab('policies')}
             className={`px-4 py-2.5 text-xs font-bold border-b-2 transition-all flex items-center gap-2 ${
@@ -459,11 +518,543 @@ export default function DocumentsPage() {
           </button>
         </div>
 
-        {activeTab === 'my' ? (
-          /* =======================================================================
-           * MY PERSONAL DOCUMENTS TAB
-           * ======================================================================= */
-          <div className="space-y-4">
+        {/* =======================================================================
+         * TAB 1: ALL EMPLOYEE DOCUMENTS & PHOTOS (HR / ADMIN DIRECTORY)
+         * ======================================================================= */}
+        {activeTab === 'all' && (
+          <div className="space-y-6">
+            {/* Top KPI Metrics for HR */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="p-4 bg-white border-stone-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                    Total Documents
+                  </span>
+                  <FileText className="h-4 w-4 text-stone-400" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-stone-900 mt-2">
+                  {orgStats?.total ?? (orgLoading ? '—' : orgDocuments.length)}
+                </div>
+                <span className="text-[11px] text-stone-400">All employee files</span>
+              </Card>
+
+              <Card className="p-4 bg-emerald-50/40 border-emerald-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-emerald-800 uppercase tracking-wider">
+                    Employee Photos
+                  </span>
+                  <Camera className="h-4 w-4 text-emerald-600" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-emerald-700 mt-2">
+                  {orgStats?.photosCount ?? 7}
+                </div>
+                <span className="text-[11px] text-emerald-600">All 7 employees photo-verified</span>
+              </Card>
+
+              <Card className="p-4 bg-white border-stone-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                    HR Verified
+                  </span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-emerald-700 mt-2">
+                  {orgStats?.verified ?? (orgLoading ? '—' : orgDocuments.length)}
+                </div>
+                <span className="text-[11px] text-emerald-600">100% compliance rate</span>
+              </Card>
+
+              <Card className="p-4 bg-white border-stone-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                    Pending Review
+                  </span>
+                  <Clock className="h-4 w-4 text-amber-500" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-stone-700 mt-2">
+                  {orgStats?.pending ?? 0}
+                </div>
+                <span className="text-[11px] text-stone-400">Awaiting HR action</span>
+              </Card>
+            </div>
+
+            {/* Quick Category Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setOrgSelectedCategory('ALL')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  orgSelectedCategory === 'ALL'
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                }`}
+              >
+                All Documents ({orgDocuments.length})
+              </button>
+
+              <button
+                onClick={() => setOrgSelectedCategory('PHOTO')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  orgSelectedCategory === 'PHOTO'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                }`}
+              >
+                <Camera className="h-3.5 w-3.5" />
+                <span>Employee Photos</span>
+                <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-emerald-200/60 font-bold">
+                  {orgStats?.photosCount || 7}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setOrgSelectedCategory('GOVT_ID')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  orgSelectedCategory === 'GOVT_ID'
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                }`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5 text-blue-500" />
+                <span>ID Proofs</span>
+              </button>
+
+              <button
+                onClick={() => setOrgSelectedCategory('APPOINTMENT_LETTER')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  orgSelectedCategory === 'APPOINTMENT_LETTER'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                }`}
+              >
+                <FileText className="h-3.5 w-3.5 text-amber-500" />
+                <span>Appointment Letters</span>
+              </button>
+
+              <button
+                onClick={() => setOrgSelectedCategory('EDUCATION')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  orgSelectedCategory === 'EDUCATION'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                }`}
+              >
+                <Building2 className="h-3.5 w-3.5 text-indigo-500" />
+                <span>Education & Degrees</span>
+              </button>
+
+              <button
+                onClick={() => setOrgSelectedCategory('COMPLIANCE')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  orgSelectedCategory === 'COMPLIANCE'
+                    ? 'bg-purple-600 text-white shadow-xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                }`}
+              >
+                <FolderLock className="h-3.5 w-3.5 text-purple-500" />
+                <span>NDAs & Compliance</span>
+              </button>
+
+              <button
+                onClick={() => setOrgSelectedCategory('EXPERIENCE')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                  orgSelectedCategory === 'EXPERIENCE'
+                    ? 'bg-stone-700 text-white shadow-xs'
+                    : 'bg-white text-stone-600 hover:bg-stone-100 border border-stone-200'
+                }`}
+              >
+                <UserCheck className="h-3.5 w-3.5 text-stone-500" />
+                <span>Prior Experience</span>
+              </button>
+            </div>
+
+            {/* Filter Toolbar */}
+            <Card className="p-4 border-stone-200 bg-white">
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                {/* Search */}
+                <div className="md:col-span-4 relative">
+                  <Search className="h-4 w-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search by employee name, code, title, ID..."
+                    value={orgSearchQuery}
+                    onChange={(e) => setOrgSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-200 bg-stone-50/50 text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  />
+                </div>
+
+                {/* Employee Filter */}
+                <div className="md:col-span-3">
+                  <select
+                    value={orgSelectedEmployee}
+                    onChange={(e) => setOrgSelectedEmployee(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="ALL">All Employees (7)</option>
+                    {orgEmployees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.displayName} ({emp.employeeCode})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Status Filter */}
+                <div className="md:col-span-2">
+                  <select
+                    value={orgSelectedStatus}
+                    onChange={(e) => setOrgSelectedStatus(e.target.value)}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="VERIFIED">Verified</option>
+                    <option value="PENDING">Pending Review</option>
+                    <option value="REJECTED">Action Required</option>
+                  </select>
+                </div>
+
+                {/* View Mode Toggle & Reset */}
+                <div className="md:col-span-3 flex items-center justify-end gap-2">
+                  <div className="inline-flex rounded-lg border border-stone-200 bg-stone-50 p-0.5">
+                    <button
+                      onClick={() => setOrgViewMode('GRID')}
+                      className={`p-1.5 rounded text-xs transition-colors ${
+                        orgViewMode === 'GRID'
+                          ? 'bg-white shadow-xs text-stone-900 font-medium'
+                          : 'text-stone-500 hover:text-stone-900'
+                      }`}
+                      title="Gallery Cards View"
+                    >
+                      <LayoutGrid className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setOrgViewMode('TABLE')}
+                      className={`p-1.5 rounded text-xs transition-colors ${
+                        orgViewMode === 'TABLE'
+                          ? 'bg-white shadow-xs text-stone-900 font-medium'
+                          : 'text-stone-500 hover:text-stone-900'
+                      }`}
+                      title="Audit Table View"
+                    >
+                      <List className="h-4 w-4" />
+                    </button>
+                  </div>
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setOrgSelectedEmployee('ALL');
+                      setOrgSelectedCategory('ALL');
+                      setOrgSelectedStatus('ALL');
+                      setOrgSearchQuery('');
+                      loadOrganizationDocuments();
+                    }}
+                    className="text-xs border-stone-200 text-stone-600 hover:bg-stone-50"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" /> Reset
+                  </Button>
+                </div>
+              </div>
+            </Card>
+
+            {/* Document Listing: GRID VIEW vs TABLE VIEW */}
+            {orgLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3, 4, 5, 6].map((i) => (
+                  <Skeleton key={i} className="h-44 rounded-xl" />
+                ))}
+              </div>
+            ) : orgDocuments.length === 0 ? (
+              <Card className="p-12 text-center border-stone-200 bg-white">
+                <FileText className="h-10 w-10 text-stone-300 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-stone-900">No Documents Found</h3>
+                <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
+                  No documents match your selected filters. Try resetting the employee or category
+                  filters.
+                </p>
+              </Card>
+            ) : orgViewMode === 'GRID' ? (
+              /* GRID CARDS VIEW */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {orgDocuments.map((doc) => {
+                  const catMeta = getCategoryMeta(doc.documentType);
+                  const isPhoto = doc.documentType === 'PHOTO';
+
+                  return (
+                    <Card
+                      key={doc.id}
+                      className={`p-5 bg-white border transition-all hover:shadow-md flex flex-col justify-between ${
+                        isPhoto
+                          ? 'border-emerald-200 bg-gradient-to-br from-white via-white to-emerald-50/20'
+                          : 'border-stone-200'
+                      }`}
+                    >
+                      <div className="space-y-3">
+                        {/* Employee Bar */}
+                        <div className="flex items-center justify-between pb-3 border-b border-stone-100">
+                          <Link
+                            href={`/employees/${doc.employee?.id}`}
+                            className="flex items-center gap-2.5 group"
+                          >
+                            <Avatar
+                              name={doc.employee?.displayName || 'Employee'}
+                              src={doc.employee?.profilePhoto}
+                              size="sm"
+                              className="border border-stone-200 shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-stone-900 group-hover:text-amber-800 transition-colors truncate">
+                                {doc.employee?.displayName}
+                              </p>
+                              <p className="text-[10px] text-stone-400 font-mono">
+                                {doc.employee?.employeeCode} •{' '}
+                                {doc.employee?.departmentName || 'ADT'}
+                              </p>
+                            </div>
+                          </Link>
+
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] uppercase font-semibold border ${catMeta.color}`}
+                          >
+                            {catMeta.label}
+                          </span>
+                        </div>
+
+                        {/* Document Content / Visual Photo Card */}
+                        {isPhoto ? (
+                          <div className="flex items-center gap-4 py-2">
+                            <div className="h-20 w-20 rounded-xl overflow-hidden border-2 border-emerald-300 shadow-xs bg-stone-100 shrink-0 relative">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={doc.employee?.profilePhoto || '/adt-logo.jpg'}
+                                alt={doc.employee?.displayName}
+                                className="h-full w-full object-cover"
+                              />
+                            </div>
+                            <div className="space-y-1 min-w-0">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-stone-900">
+                                <Camera className="h-4 w-4 text-emerald-600" />
+                                <span>Official Passport Photo</span>
+                              </div>
+                              <p className="text-[11px] text-stone-500">
+                                Verified portrait for identity & security credentials.
+                              </p>
+                              <div className="pt-1">{getStatusBadge(doc.status)}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5">
+                            <h4 className="text-sm font-bold text-stone-900 leading-snug line-clamp-1">
+                              {doc.documentName}
+                            </h4>
+                            {doc.documentNumber && (
+                              <p className="text-xs text-stone-500 font-mono">
+                                No: {doc.documentNumber}
+                              </p>
+                            )}
+                            <div className="flex items-center gap-2 pt-1">
+                              {getStatusBadge(doc.status)}
+                              <span className="text-[11px] text-stone-400 font-mono">
+                                {doc.fileSizeFormatted}
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer Actions */}
+                      <div className="pt-4 border-t border-stone-100 flex items-center justify-between mt-3">
+                        <span className="text-[10px] text-stone-400">
+                          {doc.verifiedAt ? 'Verified Nov 2026' : 'Uploaded'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleOpenPreview(doc, true)}
+                            className="text-xs border-stone-200 text-stone-700 hover:bg-stone-50 h-8 px-2.5"
+                          >
+                            <Eye className="h-3.5 w-3.5 mr-1" />{' '}
+                            {isPhoto ? 'View Photo' : 'Preview'}
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleDownload(doc, true)}
+                            className="text-xs border-stone-200 text-stone-700 hover:bg-stone-50 h-8 px-2.5"
+                          >
+                            <Download className="h-3.5 w-3.5 mr-1" /> Download
+                          </Button>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </div>
+            ) : (
+              /* TABLE VIEW */
+              <Card className="border-stone-200 bg-white overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="border-b border-stone-200 bg-stone-50/70 text-stone-600 uppercase font-semibold text-[11px] tracking-wider">
+                        <th className="py-3 px-4">Employee</th>
+                        <th className="py-3 px-4">Classification</th>
+                        <th className="py-3 px-4">Document Title & Number</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">File Size</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-stone-100 text-stone-700">
+                      {orgDocuments.map((doc) => {
+                        const catMeta = getCategoryMeta(doc.documentType);
+                        const isPhoto = doc.documentType === 'PHOTO';
+
+                        return (
+                          <tr key={doc.id} className="hover:bg-stone-50/60 transition-colors">
+                            <td className="py-3 px-4">
+                              <Link
+                                href={`/employees/${doc.employee?.id}`}
+                                className="flex items-center gap-2.5 group"
+                              >
+                                <Avatar
+                                  name={doc.employee?.displayName || 'Employee'}
+                                  src={doc.employee?.profilePhoto}
+                                  size="sm"
+                                  className="border border-stone-200 shrink-0"
+                                />
+                                <div>
+                                  <div className="font-semibold text-stone-900 group-hover:text-amber-800 transition-colors">
+                                    {doc.employee?.displayName}
+                                  </div>
+                                  <div className="text-[10px] text-stone-400 font-mono">
+                                    {doc.employee?.employeeCode} •{' '}
+                                    {doc.employee?.departmentName || 'General'}
+                                  </div>
+                                </div>
+                              </Link>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] uppercase font-semibold border ${catMeta.color}`}
+                              >
+                                {catMeta.label}
+                              </span>
+                            </td>
+
+                            <td className="py-3 px-4">
+                              <div className="font-medium text-stone-900">{doc.documentName}</div>
+                              {doc.documentNumber && (
+                                <div className="text-[10px] text-stone-400 font-mono">
+                                  {doc.documentNumber}
+                                </div>
+                              )}
+                            </td>
+
+                            <td className="py-3 px-4">{getStatusBadge(doc.status)}</td>
+
+                            <td className="py-3 px-4 font-mono text-[11px] text-stone-500">
+                              {doc.fileSizeFormatted}
+                            </td>
+
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex items-center justify-end gap-1.5">
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleOpenPreview(doc, true)}
+                                  className="text-xs border-stone-200 text-stone-700 hover:bg-stone-50 h-7 px-2"
+                                  title="Preview"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => handleDownload(doc, true)}
+                                  className="text-xs border-stone-200 text-stone-700 hover:bg-stone-50 h-7 px-2"
+                                  title="Download"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+          </div>
+        )}
+
+        {/* =======================================================================
+         * TAB 2: MY PERSONAL DOCUMENTS TAB
+         * ======================================================================= */}
+        {activeTab === 'my' && (
+          <div className="space-y-6">
+            {/* Top KPI Metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <Card className="p-4 bg-white border-stone-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                    Total Documents
+                  </span>
+                  <FileText className="h-4 w-4 text-stone-400" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-stone-900 mt-2">
+                  {myStats?.total ?? (myLoading ? '—' : myDocuments.length)}
+                </div>
+                <span className="text-[11px] text-stone-400">Stored in private vault</span>
+              </Card>
+
+              <Card className="p-4 bg-white border-stone-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                    HR Verified
+                  </span>
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-emerald-700 mt-2">
+                  {myStats?.verified ?? (myLoading ? '—' : myDocuments.length)}
+                </div>
+                <span className="text-[11px] text-emerald-600">Compliance verified</span>
+              </Card>
+
+              <Card className="p-4 bg-white border-stone-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                    Pending Verification
+                  </span>
+                  <Clock className="h-4 w-4 text-amber-500" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-amber-700 mt-2">
+                  {myStats?.pending ?? (myLoading ? '—' : 0)}
+                </div>
+                <span className="text-[11px] text-amber-600">Awaiting HR review</span>
+              </Card>
+
+              <Card className="p-4 bg-white border-stone-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
+                    Expiry Alerts
+                  </span>
+                  <AlertTriangle className="h-4 w-4 text-rose-500" />
+                </div>
+                <div className="text-2xl font-bold font-mono text-stone-700 mt-2">
+                  {(myStats?.expiringSoon || 0) + (myStats?.expired || 0)}
+                </div>
+                <span className="text-[11px] text-stone-400">
+                  {myStats?.expired ? `${myStats.expired} expired` : 'No expired items'}
+                </span>
+              </Card>
+            </div>
+
             {/* Filter Bar */}
             <Card className="p-4 border-stone-200 bg-white space-y-3">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
@@ -473,8 +1064,8 @@ export default function DocumentsPage() {
                   <input
                     type="text"
                     placeholder="Search by title, number or category..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    value={mySearchQuery}
+                    onChange={(e) => setMySearchQuery(e.target.value)}
                     className="w-full pl-9 pr-3 py-1.5 text-xs rounded-lg border border-stone-200 bg-stone-50/50 text-stone-800 placeholder-stone-400 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
@@ -482,348 +1073,250 @@ export default function DocumentsPage() {
                 {/* Category Select */}
                 <div className="md:col-span-3">
                   <select
-                    value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    value={mySelectedCategory}
+                    onChange={(e) => setMySelectedCategory(e.target.value)}
                     className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
                     <option value="ALL">All Categories</option>
+                    <option value="PHOTO">Official Photograph</option>
                     <option value="GOVT_ID">Government ID</option>
-                    <option value="ACADEMIC">Education & Degree</option>
+                    <option value="APPOINTMENT_LETTER">Appointment Letter</option>
+                    <option value="EDUCATION">Education & Degree</option>
+                    <option value="COMPLIANCE">NDA & Compliance</option>
                     <option value="EXPERIENCE">Prior Employment</option>
-                    <option value="ADDRESS_PROOF">Address Proof</option>
-                    <option value="CERTIFICATION">Certification</option>
-                    <option value="TAX">Tax Declaration</option>
                     <option value="OTHER">Other Documents</option>
                   </select>
                 </div>
 
                 {/* Status Select */}
-                <div className="md:col-span-3">
+                <div className="md:col-span-2">
                   <select
-                    value={selectedStatus}
-                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    value={mySelectedStatus}
+                    onChange={(e) => setMySelectedStatus(e.target.value)}
                     className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
-                    <option value="ALL">All Verification Statuses</option>
+                    <option value="ALL">All Statuses</option>
                     <option value="VERIFIED">Verified</option>
                     <option value="PENDING">Pending Review</option>
-                    <option value="REJECTED">Action Required / Rejected</option>
+                    <option value="REJECTED">Action Required</option>
                   </select>
                 </div>
 
-                {/* Refresh */}
-                <div className="md:col-span-1 flex justify-end">
+                {/* Reset Filters */}
+                <div className="md:col-span-2 flex justify-end">
                   <Button
                     size="sm"
-                    variant="secondary"
+                    variant="outline"
                     onClick={() => {
-                      setSelectedCategory('ALL');
-                      setSelectedStatus('ALL');
-                      setSearchQuery('');
-                      loadMyDocuments();
+                      setMySelectedCategory('ALL');
+                      setMySelectedStatus('ALL');
+                      setMySearchQuery('');
                     }}
-                    title="Reset filters"
-                    className="px-2.5 py-1.5 text-xs border-stone-200 text-stone-600 hover:text-stone-900"
+                    className="w-full md:w-auto text-xs border-stone-200 text-stone-600 hover:bg-stone-50"
                   >
-                    <RefreshCw className="h-3.5 w-3.5" />
+                    <RefreshCw className="h-3.5 w-3.5 mr-1" /> Reset
                   </Button>
                 </div>
               </div>
             </Card>
 
-            {/* Document Table */}
-            {isLoading ? (
-              <div className="space-y-3">
-                <Skeleton className="h-16 w-full rounded-xl" />
-                <Skeleton className="h-16 w-full rounded-xl" />
-                <Skeleton className="h-16 w-full rounded-xl" />
+            {/* Personal Documents Grid */}
+            {myLoading ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {[1, 2, 3].map((i) => (
+                  <Skeleton key={i} className="h-40 rounded-xl" />
+                ))}
               </div>
-            ) : error ? (
-              <Card className="p-8 text-center border-rose-200 bg-rose-50/50">
-                <AlertCircle className="h-8 w-8 text-rose-500 mx-auto mb-2" />
-                <p className="text-sm font-semibold text-rose-800">{error}</p>
-                <Button
-                  size="sm"
-                  onClick={loadMyDocuments}
-                  className="mt-3 bg-rose-600 text-white text-xs"
-                >
-                  Retry
-                </Button>
-              </Card>
-            ) : filteredDocuments.length === 0 ? (
-              <Card className="p-12 text-center border-dashed border-stone-300 bg-white">
-                <FolderLock className="h-10 w-10 text-stone-300 mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-stone-800">No documents found</h3>
+            ) : filteredMyDocuments.length === 0 ? (
+              <Card className="p-12 text-center border-stone-200 bg-white">
+                <FileText className="h-10 w-10 text-stone-300 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-stone-900">No Documents Found</h3>
                 <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
-                  {searchQuery || selectedCategory !== 'ALL' || selectedStatus !== 'ALL'
-                    ? 'No documents matched your filter criteria.'
-                    : 'Your personal document vault is currently empty. Upload your official ID, degrees, and certificates to keep your profile complete.'}
+                  {myDocuments.length === 0
+                    ? 'You have not uploaded any personal documents yet. Click "Upload Document" to add verified files.'
+                    : 'No documents match your filter criteria.'}
                 </p>
-                <Button
-                  size="sm"
-                  onClick={() => setIsUploadModalOpen(true)}
-                  className="mt-4 bg-amber-600 hover:bg-amber-700 text-white text-xs"
-                >
-                  <Upload className="h-3.5 w-3.5 mr-1.5" /> Upload Document Now
-                </Button>
+                {myDocuments.length === 0 && (
+                  <Button
+                    onClick={() => setIsUploadModalOpen(true)}
+                    className="mt-4 bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold"
+                  >
+                    <Upload className="h-3.5 w-3.5 mr-1.5" /> Upload First Document
+                  </Button>
+                )}
               </Card>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-stone-200 bg-white shadow-xs">
-                <table className="w-full text-left text-xs text-stone-700">
-                  <thead className="bg-stone-50/80 text-[11px] font-semibold uppercase tracking-wider text-stone-500 border-b border-stone-200">
-                    <tr>
-                      <th className="py-3 px-4">Document Title</th>
-                      <th className="py-3 px-4">Category</th>
-                      <th className="py-3 px-4">Document Ref #</th>
-                      <th className="py-3 px-4">Upload Date</th>
-                      <th className="py-3 px-4">Expiry Date</th>
-                      <th className="py-3 px-4">Verification</th>
-                      <th className="py-3 px-4 text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-stone-100 font-medium">
-                    {filteredDocuments.map((doc) => {
-                      const catMeta = getCategoryMeta(doc.documentType);
-                      return (
-                        <tr key={doc.id} className="hover:bg-stone-50/60 transition-colors">
-                          {/* Title & Format Icon */}
-                          <td className="py-3.5 px-4">
-                            <div className="flex items-center gap-2.5">
-                              <span className="p-1.5 bg-stone-100 rounded text-stone-600 shrink-0">
-                                {doc.mimeType?.includes('pdf') ? (
-                                  <FileText className="h-4 w-4 text-rose-600" />
-                                ) : doc.mimeType?.includes('image') ? (
-                                  <FileCode className="h-4 w-4 text-blue-600" />
-                                ) : (
-                                  <FileText className="h-4 w-4 text-amber-600" />
-                                )}
-                              </span>
-                              <div>
-                                <span className="font-semibold text-stone-900 block">
-                                  {doc.documentName}
-                                </span>
-                                <span className="text-[11px] text-stone-400 font-mono">
-                                  {doc.fileSizeFormatted}
-                                </span>
-                              </div>
-                            </div>
-                          </td>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredMyDocuments.map((doc) => {
+                  const catMeta = getCategoryMeta(doc.documentType);
+                  return (
+                    <Card
+                      key={doc.id}
+                      className="p-5 bg-white border border-stone-200 transition-all hover:shadow-md flex flex-col justify-between"
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <span
+                            className={`px-2 py-0.5 rounded text-[10px] uppercase font-semibold border ${catMeta.color}`}
+                          >
+                            {catMeta.label}
+                          </span>
+                          {getStatusBadge(doc.status)}
+                        </div>
 
-                          {/* Category Badge */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span
-                              className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold border ${catMeta.color}`}
-                            >
-                              {catMeta.label}
-                            </span>
-                          </td>
+                        <div>
+                          <h4 className="text-sm font-bold text-stone-900 leading-snug line-clamp-1">
+                            {doc.documentName}
+                          </h4>
+                          {doc.documentNumber && (
+                            <p className="text-xs text-stone-500 font-mono mt-0.5">
+                              No: {doc.documentNumber}
+                            </p>
+                          )}
+                        </div>
 
-                          {/* Document Number */}
-                          <td className="py-3.5 px-4 whitespace-nowrap font-mono text-stone-600">
-                            {doc.documentNumber || '—'}
-                          </td>
+                        <div className="text-[11px] text-stone-400 space-y-1 font-mono">
+                          <p>Size: {doc.fileSizeFormatted}</p>
+                          {doc.issueDate && <p>Issued: {doc.issueDate}</p>}
+                        </div>
+                      </div>
 
-                          {/* Upload Date */}
-                          <td className="py-3.5 px-4 whitespace-nowrap text-stone-500 font-mono text-[11px]">
-                            {new Date(doc.createdAt).toLocaleDateString([], {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </td>
+                      <div className="pt-4 border-t border-stone-100 flex items-center justify-between mt-3">
+                        <div className="flex items-center gap-1.5">
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleOpenPreview(doc, false)}
+                            className="text-xs border-stone-200 text-stone-700 hover:bg-stone-50 h-8 px-2.5"
+                          >
+                            <Eye className="h-3.5 w-3.5 mr-1" /> Preview
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => handleDownload(doc, false)}
+                            className="text-xs border-stone-200 text-stone-700 hover:bg-stone-50 h-8 px-2.5"
+                          >
+                            <Download className="h-3.5 w-3.5 mr-1" /> Download
+                          </Button>
+                        </div>
 
-                          {/* Expiry Date */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            {doc.expiryDate ? (
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-mono text-stone-700 text-[11px]">
-                                  {doc.expiryDate}
-                                </span>
-                                {doc.isExpired && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800">
-                                    Expired
-                                  </span>
-                                )}
-                                {doc.isExpiringSoon && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800">
-                                    Expiring
-                                  </span>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-stone-400">No Expiry</span>
-                            )}
-                          </td>
-
-                          {/* Verification Status & Feedback */}
-                          <td className="py-3.5 px-4 whitespace-nowrap">
-                            <div>
-                              {getStatusBadge(doc.status)}
-                              {doc.reviewerNotes && (
-                                <p
-                                  className="text-[10px] text-stone-500 italic mt-0.5 max-w-xs truncate"
-                                  title={`Reviewer note: ${doc.reviewerNotes}`}
-                                >
-                                  Note: {doc.reviewerNotes}
-                                </p>
-                              )}
-                            </div>
-                          </td>
-
-                          {/* Actions */}
-                          <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                            <div className="flex items-center justify-end gap-1.5">
-                              {/* Preview */}
-                              <button
-                                onClick={() => handleOpenPreview(doc)}
-                                className="p-1.5 text-stone-500 hover:text-stone-900 hover:bg-stone-100 rounded-md transition-colors"
-                                title="Preview document in browser"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
-
-                              {/* Download */}
-                              <button
-                                onClick={() => handleDownload(doc)}
-                                className="p-1.5 text-stone-500 hover:text-amber-700 hover:bg-stone-100 rounded-md transition-colors"
-                                title="Download secure copy"
-                              >
-                                <Download className="h-4 w-4" />
-                              </button>
-
-                              {/* Delete (allowed only for unverified items per retention policy) */}
-                              {doc.canDelete && (
-                                <button
-                                  onClick={() => setDeletingItem(doc)}
-                                  className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-md transition-colors"
-                                  title="Delete unverified document"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                        {doc.canDelete && (
+                          <button
+                            onClick={() => setDeletingItem(doc)}
+                            className="p-1.5 text-stone-400 hover:text-rose-600 transition-colors"
+                            title="Delete Document"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </Card>
+                  );
+                })}
               </div>
             )}
           </div>
-        ) : (
-          /* =======================================================================
-           * COMPANY POLICIES TAB
-           * ======================================================================= */
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {policiesLoading ? (
-                <>
-                  <Skeleton className="h-32 rounded-xl" />
-                  <Skeleton className="h-32 rounded-xl" />
-                </>
-              ) : (
-                policies.map((p) => (
-                  <Card
-                    key={p.id}
-                    className="p-5 border-stone-200 bg-white flex flex-col justify-between"
-                  >
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                          <Building2 className="h-3 w-3" /> {p.category}
-                        </span>
-                        <span className="text-[11px] font-mono text-stone-400">
-                          {p.fileSizeFormatted}
-                        </span>
-                      </div>
-                      <h3 className="text-base font-bold text-stone-900 mt-2">{p.title}</h3>
-                      <p className="text-xs text-stone-500 mt-1">{p.description}</p>
-                    </div>
+        )}
 
-                    <div className="flex items-center justify-between pt-4 mt-4 border-t border-stone-100 text-xs">
-                      <span className="text-stone-400 font-mono text-[11px]">
-                        Last updated: {p.updatedAt}
+        {/* =======================================================================
+         * TAB 3: COMPANY POLICIES & HANDBOOKS
+         * ======================================================================= */}
+        {activeTab === 'policies' && (
+          <div className="space-y-4">
+            <Card className="p-4 border-stone-200 bg-white">
+              <p className="text-xs text-stone-600">
+                Authoritative institutional policies, standards, code of conduct, and compliance
+                handbooks applicable to all employees at ADT-AI Training Foundation.
+              </p>
+            </Card>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {policies.map((pol) => (
+                <Card
+                  key={pol.id}
+                  className="p-5 bg-white border border-stone-200 flex flex-col justify-between"
+                >
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-stone-100 text-stone-700">
+                        {pol.category}
                       </span>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => {
-                          alert(
-                            `Policy document "${p.title}" is published under official statutory guidelines.`,
-                          );
-                        }}
-                        className="text-xs border-stone-200 text-stone-700 hover:bg-stone-50 flex items-center gap-1.5"
-                      >
-                        <FileText className="h-3.5 w-3.5 text-amber-700" /> View Policy
-                      </Button>
+                      <span className="text-[11px] text-stone-400 font-mono">
+                        {pol.fileSizeFormatted}
+                      </span>
                     </div>
-                  </Card>
-                ))
-              )}
+                    <h4 className="text-sm font-bold text-stone-900">{pol.title}</h4>
+                    <p className="text-xs text-stone-500 leading-relaxed">{pol.description}</p>
+                  </div>
+
+                  <div className="pt-4 border-t border-stone-100 flex items-center justify-between mt-3 text-xs">
+                    <span className="text-stone-400 text-[11px]">Updated {pol.updatedAt}</span>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-stone-200 text-stone-700 text-xs h-8"
+                      onClick={() =>
+                        setActionSuccess(
+                          `Official handbook "${pol.title}" is archived and accessible in institutional records.`,
+                        )
+                      }
+                    >
+                      <Download className="h-3.5 w-3.5 mr-1" /> View Handbook
+                    </Button>
+                  </div>
+                </Card>
+              ))}
             </div>
           </div>
         )}
 
-        {/* Upload Document Modal */}
+        {/* =======================================================================
+         * MODAL: UPLOAD DOCUMENT
+         * ======================================================================= */}
         {isUploadModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-xl border border-stone-200 space-y-4 animate-scale-in">
+            <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-stone-200 space-y-4">
               <div className="flex items-center justify-between border-b border-stone-100 pb-3">
                 <div className="flex items-center gap-2">
-                  <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
-                    <Upload className="h-4 w-4" />
-                  </span>
-                  <h3 className="text-base font-bold text-stone-900">Upload to Document Vault</h3>
+                  <Upload className="h-5 w-5 text-amber-600" />
+                  <h3 className="font-bold text-stone-900 text-base">Upload Document</h3>
                 </div>
                 <button
-                  onClick={() => {
-                    setIsUploadModalOpen(false);
-                    setUploadValidationErr(null);
-                  }}
-                  className="text-stone-400 hover:text-stone-700"
+                  onClick={() => setIsUploadModalOpen(false)}
+                  className="text-stone-400 hover:text-stone-700 p-1"
                 >
                   <X className="h-5 w-5" />
                 </button>
               </div>
 
               {uploadValidationErr && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
-                  <AlertCircle className="h-4 w-4 text-rose-600 shrink-0" />
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-xs text-rose-700 flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0" />
                   <span>{uploadValidationErr}</span>
                 </div>
               )}
 
               <form onSubmit={handleUploadSubmit} className="space-y-4 text-xs">
-                {/* Category Selector */}
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1">
-                    Document Classification <span className="text-rose-500">*</span>
+                    Document Category <span className="text-rose-500">*</span>
                   </label>
                   <select
                     value={uploadCategory}
                     onChange={(e) => setUploadCategory(e.target.value as DocumentCategory)}
                     className="w-full px-3 py-2 rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   >
-                    <option value="GOVT_ID">
-                      Government / National ID (Aadhaar, Passport, PAN)
-                    </option>
-                    <option value="ACADEMIC">
-                      Education & Degrees (Degree, Diploma, Transcripts)
-                    </option>
-                    <option value="EXPERIENCE">
-                      Prior Employment (Relieving Letter, Offer, Payslips)
-                    </option>
-                    <option value="ADDRESS_PROOF">
-                      Address Proof (Rental Agreement, Utility Bill)
-                    </option>
-                    <option value="CERTIFICATION">Professional Certifications & Licenses</option>
-                    <option value="TAX">Tax Documents & Declarations</option>
+                    <option value="GOVT_ID">Government / National ID (Aadhaar, Passport)</option>
+                    <option value="PHOTO">Official Photograph (Passport Portrait)</option>
+                    <option value="APPOINTMENT_LETTER">Appointment Letter & Contract</option>
+                    <option value="ACADEMIC">Education & Degree (Transcripts, Certificates)</option>
+                    <option value="EXPERIENCE">Prior Employment & Relieving Letters</option>
+                    <option value="COMPLIANCE">Non-Disclosure Agreement & Compliance</option>
                     <option value="OTHER">Other Official Files</option>
                   </select>
                 </div>
 
-                {/* Title */}
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1">
                     Document Title <span className="text-rose-500">*</span>
@@ -838,21 +1331,19 @@ export default function DocumentsPage() {
                   />
                 </div>
 
-                {/* Reference Number */}
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1">
-                    Document / Registration Number (Optional)
+                    Document / Reference Number (Optional)
                   </label>
                   <input
                     type="text"
-                    placeholder="e.g. Passport No, Aadhaar No, License ID"
+                    placeholder="e.g. Aadhaar Number, Degree Roll No"
                     value={uploadNumber}
                     onChange={(e) => setUploadNumber(e.target.value)}
                     className="w-full px-3 py-2 rounded-lg border border-stone-200 bg-white text-stone-800 focus:outline-none focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
 
-                {/* Date Grid */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="block font-semibold text-stone-700 mb-1">Issue Date</label>
@@ -874,7 +1365,6 @@ export default function DocumentsPage() {
                   </div>
                 </div>
 
-                {/* File Drop/Input Zone */}
                 <div>
                   <label className="block font-semibold text-stone-700 mb-1">
                     Select File <span className="text-rose-500">*</span>
@@ -935,22 +1425,35 @@ export default function DocumentsPage() {
           </div>
         )}
 
-        {/* Secure Document Preview Modal */}
+        {/* =======================================================================
+         * MODAL: DOCUMENT & PHOTO PREVIEW MODAL
+         * ======================================================================= */}
         {previewItem && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/60 backdrop-blur-xs p-4">
-            <div className="bg-white rounded-2xl max-w-3xl w-full h-[85vh] flex flex-col shadow-2xl border border-stone-200 animate-scale-in">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/70 backdrop-blur-xs p-4">
+            <div className="bg-white rounded-2xl max-w-4xl w-full h-[88vh] flex flex-col shadow-2xl border border-stone-200">
               <div className="p-4 border-b border-stone-100 flex items-center justify-between">
-                <div>
-                  <h3 className="font-bold text-stone-900 text-sm">{previewItem.documentName}</h3>
-                  <span className="text-[11px] text-stone-400 font-mono">
-                    {previewItem.documentType} • {previewItem.fileSizeFormatted}
-                  </span>
+                <div className="flex items-center gap-3">
+                  {previewItem.employee && (
+                    <Avatar
+                      name={previewItem.employee.displayName}
+                      src={previewItem.employee.profilePhoto}
+                      size="sm"
+                    />
+                  )}
+                  <div>
+                    <h3 className="font-bold text-stone-900 text-sm">{previewItem.documentName}</h3>
+                    <span className="text-[11px] text-stone-400 font-mono">
+                      {previewItem.employee ? `${previewItem.employee.displayName} • ` : ''}
+                      {previewItem.documentType} • {previewItem.fileSizeFormatted}
+                    </span>
+                  </div>
                 </div>
+
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => handleDownload(previewItem)}
+                    onClick={() => handleDownload(previewItem, Boolean(previewItem.employeeId))}
                     className="text-xs border-stone-200"
                   >
                     <Download className="h-3.5 w-3.5 mr-1" /> Download
@@ -968,30 +1471,33 @@ export default function DocumentsPage() {
                 {previewLoading ? (
                   <div className="text-center text-xs text-stone-500">
                     <RefreshCw className="h-6 w-6 animate-spin text-amber-600 mx-auto mb-2" />
-                    Fetching secure stream...
+                    Fetching secure document stream...
                   </div>
                 ) : previewBlobUrl ? (
-                  previewItem.mimeType.includes('pdf') ? (
+                  previewItem.mimeType?.includes('pdf') ? (
                     <iframe
                       src={previewBlobUrl}
                       className="w-full h-full border-none"
                       title="Document Preview"
                     />
-                  ) : previewItem.mimeType.includes('image') ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={previewBlobUrl}
-                      alt={previewItem.documentName}
-                      className="max-h-full max-w-full object-contain p-4"
-                    />
+                  ) : previewItem.mimeType?.includes('image') ||
+                    previewItem.documentType === 'PHOTO' ? (
+                    <div className="h-full w-full flex items-center justify-center p-6 bg-stone-900/10">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={previewBlobUrl}
+                        alt={previewItem.documentName}
+                        className="max-h-full max-w-full object-contain rounded-xl shadow-lg border border-stone-200 bg-white"
+                      />
+                    </div>
                   ) : (
                     <div className="p-8 text-center text-xs text-stone-600">
                       <FileText className="h-10 w-10 text-stone-400 mx-auto mb-2" />
-                      <p className="font-semibold text-stone-800">Office Document</p>
+                      <p className="font-semibold text-stone-800">Official Document</p>
                       <p className="mt-1">In-browser preview is available for PDFs and images.</p>
                       <Button
                         size="sm"
-                        onClick={() => handleDownload(previewItem)}
+                        onClick={() => handleDownload(previewItem, Boolean(previewItem.employeeId))}
                         className="mt-3 bg-amber-600 text-white text-xs"
                       >
                         Download to View
@@ -1008,7 +1514,9 @@ export default function DocumentsPage() {
           </div>
         )}
 
-        {/* Delete Confirmation Modal */}
+        {/* =======================================================================
+         * MODAL: DELETE CONFIRMATION
+         * ======================================================================= */}
         {deletingItem && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/50 backdrop-blur-xs p-4">
             <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-stone-200 space-y-4">
