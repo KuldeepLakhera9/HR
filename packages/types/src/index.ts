@@ -1753,6 +1753,11 @@ export type DocumentVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
 export interface EmployeeDocumentItem {
   id: string;
   employeeId: string;
+  employeeCode?: string;
+  employeeName?: string;
+  departmentName?: string;
+  designationTitle?: string;
+  profilePhoto?: string | null;
   documentType: DocumentCategory | string;
   documentName: string;
   documentNumber?: string | null;
@@ -1773,6 +1778,20 @@ export interface EmployeeDocumentItem {
   canDelete: boolean;
 }
 
+export interface EmployeePhotoRosterItem {
+  id: string;
+  employeeCode: string;
+  displayName: string;
+  email: string;
+  department: string;
+  designation: string;
+  profilePhoto: string | null;
+  documentCount: number;
+  verifiedCount: number;
+  hasPhoto: boolean;
+  photoDocumentId?: string;
+}
+
 export interface EmployeeDocumentStats {
   total: number;
   verified: number;
@@ -1780,33 +1799,6 @@ export interface EmployeeDocumentStats {
   rejected: number;
   expiringSoon: number;
   expired: number;
-  photosCount?: number;
-}
-
-export interface OrganizationDocumentEmployeeInfo {
-  id: string;
-  employeeCode: string;
-  displayName: string;
-  profilePhoto: string | null;
-  departmentName?: string | null;
-  branchName?: string | null;
-  designationTitle?: string | null;
-}
-
-export interface OrganizationDocumentItem extends EmployeeDocumentItem {
-  employee: OrganizationDocumentEmployeeInfo;
-}
-
-export interface OrganizationDocumentsResult {
-  items: OrganizationDocumentItem[];
-  stats: EmployeeDocumentStats & { photosCount: number };
-  employees: OrganizationDocumentEmployeeInfo[];
-  meta: {
-    page: number;
-    limit: number;
-    total: number;
-    totalPages: number;
-  };
 }
 
 export interface VerifyDocumentDto {

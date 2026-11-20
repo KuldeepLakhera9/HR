@@ -82,15 +82,20 @@ export default function AttendancePage() {
     roles?.includes('ADMIN') ||
     roles?.includes('HR');
 
+  const isHROrAdmin =
+    role === 'ADMIN' || role === 'HR' || roles?.includes('ADMIN') || roles?.includes('HR');
+
   const [activeTab, setActiveTab] = useState<'my' | 'team' | 'operations'>(
-    role === 'MANAGER' ? 'team' : 'my',
+    role === 'MANAGER' ? 'team' : isHROrAdmin ? 'operations' : 'my',
   );
 
   useEffect(() => {
     if (role === 'MANAGER' && activeTab === 'operations') {
       setActiveTab('team');
+    } else if (isHROrAdmin && activeTab === 'my') {
+      setActiveTab('operations');
     }
-  }, [role, activeTab]);
+  }, [role, isHROrAdmin]);
 
   // Live Clock State
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
@@ -577,7 +582,7 @@ export default function AttendancePage() {
                     : 'text-stone-500 hover:text-stone-900'
                 }`}
               >
-                Organization Overview
+                Organization Overview & Employee Roster
               </button>
             )}
           </div>

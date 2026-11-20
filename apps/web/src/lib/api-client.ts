@@ -2924,45 +2924,58 @@ export const documentsApi = {
     return res;
   },
 
-  async getOrganizationDocuments(params?: {
-    employeeId?: string;
-    documentType?: string;
-    status?: string;
-    search?: string;
-    page?: number;
-    limit?: number;
-  }): Promise<any> {
-    const sp = new URLSearchParams();
-    if (params?.employeeId) sp.append('employeeId', params.employeeId);
-    if (params?.documentType) sp.append('documentType', params.documentType);
-    if (params?.status) sp.append('status', params.status);
-    if (params?.search) sp.append('search', params.search);
-    if (params?.page) sp.append('page', String(params.page));
-    if (params?.limit) sp.append('limit', String(params.limit));
-
-    const qs = sp.toString() ? `?${sp.toString()}` : '';
-    const res = await fetchWithAuth<any>(`/documents/organization${qs}`);
+  async getCompanyPolicies(): Promise<any[]> {
+    const res = await fetchWithAuth<any[]>('/documents/policies');
     return res.data;
   },
 
-  async downloadEmployeeDocument(
-    employeeId: string,
-    documentId: string,
-    fileName?: string,
-  ): Promise<void> {
+  async getAllDocuments(params?: {
+    category?: string;
+    status?: string;
+    search?: string;
+    employeeId?: string;
+  }): Promise<{
+    items: EmployeeDocumentItem[];
+    stats: EmployeeDocumentStats & { totalEmployees: number; totalPhotos: number };
+    employees: Array<{
+      id: string;
+      employeeCode: string;
+      displayName: string;
+      email: string;
+      department: string;
+      designation: string;
+      profilePhoto: string | null;
+      documentCount: number;
+      verifiedCount: number;
+      hasPhoto: boolean;
+      photoDocumentId?: string;
+    }>;
+  }> {
+    const query = new URLSearchParams();
+    if (params?.category) query.append('category', params.category);
+    if (params?.status) query.append('status', params.status);
+    if (params?.search) query.append('search', params.search);
+    if (params?.employeeId) query.append('employeeId', params.employeeId);
+
+    const queryString = query.toString();
+    const endpoint = queryString
+      ? `/documents/organization?${queryString}`
+      : '/documents/organization';
+    const res = await fetchWithAuth<any>(endpoint);
+    return res.data;
+  },
+
+  async downloadOrganizationDocument(documentId: string, fileName?: string): Promise<void> {
     const token = getAccessToken();
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/documents/employee/${employeeId}/${documentId}/download`,
-      {
-        headers,
-        credentials: 'include',
-      },
-    );
+    const response = await fetch(`${API_BASE_URL}/documents/organization/${documentId}/download`, {
+      headers,
+      credentials: 'include',
+    });
 
     if (!response.ok) {
       const err = await response.json().catch(() => ({}));
@@ -2980,26 +2993,20 @@ export const documentsApi = {
     document.body.removeChild(a);
   },
 
-  async getEmployeePreviewBlob(
-    employeeId: string,
-    documentId: string,
-  ): Promise<{ url: string; mimeType: string }> {
+  async getOrganizationPreviewBlob(documentId: string): Promise<{ url: string; mimeType: string }> {
     const token = getAccessToken();
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(
-      `${API_BASE_URL}/documents/employee/${employeeId}/${documentId}/preview`,
-      {
-        headers,
-        credentials: 'include',
-      },
-    );
+    const response = await fetch(`${API_BASE_URL}/documents/organization/${documentId}/preview`, {
+      headers,
+      credentials: 'include',
+    });
 
     if (!response.ok) {
-      throw new Error('Failed to load employee document preview');
+      throw new Error('Failed to load document preview');
     }
 
     const mimeType = response.headers.get('Content-Type') || 'application/pdf';
@@ -3008,11 +3015,6 @@ export const documentsApi = {
       url: window.URL.createObjectURL(blob),
       mimeType,
     };
-  },
-
-  async getCompanyPolicies(): Promise<any[]> {
-    const res = await fetchWithAuth<any[]>('/documents/policies');
-    return res.data;
   },
 
   async getEmployeeDocuments(

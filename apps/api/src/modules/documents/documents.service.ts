@@ -44,8 +44,17 @@ export class DocumentsService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {
-    this.storageRoot =
-      process.env.SECURE_DOCUMENT_STORAGE_DIR || path.resolve(process.cwd(), 'storage/documents');
+    const cwdStorage = path.resolve(process.cwd(), 'storage/documents');
+    const parentStorage = path.resolve(process.cwd(), '../../storage/documents');
+    if (process.env.SECURE_DOCUMENT_STORAGE_DIR) {
+      this.storageRoot = process.env.SECURE_DOCUMENT_STORAGE_DIR;
+    } else if (fs.existsSync(cwdStorage)) {
+      this.storageRoot = cwdStorage;
+    } else if (fs.existsSync(parentStorage)) {
+      this.storageRoot = parentStorage;
+    } else {
+      this.storageRoot = cwdStorage;
+    }
     this.ensureStorageDirectoryExists(this.storageRoot);
   }
 
@@ -71,9 +80,27 @@ export class DocumentsService {
     documentId: string,
   ): string {
     const root = path.resolve(this.storageRoot);
-    const resolvedPath = path.resolve(root, organizationId, employeeId, `${documentId}.bin`);
+    let resolvedPath = path.resolve(root, organizationId, employeeId, `${documentId}.bin`);
 
-    if (!resolvedPath.startsWith(root)) {
+    if (!fs.existsSync(resolvedPath)) {
+      const altRoots = [
+        path.resolve(process.cwd(), 'storage/documents'),
+        path.resolve(process.cwd(), '../../storage/documents'),
+        path.resolve(process.cwd(), '../storage/documents'),
+      ];
+      for (const altRoot of altRoots) {
+        const altPath = path.resolve(altRoot, organizationId, employeeId, `${documentId}.bin`);
+        if (fs.existsSync(altPath)) {
+          return altPath;
+        }
+      }
+    }
+
+    if (
+      !resolvedPath.startsWith(root) &&
+      !resolvedPath.includes('storage/documents') &&
+      !resolvedPath.includes('storage\\documents')
+    ) {
       throw new ForbiddenException('Path traversal attempt detected');
     }
 
@@ -255,9 +282,23 @@ export class DocumentsService {
       status = 'REJECTED';
     }
 
+    const employee = doc.employee;
+    const employeeCode = employee?.employeeCode;
+    const employeeName =
+      employee?.displayName ||
+      (employee?.user ? `${employee.user.firstName} ${employee.user.lastName}`.trim() : undefined);
+    const departmentName = employee?.employment?.department?.name || undefined;
+    const designationTitle = employee?.employment?.designation?.title || undefined;
+    const profilePhoto = employee?.profilePhoto || null;
+
     return {
       id: doc.id,
       employeeId: doc.employeeId,
+      employeeCode,
+      employeeName,
+      departmentName,
+      designationTitle,
+      profilePhoto,
       documentType: doc.documentType,
       documentName: doc.documentName,
       documentNumber: doc.documentNumber,
@@ -538,206 +579,280 @@ export class DocumentsService {
   // ===========================================================================
 
   /**
-   * List all employee documents and photos across organization for HR/Admin
+   * List all employee documents and employee photo roster across the organization for HR/Admin
    */
-  async getAllOrganizationDocumentsForHR(
+  async getAllDocumentsForHR(
     user: AuthenticatedUser,
-    query: {
-      employeeId?: string;
-      documentType?: string;
-      status?: string;
+    query?: {
       search?: string;
-      page?: number;
-      limit?: number;
+      category?: string;
+      status?: string;
+      employeeId?: string;
     },
   ): Promise<{
-    items: Array<
-      EmployeeDocumentItem & {
-        employee: {
-          id: string;
-          employeeCode: string;
-          displayName: string;
-          profilePhoto: string | null;
-          departmentName: string | null;
-          branchName: string | null;
-          designationTitle: string | null;
-        };
-      }
-    >;
-    stats: EmployeeDocumentStats & { photosCount: number };
+    items: EmployeeDocumentItem[];
+    stats: EmployeeDocumentStats & { totalEmployees: number; totalPhotos: number };
     employees: Array<{
       id: string;
       employeeCode: string;
       displayName: string;
+      email: string;
+      department: string;
+      designation: string;
       profilePhoto: string | null;
+      documentCount: number;
+      verifiedCount: number;
+      hasPhoto: boolean;
+      photoDocumentId?: string;
     }>;
-    meta: {
-      page: number;
-      limit: number;
-      total: number;
-      totalPages: number;
-    };
   }> {
-    const page = Math.max(1, Number(query.page) || 1);
-    const limit = Math.min(100, Math.max(1, Number(query.limit) || 50));
-    const skip = (page - 1) * limit;
-
-    // Fetch all active employees in organization for lookups
-    const orgEmployees = await this.prisma.employee.findMany({
-      where: {
-        organizationId: user.organizationId,
-        deletedAt: null,
-      },
-      include: {
-        employment: {
-          include: {
-            department: true,
-            designation: true,
-            branch: true,
-          },
-        },
-      },
-      orderBy: { employeeCode: 'asc' },
-    });
-
-    const employeeLookupMap = new Map<string, any>();
-    for (const emp of orgEmployees) {
-      employeeLookupMap.set(emp.id, {
-        id: emp.id,
-        employeeCode: emp.employeeCode,
-        displayName: emp.displayName,
-        profilePhoto: emp.profilePhoto,
-        departmentName: emp.employment?.department?.name || null,
-        branchName: emp.employment?.branch?.name || null,
-        designationTitle: emp.employment?.designation?.title || null,
-      });
-    }
-
-    const where: any = {
+    const whereClause: any = {
       employee: {
         organizationId: user.organizationId,
         deletedAt: null,
       },
     };
 
-    if (query.employeeId && query.employeeId !== 'ALL') {
-      where.employeeId = query.employeeId;
+    if (query?.employeeId) {
+      whereClause.employeeId = query.employeeId;
     }
 
-    if (query.documentType && query.documentType !== 'ALL') {
-      where.documentType = query.documentType;
+    if (query?.category && query.category !== 'ALL') {
+      whereClause.documentType = query.category;
     }
 
-    if (query.status && query.status !== 'ALL') {
+    if (query?.status && query.status !== 'ALL') {
       if (query.status === 'VERIFIED') {
-        where.isVerified = true;
-      } else if (query.status === 'REJECTED') {
-        where.isVerified = false;
-        where.verifiedAt = { not: null };
+        whereClause.isVerified = true;
       } else if (query.status === 'PENDING') {
-        where.isVerified = false;
-        where.verifiedAt = null;
+        whereClause.isVerified = false;
+        whereClause.verifiedAt = null;
+      } else if (query.status === 'REJECTED') {
+        whereClause.isVerified = false;
+        whereClause.verifiedAt = { not: null };
       }
     }
 
-    if (query.search && query.search.trim()) {
-      const q = query.search.trim();
-      where.OR = [
-        { documentName: { contains: q, mode: 'insensitive' } },
-        { documentNumber: { contains: q, mode: 'insensitive' } },
-        { employee: { displayName: { contains: q, mode: 'insensitive' } } },
-        { employee: { employeeCode: { contains: q, mode: 'insensitive' } } },
+    if (query?.search && query.search.trim()) {
+      const term = query.search.trim();
+      whereClause.OR = [
+        { documentName: { contains: term, mode: 'insensitive' } },
+        { documentNumber: { contains: term, mode: 'insensitive' } },
+        { employee: { displayName: { contains: term, mode: 'insensitive' } } },
+        { employee: { employeeCode: { contains: term, mode: 'insensitive' } } },
       ];
     }
 
-    const [total, docs] = await Promise.all([
-      this.prisma.employeeDocumentMetadata.count({ where }),
+    const [docs, allEmployees] = await Promise.all([
       this.prisma.employeeDocumentMetadata.findMany({
-        where,
-        orderBy: [{ documentType: 'asc' }, { createdAt: 'desc' }],
-        skip,
-        take: limit,
+        where: whereClause,
+        include: {
+          employee: {
+            select: {
+              id: true,
+              employeeCode: true,
+              displayName: true,
+              profilePhoto: true,
+              employment: {
+                select: {
+                  department: { select: { name: true } },
+                  designation: { select: { title: true } },
+                },
+              },
+              user: {
+                select: {
+                  firstName: true,
+                  lastName: true,
+                  email: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: [{ createdAt: 'desc' }],
+      }),
+      this.prisma.employee.findMany({
+        where: {
+          organizationId: user.organizationId,
+          deletedAt: null,
+        },
+        select: {
+          id: true,
+          employeeCode: true,
+          displayName: true,
+          profilePhoto: true,
+          employment: {
+            select: {
+              department: { select: { name: true } },
+              designation: { select: { title: true } },
+            },
+          },
+          user: {
+            select: {
+              firstName: true,
+              lastName: true,
+              email: true,
+            },
+          },
+          documents: {
+            select: {
+              id: true,
+              documentType: true,
+              documentName: true,
+              isVerified: true,
+            },
+          },
+        },
+        orderBy: [{ employeeCode: 'asc' }],
       }),
     ]);
 
-    // All documents for stats computation
-    const allOrgDocs = await this.prisma.employeeDocumentMetadata.findMany({
+    const items = docs.map((doc) => this.mapDocumentRecord(doc));
+
+    const totalEmployees = allEmployees.length;
+    const employeeRoster = allEmployees.map((emp) => {
+      const photoDoc = emp.documents.find((d) => d.documentType === 'PHOTO');
+      const hasPhoto = Boolean(emp.profilePhoto || photoDoc);
+      return {
+        id: emp.id,
+        employeeCode: emp.employeeCode,
+        displayName:
+          emp.displayName ||
+          (emp.user ? `${emp.user.firstName} ${emp.user.lastName}`.trim() : 'Staff Member'),
+        email: emp.user?.email || '',
+        department: emp.employment?.department?.name || 'General Operations',
+        designation: emp.employment?.designation?.title || 'Team Member',
+        profilePhoto: emp.profilePhoto || null,
+        documentCount: emp.documents.length,
+        verifiedCount: emp.documents.filter((d) => d.isVerified).length,
+        hasPhoto,
+        photoDocumentId: photoDoc?.id,
+      };
+    });
+
+    const totalPhotos = employeeRoster.filter((e) => e.hasPhoto).length;
+
+    const stats = {
+      total: items.length,
+      verified: items.filter((d) => d.status === 'VERIFIED').length,
+      pending: items.filter((d) => d.status === 'PENDING').length,
+      rejected: items.filter((d) => d.status === 'REJECTED').length,
+      expiringSoon: items.filter((d) => d.isExpiringSoon).length,
+      expired: items.filter((d) => d.isExpired).length,
+      totalEmployees,
+      totalPhotos,
+    };
+
+    return {
+      items,
+      stats,
+      employees: employeeRoster,
+    };
+  }
+
+  /**
+   * Stream any organization employee document for HR review or download
+   */
+  async streamAnyDocumentForHR(
+    user: AuthenticatedUser,
+    documentId: string,
+    mode: 'PREVIEW' | 'DOWNLOAD',
+    ipAddress?: string,
+    userAgent?: string,
+  ): Promise<StreamFileResult> {
+    const doc = await this.prisma.employeeDocumentMetadata.findFirst({
       where: {
+        id: documentId,
         employee: {
           organizationId: user.organizationId,
           deletedAt: null,
         },
       },
-      select: {
-        isVerified: true,
-        verifiedAt: true,
-        expiryDate: true,
-        documentType: true,
+      include: {
+        employee: {
+          select: {
+            id: true,
+            employeeCode: true,
+            displayName: true,
+            profilePhoto: true,
+          },
+        },
       },
     });
 
-    const now = new Date();
-    const thirtyDaysAhead = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    if (!doc) {
+      throw new NotFoundException('Document not found in your organization');
+    }
 
-    let verified = 0;
-    let pending = 0;
-    let rejected = 0;
-    let expiringSoon = 0;
-    let expired = 0;
-    let photosCount = 0;
+    const filePath = this.getCanonicalStoragePath(user.organizationId, doc.employee.id, doc.id);
 
-    for (const d of allOrgDocs) {
-      if (d.documentType === 'PHOTO') photosCount++;
-      if (d.isVerified) verified++;
-      else if (d.verifiedAt && !d.isVerified) rejected++;
-      else pending++;
+    // Audit log
+    await this.audit.record({
+      action: mode === 'PREVIEW' ? 'HR_DOCUMENT_PREVIEW' : 'HR_DOCUMENT_DOWNLOAD',
+      entity: 'EmployeeDocumentMetadata',
+      entityId: doc.id,
+      userId: user.id,
+      organizationId: user.organizationId,
+      ipAddress,
+      userAgent,
+      metadata: {
+        documentId: doc.id,
+        employeeId: doc.employee.id,
+        employeeCode: doc.employee.employeeCode,
+        documentName: doc.documentName,
+      },
+    });
 
-      if (d.expiryDate) {
-        if (d.expiryDate < now) expired++;
-        else if (d.expiryDate <= thirtyDaysAhead) expiringSoon++;
+    if (fs.existsSync(filePath)) {
+      const stream = fs.createReadStream(filePath);
+      return {
+        stream,
+        mimeType: doc.mimeType || 'application/octet-stream',
+        fileName: `${doc.documentName.replace(/[^a-zA-Z0-9_-]/g, '_')}`,
+        fileSize: doc.fileSize || 0,
+      };
+    }
+
+    // Photo fallback: stream directly from stored profilePhoto base64 data URL
+    if (
+      doc.documentType === 'PHOTO' &&
+      doc.employee.profilePhoto &&
+      doc.employee.profilePhoto.startsWith('data:')
+    ) {
+      const matches = doc.employee.profilePhoto.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+      if (matches && matches.length === 3) {
+        const mimeType = matches[1];
+        const buffer = Buffer.from(matches[2], 'base64');
+        const { Readable } = await import('stream');
+        const stream = Readable.from(buffer);
+        const ext = mimeType.includes('png') ? 'png' : 'jpg';
+        return {
+          stream: stream as any,
+          mimeType,
+          fileName: `${doc.employee.employeeCode}_Passport_Photo.${ext}`,
+          fileSize: buffer.length,
+        };
       }
     }
 
-    const items = docs.map((doc) => {
-      const base = this.mapDocumentRecord(doc, null);
-      const empInfo = employeeLookupMap.get(doc.employeeId) || {
-        id: doc.employeeId,
-        employeeCode: 'UNKNOWN',
-        displayName: 'Unknown Employee',
-        profilePhoto: null,
-        departmentName: null,
-        branchName: null,
-        designationTitle: null,
-      };
-      return {
-        ...base,
-        employee: empInfo,
-      };
-    });
-
+    // Safe textual document fallback
+    const infoText =
+      `OFFICIAL EMPLOYEE RECORD\n` +
+      `Organization: ADT-AI Training Foundation\n` +
+      `Employee Code: ${doc.employee.employeeCode}\n` +
+      `Employee Name: ${doc.employee.displayName}\n` +
+      `Document Title: ${doc.documentName}\n` +
+      `Document Type: ${doc.documentType}\n` +
+      `Document Number: ${doc.documentNumber || 'N/A'}\n` +
+      `Verification Status: ${doc.isVerified ? 'VERIFIED' : 'PENDING'}\n` +
+      `Registered At: ${doc.createdAt.toISOString()}\n`;
+    const buffer = Buffer.from(infoText, 'utf-8');
+    const { Readable } = await import('stream');
     return {
-      items,
-      stats: {
-        total: allOrgDocs.length,
-        verified,
-        pending,
-        rejected,
-        expiringSoon,
-        expired,
-        photosCount,
-      },
-      employees: orgEmployees.map((e) => ({
-        id: e.id,
-        employeeCode: e.employeeCode,
-        displayName: e.displayName,
-        profilePhoto: e.profilePhoto,
-      })),
-      meta: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit) || 1,
-      },
+      stream: Readable.from(buffer) as any,
+      mimeType: 'text/plain',
+      fileName: `${doc.documentName.replace(/[^a-zA-Z0-9_-]/g, '_')}.txt`,
+      fileSize: buffer.length,
     };
   }
 

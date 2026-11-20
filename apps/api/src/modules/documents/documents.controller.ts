@@ -4,8 +4,8 @@ import {
   Post,
   Delete,
   Param,
-  Query,
   Body,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -227,24 +227,20 @@ export class DocumentsController {
   @Get('organization')
   @RequirePermissions('DOCUMENT_VIEW')
   @ApiOperation({
-    summary: 'List all employee documents and photos across organization (HR/Admin)',
+    summary: 'List all employee documents and photo roster across organization (HR/Admin)',
   })
-  async getOrganizationDocuments(
+  async getAllDocumentsForHR(
     @Req() req: AuthenticatedRequest,
-    @Query('employeeId') employeeId?: string,
-    @Query('documentType') documentType?: string,
+    @Query('category') category?: string,
     @Query('status') status?: string,
     @Query('search') search?: string,
-    @Query('page') page?: string,
-    @Query('limit') limit?: string,
+    @Query('employeeId') employeeId?: string,
   ) {
-    const data = await this.documentsService.getAllOrganizationDocumentsForHR(req.user, {
-      employeeId,
-      documentType,
+    const data = await this.documentsService.getAllDocumentsForHR(req.user, {
+      category,
       status,
       search,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
+      employeeId,
     });
     return {
       success: true,
@@ -253,22 +249,51 @@ export class DocumentsController {
     };
   }
 
-  @Get('employee/:employeeId/:id/preview')
+  @Get('organization/:id/download')
   @RequirePermissions('DOCUMENT_VIEW')
-  @ApiOperation({ summary: 'Preview an employee document or photo in browser (HR/Admin)' })
-  async previewEmployeeDocument(
+  @ApiOperation({ summary: 'Download any employee document as HR reviewer' })
+  async downloadAnyDocumentForHR(
     @Req() req: AuthenticatedRequest,
-    @Param('employeeId') employeeId: string,
     @Param('id') documentId: string,
     @Res() res: Response,
   ) {
     const clientIp = req.ip || (req.headers['x-forwarded-for'] as string);
     const userAgent = extractUserAgent(req);
 
-    const result = await this.documentsService.streamDocumentForHR(
+    const result = await this.documentsService.streamAnyDocumentForHR(
       req.user,
-      employeeId,
       documentId,
+      'DOWNLOAD',
+      clientIp,
+      userAgent,
+    );
+
+    res.set({
+      'Content-Type': result.mimeType,
+      'Content-Disposition': `attachment; filename="${result.fileName}"`,
+      'Content-Length': result.fileSize,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+    });
+
+    result.stream.pipe(res);
+  }
+
+  @Get('organization/:id/preview')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({ summary: 'Preview any employee document inline as HR reviewer' })
+  async previewAnyDocumentForHR(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') documentId: string,
+    @Res() res: Response,
+  ) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string);
+    const userAgent = extractUserAgent(req);
+
+    const result = await this.documentsService.streamAnyDocumentForHR(
+      req.user,
+      documentId,
+      'PREVIEW',
       clientIp,
       userAgent,
     );
@@ -322,6 +347,37 @@ export class DocumentsController {
     res.set({
       'Content-Type': result.mimeType,
       'Content-Disposition': `attachment; filename="${result.fileName}"`,
+      'Content-Length': result.fileSize,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+    });
+
+    result.stream.pipe(res);
+  }
+
+  @Get('employee/:employeeId/:id/preview')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({ summary: 'Preview an employee document inline as HR reviewer' })
+  async previewEmployeeDocument(
+    @Req() req: AuthenticatedRequest,
+    @Param('employeeId') employeeId: string,
+    @Param('id') documentId: string,
+    @Res() res: Response,
+  ) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string);
+    const userAgent = extractUserAgent(req);
+
+    const result = await this.documentsService.streamAnyDocumentForHR(
+      req.user,
+      documentId,
+      'PREVIEW',
+      clientIp,
+      userAgent,
+    );
+
+    res.set({
+      'Content-Type': result.mimeType,
+      'Content-Disposition': `inline; filename="${result.fileName}"`,
       'Content-Length': result.fileSize,
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, no-cache, no-store, must-revalidate',
