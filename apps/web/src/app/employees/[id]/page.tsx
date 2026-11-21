@@ -173,6 +173,7 @@ export default function EmployeeProfilePage() {
       middleName: employee.middleName || '',
       lastName: employee.lastName || '',
       displayName: employee.displayName || '',
+      workEmail: employee.contact?.workEmail || '',
       phone: employee.contact?.phone || '',
       personalEmail: employee.contact?.personalEmail || '',
       alternatePhone: employee.contact?.alternatePhone || '',
@@ -197,14 +198,19 @@ export default function EmployeeProfilePage() {
     setEditSubmitting(true);
     setEditError(null);
 
+    const derivedDisplayName = `${editForm.firstName || ''} ${editForm.lastName || ''}`.trim();
+
     // If regular employee, exclude organizational fields to avoid ForbiddenException
     const payload = canEditOrganization
-      ? editForm
+      ? {
+          ...editForm,
+          displayName: derivedDisplayName || editForm.displayName,
+        }
       : {
           firstName: editForm.firstName,
           middleName: editForm.middleName,
           lastName: editForm.lastName,
-          displayName: editForm.displayName,
+          displayName: derivedDisplayName || editForm.displayName,
           phone: editForm.phone,
           personalEmail: editForm.personalEmail,
           alternatePhone: editForm.alternatePhone,
@@ -1215,7 +1221,11 @@ export default function EmployeeProfilePage() {
                   type="text"
                   required
                   value={editForm.firstName || ''}
-                  onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
+                  onChange={(e) => {
+                    const fn = e.target.value;
+                    const ln = editForm.lastName || '';
+                    setEditForm({ ...editForm, firstName: fn, displayName: `${fn} ${ln}`.trim() });
+                  }}
                   className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg"
                 />
               </div>
@@ -1227,7 +1237,11 @@ export default function EmployeeProfilePage() {
                   type="text"
                   required
                   value={editForm.lastName || ''}
-                  onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
+                  onChange={(e) => {
+                    const ln = e.target.value;
+                    const fn = editForm.firstName || '';
+                    setEditForm({ ...editForm, lastName: ln, displayName: `${fn} ${ln}`.trim() });
+                  }}
                   className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg"
                 />
               </div>
@@ -1377,6 +1391,20 @@ export default function EmployeeProfilePage() {
                 />
               </div>
             </div>
+
+            {canEditOrganization && (
+              <div>
+                <label className="block text-xs font-semibold text-stone-700 mb-1">
+                  Official Work / Login Email (Admin / HR Only)
+                </label>
+                <input
+                  type="email"
+                  value={editForm.workEmail || ''}
+                  onChange={(e) => setEditForm({ ...editForm, workEmail: e.target.value })}
+                  className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg"
+                />
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-semibold text-stone-700 mb-1">

@@ -311,6 +311,11 @@ export class UpdateEmployeeDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsEmail()
+  workEmail?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsEmail()
   personalEmail?: string;
 
   @ApiPropertyOptional()

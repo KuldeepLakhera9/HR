@@ -2067,10 +2067,9 @@ export class EmployeesService {
     await this.prisma.$transaction(async (tx) => {
       // 1. Update Core Employee
       const computedDisplayName =
-        dto.displayName ||
-        (dto.firstName || dto.lastName
+        dto.firstName !== undefined || dto.lastName !== undefined
           ? `${dto.firstName ?? existing.firstName} ${dto.lastName ?? existing.lastName}`.trim()
-          : undefined);
+          : dto.displayName || existing.displayName;
 
       await tx.employee.update({
         where: { id },
@@ -2093,6 +2092,7 @@ export class EmployeesService {
           data: {
             firstName: dto.firstName,
             lastName: dto.lastName,
+            email: dto.workEmail || undefined,
             phone: dto.phone,
             branchId: dto.branchId,
             departmentId: dto.departmentId,
@@ -2124,6 +2124,7 @@ export class EmployeesService {
         await tx.employeeContact.update({
           where: { employeeId: id },
           data: {
+            workEmail: dto.workEmail,
             personalEmail: dto.personalEmail,
             phone: dto.phone,
             alternatePhone: dto.alternatePhone,
