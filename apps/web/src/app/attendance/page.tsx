@@ -38,7 +38,7 @@ import {
   Home,
   Check,
 } from 'lucide-react';
-import { attendanceApi } from '../../lib/api-client';
+import { attendanceApi, officeLocationsApi } from '../../lib/api-client';
 import { useGeolocation, GeolocationPositionData } from '../../hooks/useGeolocation';
 import { AttendanceDayStatus } from '@hrms/types';
 import { useRole } from '../../context/RoleContext';
@@ -273,6 +273,88 @@ export default function AttendancePage() {
         message: err.message || 'Unable to retrieve location.',
       });
       return null;
+    }
+  };
+
+  // Update Geofence Modal State & Handlers (Admin / HR)
+  const [isUpdateLocationModalOpen, setIsUpdateLocationModalOpen] = useState(false);
+  const [geofenceLat, setGeofenceLat] = useState<string>('');
+  const [geofenceLng, setGeofenceLng] = useState<string>('');
+  const [geofenceRadius, setGeofenceRadius] = useState<number>(150);
+  const [geofenceAddress, setGeofenceAddress] = useState<string>('');
+  const [isUpdatingLocation, setIsUpdatingLocation] = useState(false);
+  const [updateLocationError, setUpdateLocationError] = useState<string | null>(null);
+  const [liveGpsAccuracy, setLiveGpsAccuracy] = useState<number | null>(null);
+  const [isDetectingLiveGps, setIsDetectingLiveGps] = useState(false);
+
+  const handleOpenUpdateGeofenceModal = async () => {
+    if (!office) return;
+    setUpdateLocationError(null);
+    setGeofenceRadius(office.geofenceRadiusMeters || 150);
+    setGeofenceAddress(office.address || '');
+
+    if (position?.latitude && position?.longitude) {
+      setGeofenceLat(position.latitude.toFixed(6));
+      setGeofenceLng(position.longitude.toFixed(6));
+      setLiveGpsAccuracy(Math.round(position.accuracy));
+    } else {
+      setGeofenceLat(office.latitude !== undefined ? String(office.latitude) : '');
+      setGeofenceLng(office.longitude !== undefined ? String(office.longitude) : '');
+      setLiveGpsAccuracy(null);
+      handleDetectCurrentLocation();
+    }
+    setIsUpdateLocationModalOpen(true);
+  };
+
+  const handleDetectCurrentLocation = async () => {
+    setIsDetectingLiveGps(true);
+    setUpdateLocationError(null);
+    try {
+      const pos = await acquireLocation();
+      if (pos) {
+        setGeofenceLat(pos.latitude.toFixed(6));
+        setGeofenceLng(pos.longitude.toFixed(6));
+        setLiveGpsAccuracy(Math.round(pos.accuracy));
+      }
+    } catch (err: any) {
+      setUpdateLocationError(
+        err.message || 'Could not acquire device GPS. Please check browser location permissions.',
+      );
+    } finally {
+      setIsDetectingLiveGps(false);
+    }
+  };
+
+  const handleSaveGeofenceLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!office?.id) return;
+    const lat = parseFloat(geofenceLat);
+    const lng = parseFloat(geofenceLng);
+    if (isNaN(lat) || isNaN(lng)) {
+      setUpdateLocationError('Please provide valid latitude and longitude coordinates.');
+      return;
+    }
+
+    setIsUpdatingLocation(true);
+    setUpdateLocationError(null);
+    try {
+      await officeLocationsApi.update(office.id, {
+        latitude: lat,
+        longitude: lng,
+        geofenceRadiusMeters: Number(geofenceRadius) || 150,
+        address: geofenceAddress || undefined,
+      });
+
+      setIsUpdateLocationModalOpen(false);
+      setActionSuccess(
+        `Office geofence for "${office.name}" successfully updated to Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}!`,
+      );
+      await loadTodayStatus();
+      await verifyCurrentLocation();
+    } catch (err: any) {
+      setUpdateLocationError(err.message || 'Failed to update office location coordinates.');
+    } finally {
+      setIsUpdatingLocation(false);
     }
   };
 
@@ -768,15 +850,27 @@ export default function AttendancePage() {
                   <span className="text-xs font-medium text-stone-500 uppercase tracking-wider">
                     Office Geofence
                   </span>
-                  <button
-                    onClick={verifyCurrentLocation}
-                    disabled={isAcquiring}
-                    title="Verify GPS location relative to office"
-                    className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:text-amber-800 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-3 w-3 ${isAcquiring ? 'animate-spin' : ''}`} />
-                    Verify
-                  </button>
+                  <div className="flex items-center gap-1.5">
+                    {isHROrAdmin && office && (
+                      <button
+                        onClick={handleOpenUpdateGeofenceModal}
+                        title="Update office geofence location using live GPS (Admin / HR)"
+                        className="inline-flex items-center gap-1 text-[11px] font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-300 transition-colors shadow-2xs"
+                      >
+                        <Compass className="h-3 w-3 text-amber-700" />
+                        <span>Update Geofence</span>
+                      </button>
+                    )}
+                    <button
+                      onClick={verifyCurrentLocation}
+                      disabled={isAcquiring}
+                      title="Verify GPS location relative to office"
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 hover:text-amber-800 disabled:opacity-50"
+                    >
+                      <RefreshCw className={`h-3 w-3 ${isAcquiring ? 'animate-spin' : ''}`} />
+                      Verify
+                    </button>
+                  </div>
                 </div>
 
                 <div className="my-2">
@@ -807,10 +901,22 @@ export default function AttendancePage() {
                           </span>
                         )}
                         {locationVerification.status === 'OUTSIDE_GEOFENCE' && (
-                          <span className="inline-flex items-center gap-1 text-xs text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                            <ShieldAlert className="h-3.5 w-3.5" />{' '}
-                            {locationVerification.distanceMeters}m away
-                          </span>
+                          <div className="space-y-2">
+                            <span className="inline-flex items-center gap-1 text-xs text-rose-700 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
+                              <ShieldAlert className="h-3.5 w-3.5" />{' '}
+                              {locationVerification.distanceMeters}m away
+                            </span>
+                            {isHROrAdmin && (
+                              <button
+                                type="button"
+                                onClick={handleOpenUpdateGeofenceModal}
+                                className="w-full flex items-center justify-center gap-1.5 text-xs font-semibold text-amber-900 bg-amber-100/90 hover:bg-amber-200 py-1.5 px-3 rounded-lg border border-amber-300 transition-all shadow-xs text-center"
+                              >
+                                <Compass className="h-3.5 w-3.5 text-amber-800 shrink-0" />
+                                <span>Set Office to My Live Location</span>
+                              </button>
+                            )}
+                          </div>
                         )}
                         {locationVerification.status === 'ERROR' && (
                           <span className="inline-flex items-center gap-1 text-xs text-rose-600 font-medium">
@@ -1346,6 +1452,189 @@ export default function AttendancePage() {
             </Button>
           </div>
         </div>
+      </Dialog>
+
+      {/* UPDATE OFFICE GEOFENCE MODAL (ADMIN / HR) */}
+      <Dialog
+        isOpen={isUpdateLocationModalOpen}
+        onClose={() => setIsUpdateLocationModalOpen(false)}
+        title="Update Office Geofence to Current Location"
+        maxWidth="md"
+      >
+        <form onSubmit={handleSaveGeofenceLocation} className="space-y-4 pt-1">
+          <p className="text-xs text-stone-500">
+            Admin & HR action: Update the physical GPS geofence perimeter coordinates for this
+            office. You can capture your device&apos;s current live GPS or input exact coordinates.
+          </p>
+
+          {updateLocationError && (
+            <div className="p-3 text-xs bg-rose-50 border border-rose-200 text-rose-700 rounded-lg flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 shrink-0 text-rose-600 mt-0.5" />
+              <span>{updateLocationError}</span>
+            </div>
+          )}
+
+          {/* Current Office Details Banner */}
+          <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-stone-900 flex items-center gap-1.5">
+                <Building className="h-3.5 w-3.5 text-stone-500" />
+                {office?.name || 'Office Location'}
+              </span>
+              <Badge variant="outline" className="text-[10px] bg-white text-stone-600">
+                Current: {office?.geofenceRadiusMeters || 100}m radius
+              </Badge>
+            </div>
+            {office?.latitude !== undefined && office?.longitude !== undefined && (
+              <p className="text-[11px] text-stone-500 font-mono">
+                Existing Config: {office.latitude}, {office.longitude}
+              </p>
+            )}
+          </div>
+
+          {/* Live Device GPS Capture */}
+          <div className="p-3.5 bg-amber-50/70 rounded-xl border border-amber-200/80 space-y-2.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                <Compass className="h-4 w-4 text-amber-800" />
+                Device Live GPS
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDetectCurrentLocation}
+                disabled={isDetectingLiveGps}
+                className="h-7 text-xs bg-white border-amber-300 text-amber-900 hover:bg-amber-100/80 shadow-2xs"
+              >
+                <RefreshCw className={`h-3 w-3 mr-1 ${isDetectingLiveGps ? 'animate-spin' : ''}`} />
+                {isDetectingLiveGps ? 'Capturing GPS...' : 'Capture My Live GPS'}
+              </Button>
+            </div>
+
+            {liveGpsAccuracy !== null ? (
+              <div className="flex items-center gap-2 text-[11px] text-emerald-800 bg-emerald-50/80 px-2.5 py-1 rounded border border-emerald-200">
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                <span>
+                  Live device coordinates captured successfully with accuracy{' '}
+                  <strong>±{liveGpsAccuracy}m</strong>.
+                </span>
+              </div>
+            ) : (
+              <p className="text-[11px] text-amber-800/80">
+                Click &quot;Capture My Live GPS&quot; while standing at the office to automatically
+                record your location.
+              </p>
+            )}
+          </div>
+
+          {/* Coordinates Inputs */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">Latitude *</label>
+              <input
+                type="number"
+                step="any"
+                required
+                value={geofenceLat}
+                onChange={(e) => setGeofenceLat(e.target.value)}
+                placeholder="e.g. 18.153100"
+                className="w-full text-xs font-mono px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-semibold text-stone-700 mb-1">Longitude *</label>
+              <input
+                type="number"
+                step="any"
+                required
+                value={geofenceLng}
+                onChange={(e) => setGeofenceLng(e.target.value)}
+                placeholder="e.g. 74.578600"
+                className="w-full text-xs font-mono px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
+              />
+            </div>
+          </div>
+
+          {/* Geofence Perimeter Radius */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-stone-700">
+                Geofence Radius (Meters) *
+              </label>
+              <span className="text-[11px] font-mono text-stone-500">{geofenceRadius} meters</span>
+            </div>
+            <div className="flex items-center gap-2 mb-1.5">
+              <input
+                type="number"
+                min={20}
+                max={5000}
+                required
+                value={geofenceRadius}
+                onChange={(e) => setGeofenceRadius(Number(e.target.value))}
+                className="w-28 text-xs font-mono px-3 py-1.5 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
+              />
+              <div className="flex items-center gap-1">
+                {[50, 100, 150, 200, 300, 500].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setGeofenceRadius(r)}
+                    className={`px-2 py-1 text-[11px] rounded font-medium transition-colors ${
+                      geofenceRadius === r
+                        ? 'bg-amber-800 text-white'
+                        : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
+                    }`}
+                  >
+                    {r}m
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="text-[11px] text-stone-400">
+              Radius covers the perimeter where check-ins are allowed (100m to 200m recommended for
+              campus/building).
+            </p>
+          </div>
+
+          {/* Address / Landmark */}
+          <div>
+            <label className="block text-xs font-semibold text-stone-700 mb-1">
+              Address / Campus Landmark
+            </label>
+            <input
+              type="text"
+              value={geofenceAddress}
+              onChange={(e) => setGeofenceAddress(e.target.value)}
+              placeholder="e.g. ADT AI Training Foundation, Shardanagar, Baramati"
+              className="w-full text-xs px-3 py-2 border border-stone-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-amber-700 bg-white"
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-3 border-t border-stone-200">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setIsUpdateLocationModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={isUpdatingLocation || !geofenceLat || !geofenceLng}
+              className="bg-amber-800 hover:bg-amber-900 text-white text-xs h-9"
+            >
+              {isUpdatingLocation ? (
+                <>
+                  <RefreshCw className="h-3 w-3 mr-1.5 animate-spin" />
+                  Saving Geofence...
+                </>
+              ) : (
+                'Save Live Geofence Location'
+              )}
+            </Button>
+          </div>
+        </form>
       </Dialog>
 
       {/* Attendance Regularization / Correction Request Modal */}
