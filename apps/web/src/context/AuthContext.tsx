@@ -131,6 +131,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     let isMounted = true;
 
+    // Safety timeout: Never stay in loading state longer than 2 seconds under any circumstances
+    const timeoutTimer = setTimeout(() => {
+      if (isMounted) {
+        setIsLoading(false);
+      }
+    }, 2000);
+
     async function initializeAuth() {
       setIsLoading(true);
       try {
@@ -143,6 +150,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setUser(null);
         }
       } finally {
+        clearTimeout(timeoutTimer);
         if (isMounted) {
           setIsLoading(false);
         }
@@ -153,6 +161,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     return () => {
       isMounted = false;
+      clearTimeout(timeoutTimer);
     };
   }, [router]);
 

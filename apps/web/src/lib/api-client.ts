@@ -2929,6 +2929,94 @@ export const documentsApi = {
     return res.data;
   },
 
+  async getAllDocuments(params?: {
+    category?: string;
+    status?: string;
+    search?: string;
+    employeeId?: string;
+  }): Promise<{
+    items: EmployeeDocumentItem[];
+    stats: EmployeeDocumentStats & { totalEmployees: number; totalPhotos: number };
+    employees: Array<{
+      id: string;
+      employeeCode: string;
+      displayName: string;
+      email: string;
+      department: string;
+      designation: string;
+      profilePhoto: string | null;
+      documentCount: number;
+      verifiedCount: number;
+      hasPhoto: boolean;
+      photoDocumentId?: string;
+    }>;
+  }> {
+    const query = new URLSearchParams();
+    if (params?.category) query.append('category', params.category);
+    if (params?.status) query.append('status', params.status);
+    if (params?.search) query.append('search', params.search);
+    if (params?.employeeId) query.append('employeeId', params.employeeId);
+
+    const queryString = query.toString();
+    const endpoint = queryString
+      ? `/documents/organization?${queryString}`
+      : '/documents/organization';
+    const res = await fetchWithAuth<any>(endpoint);
+    return res.data;
+  },
+
+  async downloadOrganizationDocument(documentId: string, fileName?: string): Promise<void> {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/documents/organization/${documentId}/download`, {
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.message || 'Download failed');
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = fileName || 'document';
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(url);
+    document.body.removeChild(a);
+  },
+
+  async getOrganizationPreviewBlob(documentId: string): Promise<{ url: string; mimeType: string }> {
+    const token = getAccessToken();
+    const headers: Record<string, string> = {};
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`${API_BASE_URL}/documents/organization/${documentId}/preview`, {
+      headers,
+      credentials: 'include',
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to load document preview');
+    }
+
+    const mimeType = response.headers.get('Content-Type') || 'application/pdf';
+    const blob = await response.blob();
+    return {
+      url: window.URL.createObjectURL(blob),
+      mimeType,
+    };
+  },
+
   async getEmployeeDocuments(
     employeeId: string,
   ): Promise<{ items: EmployeeDocumentItem[]; stats: EmployeeDocumentStats }> {

@@ -5,6 +5,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -223,6 +224,91 @@ export class DocumentsController {
   // HR / ADMIN MANAGEMENT ENDPOINTS
   // ===========================================================================
 
+  @Get('organization')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({
+    summary: 'List all employee documents and photo roster across organization (HR/Admin)',
+  })
+  async getAllDocumentsForHR(
+    @Req() req: AuthenticatedRequest,
+    @Query('category') category?: string,
+    @Query('status') status?: string,
+    @Query('search') search?: string,
+    @Query('employeeId') employeeId?: string,
+  ) {
+    const data = await this.documentsService.getAllDocumentsForHR(req.user, {
+      category,
+      status,
+      search,
+      employeeId,
+    });
+    return {
+      success: true,
+      message: 'Organization documents retrieved successfully',
+      data,
+    };
+  }
+
+  @Get('organization/:id/download')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({ summary: 'Download any employee document as HR reviewer' })
+  async downloadAnyDocumentForHR(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') documentId: string,
+    @Res() res: Response,
+  ) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string);
+    const userAgent = extractUserAgent(req);
+
+    const result = await this.documentsService.streamAnyDocumentForHR(
+      req.user,
+      documentId,
+      'DOWNLOAD',
+      clientIp,
+      userAgent,
+    );
+
+    res.set({
+      'Content-Type': result.mimeType,
+      'Content-Disposition': `attachment; filename="${result.fileName}"`,
+      'Content-Length': result.fileSize,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+    });
+
+    result.stream.pipe(res);
+  }
+
+  @Get('organization/:id/preview')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({ summary: 'Preview any employee document inline as HR reviewer' })
+  async previewAnyDocumentForHR(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') documentId: string,
+    @Res() res: Response,
+  ) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string);
+    const userAgent = extractUserAgent(req);
+
+    const result = await this.documentsService.streamAnyDocumentForHR(
+      req.user,
+      documentId,
+      'PREVIEW',
+      clientIp,
+      userAgent,
+    );
+
+    res.set({
+      'Content-Type': result.mimeType,
+      'Content-Disposition': `inline; filename="${result.fileName}"`,
+      'Content-Length': result.fileSize,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+    });
+
+    result.stream.pipe(res);
+  }
+
   @Get('employee/:employeeId')
   @RequirePermissions('DOCUMENT_VIEW')
   @ApiOperation({ summary: 'List documents for a target employee (HR/Admin)' })
@@ -261,6 +347,37 @@ export class DocumentsController {
     res.set({
       'Content-Type': result.mimeType,
       'Content-Disposition': `attachment; filename="${result.fileName}"`,
+      'Content-Length': result.fileSize,
+      'X-Content-Type-Options': 'nosniff',
+      'Cache-Control': 'private, no-cache, no-store, must-revalidate',
+    });
+
+    result.stream.pipe(res);
+  }
+
+  @Get('employee/:employeeId/:id/preview')
+  @RequirePermissions('DOCUMENT_VIEW')
+  @ApiOperation({ summary: 'Preview an employee document inline as HR reviewer' })
+  async previewEmployeeDocument(
+    @Req() req: AuthenticatedRequest,
+    @Param('employeeId') employeeId: string,
+    @Param('id') documentId: string,
+    @Res() res: Response,
+  ) {
+    const clientIp = req.ip || (req.headers['x-forwarded-for'] as string);
+    const userAgent = extractUserAgent(req);
+
+    const result = await this.documentsService.streamAnyDocumentForHR(
+      req.user,
+      documentId,
+      'PREVIEW',
+      clientIp,
+      userAgent,
+    );
+
+    res.set({
+      'Content-Type': result.mimeType,
+      'Content-Disposition': `inline; filename="${result.fileName}"`,
       'Content-Length': result.fileSize,
       'X-Content-Type-Options': 'nosniff',
       'Cache-Control': 'private, no-cache, no-store, must-revalidate',

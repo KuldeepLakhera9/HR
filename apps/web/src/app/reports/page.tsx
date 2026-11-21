@@ -642,9 +642,9 @@ export default function ReportsPage() {
                       title="Attendance & Absence Trend"
                       subtitle={`Daily headcount rollups over selected ${datePreset} period`}
                     >
-                      <div className="w-full h-64">
+                      <div className="w-full h-64 min-w-0">
                         {data.attendanceTrend.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height={256} minWidth={0}>
                             <AreaChart
                               data={data.attendanceTrend}
                               margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
@@ -718,9 +718,9 @@ export default function ReportsPage() {
                       title="Department Headcount Distribution"
                       subtitle="Active employees allocated across business units"
                     >
-                      <div className="w-full h-64">
+                      <div className="w-full h-64 min-w-0">
                         {data.departmentBreakdown.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%">
+                          <ResponsiveContainer width="100%" height={256} minWidth={0}>
                             <BarChart
                               data={data.departmentBreakdown}
                               margin={{ top: 10, right: 10, left: -20, bottom: 0 }}

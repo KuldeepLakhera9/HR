@@ -2066,19 +2066,40 @@ export class EmployeesService {
 
     await this.prisma.$transaction(async (tx) => {
       // 1. Update Core Employee
+      const computedDisplayName =
+        dto.firstName !== undefined || dto.lastName !== undefined
+          ? `${dto.firstName ?? existing.firstName} ${dto.lastName ?? existing.lastName}`.trim()
+          : dto.displayName || existing.displayName;
+
       await tx.employee.update({
         where: { id },
         data: {
           firstName: dto.firstName,
           middleName: dto.middleName,
           lastName: dto.lastName,
-          displayName: dto.displayName,
+          displayName: computedDisplayName,
           profilePhoto: dto.profilePhoto,
           dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
           gender: dto.gender,
           managerId: dto.managerId !== undefined ? dto.managerId : undefined,
         },
       });
+
+      // Synchronize User record if employee has an associated user login
+      if (existing.userId) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            email: dto.workEmail || undefined,
+            phone: dto.phone,
+            branchId: dto.branchId,
+            departmentId: dto.departmentId,
+            designationId: dto.designationId,
+          },
+        });
+      }
 
       // 2. Update Employment
       if (existing.employment) {
@@ -2103,6 +2124,7 @@ export class EmployeesService {
         await tx.employeeContact.update({
           where: { employeeId: id },
           data: {
+            workEmail: dto.workEmail,
             personalEmail: dto.personalEmail,
             phone: dto.phone,
             alternatePhone: dto.alternatePhone,

@@ -27,16 +27,6 @@ import {
   Hourglass,
   Layers,
 } from 'lucide-react';
-import {
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from 'recharts';
 
 export function RequestAnalyticsTab() {
   const [subView, setSubView] = useState<'UTILIZATION' | 'VOLUMES' | 'TURNAROUND'>('UTILIZATION');

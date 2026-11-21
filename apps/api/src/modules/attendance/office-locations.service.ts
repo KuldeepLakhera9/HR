@@ -165,6 +165,27 @@ export class OfficeLocationsService {
       },
     });
 
+    if (
+      location.branchId &&
+      (dto.latitude !== undefined ||
+        dto.longitude !== undefined ||
+        dto.geofenceRadiusMeters !== undefined)
+    ) {
+      await this.prisma.branch.update({
+        where: { id: location.branchId },
+        data: {
+          ...(dto.latitude !== undefined && { latitude: dto.latitude, geofenceLat: dto.latitude }),
+          ...(dto.longitude !== undefined && {
+            longitude: dto.longitude,
+            geofenceLng: dto.longitude,
+          }),
+          ...(dto.geofenceRadiusMeters !== undefined && {
+            geofenceRadiusMeters: dto.geofenceRadiusMeters,
+          }),
+        },
+      });
+    }
+
     await this.auditService.record({
       action: 'OFFICE_LOCATION_CREATED',
       entity: 'OfficeLocation',
@@ -244,6 +265,27 @@ export class OfficeLocationsService {
         },
       },
     });
+
+    if (
+      updated.branchId &&
+      (dto.latitude !== undefined ||
+        dto.longitude !== undefined ||
+        dto.geofenceRadiusMeters !== undefined)
+    ) {
+      await this.prisma.branch.update({
+        where: { id: updated.branchId },
+        data: {
+          ...(dto.latitude !== undefined && { latitude: dto.latitude, geofenceLat: dto.latitude }),
+          ...(dto.longitude !== undefined && {
+            longitude: dto.longitude,
+            geofenceLng: dto.longitude,
+          }),
+          ...(dto.geofenceRadiusMeters !== undefined && {
+            geofenceRadiusMeters: dto.geofenceRadiusMeters,
+          }),
+        },
+      });
+    }
 
     await this.auditService.record({
       action: 'OFFICE_LOCATION_UPDATED',

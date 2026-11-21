@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -85,7 +86,7 @@ export class OfficeLocationsController {
   @Put(':id')
   @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
-  @ApiOperation({ summary: 'Update office location details and geofence coordinates' })
+  @ApiOperation({ summary: 'Update office location details and geofence coordinates (PUT)' })
   async update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -102,6 +103,18 @@ export class OfficeLocationsController {
       message: 'Office location updated successfully.',
       data,
     };
+  }
+
+  @Patch(':id')
+  @Roles('ADMIN', 'HR')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({ summary: 'Update office location details and geofence coordinates (PATCH)' })
+  async patch(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateOfficeLocationDto,
+  ) {
+    return this.update(req, id, dto);
   }
 
   @Delete(':id')
@@ -196,7 +209,7 @@ export class OfficeLocationsAliasController {
   @Put(':id')
   @Roles('ADMIN', 'HR')
   @RequirePermissions('ATTENDANCE_UPDATE')
-  @ApiOperation({ summary: 'Update office location (alias)' })
+  @ApiOperation({ summary: 'Update office location (alias PUT)' })
   async update(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -213,6 +226,18 @@ export class OfficeLocationsAliasController {
       message: 'Office location updated successfully.',
       data,
     };
+  }
+
+  @Patch(':id')
+  @Roles('ADMIN', 'HR')
+  @RequirePermissions('ATTENDANCE_UPDATE')
+  @ApiOperation({ summary: 'Update office location (alias PATCH)' })
+  async patch(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateOfficeLocationDto,
+  ) {
+    return this.update(req, id, dto);
   }
 
   @Delete(':id')

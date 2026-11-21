@@ -131,7 +131,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
   className,
 }) => {
   return (
-    <Card className={cn('flex flex-col', className)}>
+    <Card className={cn('flex flex-col min-w-0', className)}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
         <div>
           <CardTitle>{title}</CardTitle>
@@ -139,7 +139,7 @@ export const ChartCard: React.FC<ChartCardProps> = ({
         </div>
         {action && <div>{action}</div>}
       </CardHeader>
-      <CardContent className="pt-2 flex-1 min-h-[260px]">{children}</CardContent>
+      <CardContent className="pt-2 flex-1 min-h-[260px] min-w-0">{children}</CardContent>
     </Card>
   );
 };

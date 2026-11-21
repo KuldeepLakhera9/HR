@@ -847,8 +847,8 @@ export function PayrollAnalyticsTab() {
                     <h3 className="text-sm font-semibold text-stone-900 mb-4">
                       Department Cost Allocations (Gross Pay)
                     </h3>
-                    <div className="h-72 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-72 w-full min-w-0">
+                      <ResponsiveContainer width="100%" height={288} minWidth={0}>
                         <BarChart
                           data={costCenterData.departments}
                           margin={{ top: 10, right: 10, left: 10, bottom: 25 }}
@@ -880,8 +880,8 @@ export function PayrollAnalyticsTab() {
                     <h3 className="text-sm font-semibold text-stone-900 mb-4">
                       Branch Cost Center Allocations
                     </h3>
-                    <div className="h-72 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-72 w-full min-w-0">
+                      <ResponsiveContainer width="100%" height={288} minWidth={0}>
                         <BarChart
                           data={costCenterData.branches}
                           margin={{ top: 10, right: 10, left: 10, bottom: 25 }}

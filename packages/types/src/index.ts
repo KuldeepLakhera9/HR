@@ -1753,6 +1753,11 @@ export type DocumentVerificationStatus = 'PENDING' | 'VERIFIED' | 'REJECTED';
 export interface EmployeeDocumentItem {
   id: string;
   employeeId: string;
+  employeeCode?: string;
+  employeeName?: string;
+  departmentName?: string;
+  designationTitle?: string;
+  profilePhoto?: string | null;
   documentType: DocumentCategory | string;
   documentName: string;
   documentNumber?: string | null;
@@ -1771,6 +1776,20 @@ export interface EmployeeDocumentItem {
   createdAt: string;
   updatedAt: string;
   canDelete: boolean;
+}
+
+export interface EmployeePhotoRosterItem {
+  id: string;
+  employeeCode: string;
+  displayName: string;
+  email: string;
+  department: string;
+  designation: string;
+  profilePhoto: string | null;
+  documentCount: number;
+  verifiedCount: number;
+  hasPhoto: boolean;
+  photoDocumentId?: string;
 }
 
 export interface EmployeeDocumentStats {

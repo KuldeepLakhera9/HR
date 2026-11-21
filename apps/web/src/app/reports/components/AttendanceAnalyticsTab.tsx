@@ -463,8 +463,8 @@ export function AttendanceAnalyticsTab() {
                       </span>
                     </div>
 
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
+                    <div className="h-64 w-full min-w-0">
+                      <ResponsiveContainer width="100%" height={256} minWidth={0}>
                         <BarChart data={weeklyData.byDayOfWeek}>
                           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                           <XAxis dataKey="dayName" fontSize={11} stroke="#78716c" />

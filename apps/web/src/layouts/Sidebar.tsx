@@ -26,7 +26,6 @@ import {
   CheckSquare,
   Home,
   UserCircle,
-  Palette,
   LucideIcon,
   X,
   GitFork,
@@ -54,7 +53,6 @@ const ICON_MAP: Record<string, LucideIcon> = {
   CheckSquare,
   Home,
   UserCircle,
-  Palette,
   GitFork,
   Banknote,
 };

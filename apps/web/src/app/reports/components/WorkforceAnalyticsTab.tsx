@@ -469,8 +469,8 @@ export function WorkforceAnalyticsTab() {
                           {headcountData.byDepartment?.length} depts
                         </span>
                       </div>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-64 w-full min-w-0">
+                        <ResponsiveContainer width="100%" height={256} minWidth={0}>
                           <BarChart data={headcountData.byDepartment} layout="vertical">
                             <CartesianGrid
                               strokeDasharray="3 3"
@@ -510,8 +510,8 @@ export function WorkforceAnalyticsTab() {
                           {headcountData.byBranch?.length} branches
                         </span>
                       </div>
-                      <div className="h-64">
-                        <ResponsiveContainer width="100%" height="100%">
+                      <div className="h-64 w-full min-w-0">
+                        <ResponsiveContainer width="100%" height={256} minWidth={0}>
                           <BarChart data={headcountData.byBranch} layout="vertical">
                             <CartesianGrid
                               strokeDasharray="3 3"
@@ -954,8 +954,8 @@ export function WorkforceAnalyticsTab() {
                   <span className="text-xs text-stone-500">Monthly Event Trajectory</span>
                 </div>
 
-                <div className="h-72">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="h-72 w-full min-w-0">
+                  <ResponsiveContainer width="100%" height={288} minWidth={0}>
                     <LineChart data={trendsData.series}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                       <XAxis dataKey="period" fontSize={11} stroke="#78716c" />

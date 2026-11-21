@@ -432,8 +432,8 @@ export function PerformanceAnalyticsTab() {
                   No finalized scored reviews in current cycle
                 </div>
               ) : viewMode === 'CHARTS' ? (
-                <div className="w-full h-56">
-                  <ResponsiveContainer width="100%" height="100%">
+                <div className="w-full h-56 min-w-0">
+                  <ResponsiveContainer width="100%" height={224} minWidth={0}>
                     <BarChart
                       data={overviewData.ratingDistribution.buckets}
                       margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
@@ -509,8 +509,8 @@ export function PerformanceAnalyticsTab() {
             >
               {overviewData.departmentBreakdown.length > 0 ? (
                 viewMode === 'CHARTS' ? (
-                  <div className="w-full h-56">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="w-full h-56 min-w-0">
+                    <ResponsiveContainer width="100%" height={224} minWidth={0}>
                       <BarChart
                         data={overviewData.departmentBreakdown}
                         margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
