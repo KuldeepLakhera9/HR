@@ -2066,19 +2066,40 @@ export class EmployeesService {
 
     await this.prisma.$transaction(async (tx) => {
       // 1. Update Core Employee
+      const computedDisplayName =
+        dto.displayName ||
+        (dto.firstName || dto.lastName
+          ? `${dto.firstName ?? existing.firstName} ${dto.lastName ?? existing.lastName}`.trim()
+          : undefined);
+
       await tx.employee.update({
         where: { id },
         data: {
           firstName: dto.firstName,
           middleName: dto.middleName,
           lastName: dto.lastName,
-          displayName: dto.displayName,
+          displayName: computedDisplayName,
           profilePhoto: dto.profilePhoto,
           dateOfBirth: dto.dateOfBirth ? new Date(dto.dateOfBirth) : undefined,
           gender: dto.gender,
           managerId: dto.managerId !== undefined ? dto.managerId : undefined,
         },
       });
+
+      // Synchronize User record if employee has an associated user login
+      if (existing.userId) {
+        await tx.user.update({
+          where: { id: existing.userId },
+          data: {
+            firstName: dto.firstName,
+            lastName: dto.lastName,
+            phone: dto.phone,
+            branchId: dto.branchId,
+            departmentId: dto.departmentId,
+            designationId: dto.designationId,
+          },
+        });
+      }
 
       // 2. Update Employment
       if (existing.employment) {

@@ -290,12 +290,29 @@ export class EmployeesController {
   }
 
   @Patch(':id')
+  @RequirePermissions('EMPLOYEE_UPDATE')
+  @ApiOperation({
+    summary: 'Update employee details and track organizational history (PATCH)',
+  })
+  async update(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Body() dto: UpdateEmployeeDto,
+  ) {
+    const data = await this.employeesService.update(id, dto, req.user);
+    return {
+      success: true,
+      message: 'Employee updated successfully',
+      data,
+    };
+  }
+
   @Put(':id')
   @RequirePermissions('EMPLOYEE_UPDATE')
   @ApiOperation({
-    summary: 'Update employee details and track organizational history (PATCH / PUT)',
+    summary: 'Update employee details and track organizational history (PUT)',
   })
-  async update(
+  async updatePut(
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
     @Body() dto: UpdateEmployeeDto,
