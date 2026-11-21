@@ -621,134 +621,138 @@ export const HRAttendanceDashboard: React.FC<HRAttendanceDashboardProps> = () =>
       )}
 
       {/* 3. Reusable Charts Section */}
-      <div
-        className={`grid grid-cols-1 lg:grid-cols-3 gap-6 ${hrSubTab !== 'roster' ? 'hidden' : ''}`}
-      >
-        {/* Left 2 Cols: 7-Day Attendance Trend */}
-        <Card className="lg:col-span-2 p-5 border-stone-200">
-          <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
-            <div>
-              <h3 className="text-sm font-bold text-stone-900">7-Day Attendance Volume & Trend</h3>
-              <p className="text-xs text-stone-500">
-                Aggregated daily presence, late arrivals, and absence over the past week.
-              </p>
-            </div>
-          </div>
-
-          {isLoadingDashboard ? (
-            <div className="h-56 flex items-center justify-center">
-              <Skeleton className="h-48 w-full" />
-            </div>
-          ) : (
-            <div className="w-full h-56">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="opsColorPresent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#059669" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="opsColorLate" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#D97706" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#D97706" stopOpacity={0.0} />
-                    </linearGradient>
-                    <linearGradient id="opsColorAbsent" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#E11D48" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#E11D48" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0ECE4" />
-                  <XAxis
-                    dataKey="day"
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: '#78716C', fontSize: 11 }}
-                  />
-                  <YAxis
-                    tickLine={false}
-                    axisLine={false}
-                    tick={{ fill: '#78716C', fontSize: 11 }}
-                    allowDecimals={false}
-                  />
-                  <Tooltip
-                    contentStyle={{
-                      backgroundColor: '#FFFFFF',
-                      borderColor: '#E7E2DA',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.08)',
-                    }}
-                  />
-                  <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
-                  <Area
-                    type="monotone"
-                    dataKey="present"
-                    name="Present"
-                    stroke="#059669"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#opsColorPresent)"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="late"
-                    name="Late Arrivals"
-                    stroke="#D97706"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#opsColorLate)"
-                  />
-                  <Area
-                    type="monotone"
-                    dataKey="absent"
-                    name="Absent"
-                    stroke="#E11D48"
-                    strokeWidth={2}
-                    fillOpacity={1}
-                    fill="url(#opsColorAbsent)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-        </Card>
-
-        {/* Right 1 Col: Punch Modes & Privacy Disclaimer */}
-        <Card className="p-5 border-stone-200 flex flex-col justify-between">
-          <div>
-            <div className="pb-3 border-b border-stone-100 mb-3">
-              <h3 className="text-sm font-bold text-stone-900">Attendance Verification Modes</h3>
-              <p className="text-xs text-stone-500">Distribution of confirmed punch methods.</p>
-            </div>
-
-            <div className="space-y-3 pt-1">
-              <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200/60">
-                <div className="flex items-center gap-2.5">
-                  <div className="p-2 bg-amber-100 text-amber-800 rounded-lg">
-                    <Building className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <span className="text-xs font-bold text-stone-900 block">Office Geofence</span>
-                    <span className="text-[10px] text-stone-500">Perimeter validated</span>
-                  </div>
-                </div>
-                <span className="text-lg font-extrabold text-stone-900 font-mono">
-                  {modesData.office}
-                </span>
+      {hrSubTab === 'roster' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Left 2 Cols: 7-Day Attendance Trend */}
+          <Card className="lg:col-span-2 p-5 border-stone-200 min-w-0">
+            <div className="flex items-center justify-between pb-3 border-b border-stone-100 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-stone-900">
+                  7-Day Attendance Volume & Trend
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Aggregated daily presence, late arrivals, and absence over the past week.
+                </p>
               </div>
             </div>
-          </div>
 
-          {/* Privacy Notice Badge */}
-          <div className="mt-4 p-3 bg-stone-100/70 rounded-xl border border-stone-200 text-[11px] text-stone-600 flex items-start gap-2">
-            <Lock className="h-3.5 w-3.5 text-stone-500 shrink-0 mt-0.5" />
-            <span>
-              <strong>GPS Privacy Enforced:</strong> Exact geographic coordinates are redacted from
-              operations view. Only geofence verification status and distance are displayed.
-            </span>
-          </div>
-        </Card>
-      </div>
+            {isLoadingDashboard ? (
+              <div className="h-56 flex items-center justify-center">
+                <Skeleton className="h-48 w-full" />
+              </div>
+            ) : (
+              <div className="w-full h-56 min-w-0">
+                <ResponsiveContainer width="100%" height={224} minWidth={0}>
+                  <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -25, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="opsColorPresent" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#059669" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#059669" stopOpacity={0.0} />
+                      </linearGradient>
+                      <linearGradient id="opsColorLate" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#D97706" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#D97706" stopOpacity={0.0} />
+                      </linearGradient>
+                      <linearGradient id="opsColorAbsent" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#E11D48" stopOpacity={0.25} />
+                        <stop offset="95%" stopColor="#E11D48" stopOpacity={0.0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#F0ECE4" />
+                    <XAxis
+                      dataKey="day"
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: '#78716C', fontSize: 11 }}
+                    />
+                    <YAxis
+                      tickLine={false}
+                      axisLine={false}
+                      tick={{ fill: '#78716C', fontSize: 11 }}
+                      allowDecimals={false}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#FFFFFF',
+                        borderColor: '#E7E2DA',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.08)',
+                      }}
+                    />
+                    <Legend wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }} />
+                    <Area
+                      type="monotone"
+                      dataKey="present"
+                      name="Present"
+                      stroke="#059669"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#opsColorPresent)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="late"
+                      name="Late Arrivals"
+                      stroke="#D97706"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#opsColorLate)"
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="absent"
+                      name="Absent"
+                      stroke="#E11D48"
+                      strokeWidth={2}
+                      fillOpacity={1}
+                      fill="url(#opsColorAbsent)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+          </Card>
+
+          {/* Right 1 Col: Punch Modes & Privacy Disclaimer */}
+          <Card className="p-5 border-stone-200 flex flex-col justify-between">
+            <div>
+              <div className="pb-3 border-b border-stone-100 mb-3">
+                <h3 className="text-sm font-bold text-stone-900">Attendance Verification Modes</h3>
+                <p className="text-xs text-stone-500">Distribution of confirmed punch methods.</p>
+              </div>
+
+              <div className="space-y-3 pt-1">
+                <div className="flex items-center justify-between p-3 bg-stone-50 rounded-xl border border-stone-200/60">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-amber-100 text-amber-800 rounded-lg">
+                      <Building className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-stone-900 block">
+                        Office Geofence
+                      </span>
+                      <span className="text-[10px] text-stone-500">Perimeter validated</span>
+                    </div>
+                  </div>
+                  <span className="text-lg font-extrabold text-stone-900 font-mono">
+                    {modesData.office}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Privacy Notice Badge */}
+            <div className="mt-4 p-3 bg-stone-100/70 rounded-xl border border-stone-200 text-[11px] text-stone-600 flex items-start gap-2">
+              <Lock className="h-3.5 w-3.5 text-stone-500 shrink-0 mt-0.5" />
+              <span>
+                <strong>GPS Privacy Enforced:</strong> Exact geographic coordinates are redacted
+                from operations view. Only geofence verification status and distance are displayed.
+              </span>
+            </div>
+          </Card>
+        </div>
+      )}
 
       {/* 3.5. Pending Regularization Requests for HR Review */}
       {(hrSubTab === 'corrections' || (hrSubTab === 'roster' && corrections.length > 0)) && (
